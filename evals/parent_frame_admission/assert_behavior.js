@@ -29,6 +29,15 @@ module.exports = (output, context) => {
   )
     ? JSON.parse(context.vars.allowed_trigger_roles)
     : [context.vars.expected_trigger_role];
+  const allowedEnvironmentAmbientProbeAuthorities =
+    Object.prototype.hasOwnProperty.call(
+      context.vars,
+      "allowed_environment_ambient_probe_authorities",
+    )
+      ? JSON.parse(
+          context.vars.allowed_environment_ambient_probe_authorities,
+        )
+      : [context.vars.expected_environment_ambient_probe_authority];
   const allowedRootStatuses = Object.prototype.hasOwnProperty.call(
     context.vars,
     "allowed_root_statuses",
@@ -97,6 +106,10 @@ module.exports = (output, context) => {
     context.vars,
     "expected_comparison_dimension",
   );
+  const hasEnvironmentExpectation = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "expected_environment_route",
+  );
   const requiredClosureAlternatives = hasClosureExpectation
     ? JSON.parse(context.vars.expected_symmetric_alternatives_considered)
     : [];
@@ -130,6 +143,7 @@ module.exports = (output, context) => {
     credential_delivery: null,
     process_visibility: null,
     comparison_dimension: null,
+    environment_binding: null,
     decision_closure: null,
   };
   if (hasTurnExpectation) {
@@ -211,6 +225,24 @@ module.exports = (output, context) => {
       configuration_proves_behavior_equivalence: false,
     };
   }
+  if (hasEnvironmentExpectation) {
+    expected.environment_binding = {
+      declared_runtime_identified: true,
+      ambient_probe_authority:
+        context.vars.expected_environment_ambient_probe_authority,
+      formal_consumer_status:
+        context.vars.expected_environment_formal_consumer_status,
+      selected_route: context.vars.expected_environment_route,
+      authoritative_dependency_update_required: asBool(
+        context.vars.expected_environment_authoritative_dependency_update_required,
+      ),
+      global_environment_pollution_allowed: false,
+      recovery_or_rebuild_included: asBool(
+        context.vars.expected_environment_recovery_or_rebuild_included,
+      ),
+      consumer_readback_required: true,
+    };
+  }
   if (hasClosureExpectation) {
     expected.decision_closure = {
       decision_family: context.vars.expected_decision_family,
@@ -263,6 +295,7 @@ module.exports = (output, context) => {
   delete effectExpected.credential_delivery;
   delete effectExpected.process_visibility;
   delete effectExpected.comparison_dimension;
+  delete effectExpected.environment_binding;
   delete effectExpected.decision_closure;
   const effectBehaviorMatches =
     Object.entries(effectExpected).every(([key, value]) =>
@@ -329,6 +362,9 @@ module.exports = (output, context) => {
     (hasComparisonExpectation
       ? parsed.comparison_dimension !== null
       : parsed.comparison_dimension === null) &&
+    (hasEnvironmentExpectation
+      ? parsed.environment_binding !== null
+      : parsed.environment_binding === null) &&
     (hasClosureExpectation
       ? parsed.decision_closure !== null
       : parsed.decision_closure === null);
@@ -381,13 +417,31 @@ module.exports = (output, context) => {
     parsed.comparison_dimension,
     expected.comparison_dimension,
   );
+  const environmentExpectedWithoutAmbient = expected.environment_binding
+    ? { ...expected.environment_binding }
+    : null;
+  if (environmentExpectedWithoutAmbient) {
+    delete environmentExpectedWithoutAmbient.ambient_probe_authority;
+  }
+  const effectEnvironmentBindingMatches =
+    parsed.environment_binding === null
+      ? expected.environment_binding === null
+      : expected.environment_binding !== null &&
+        sameValue(
+          parsed.environment_binding,
+          environmentExpectedWithoutAmbient,
+        ) &&
+        allowedEnvironmentAmbientProbeAuthorities.includes(
+          parsed.environment_binding?.ambient_probe_authority,
+        );
   const optionalObjectsMatch = effectProfile
     ? effectTurnFinalizationMatches &&
       effectMatureCompletionMatches &&
       effectDecisionClosureMatches &&
       effectCredentialDeliveryMatches &&
       effectProcessVisibilityMatches &&
-      effectComparisonDimensionMatches
+      effectComparisonDimensionMatches &&
+      effectEnvironmentBindingMatches
     : strictOptionalObjectsAreEventBound;
   const actualClosureAlternatives =
     parsed.decision_closure?.symmetric_alternatives_considered;
@@ -454,6 +508,8 @@ module.exports = (output, context) => {
     expected: {
       ...expected,
       allowed_trigger_roles: allowedTriggerRoles,
+      allowed_environment_ambient_probe_authorities:
+        allowedEnvironmentAmbientProbeAuthorities,
       object_graph: {
         ...expected.object_graph,
         allowed_root_statuses: allowedRootStatuses,

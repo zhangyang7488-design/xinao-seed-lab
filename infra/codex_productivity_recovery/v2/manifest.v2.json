@@ -13,36 +13,50 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "6f52250c277f2cc3dc6e2c18b874cf9936b3d3d87b6a8abef784b59ccb87b3a9",
-  "entry_count": 85,
+  "archive_sha256": "c14d70a735976a59b2ca2c2347503f7891fa729c508e6cadbb2cfda0e8ea6bc9",
+  "entry_count": 87,
   "entries": [
+    {
+      "archive_path": "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
+      "role": "shared_runtime_credential_boundary",
+      "size": 3762,
+      "sha256": "a0c171dab953291070ebb350646f46c7de5ee8e53e40f5a7178b8205c9d97f12"
+    },
     {
       "archive_path": "launchers/CODEX_PRODUCTIVITY_PROFILE.md",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_PRODUCTIVITY_PROFILE.md",
       "role": "launcher_or_profile",
-      "size": 10212,
-      "sha256": "704125b071e0080fea9c591ac71f77c268dd92a99fd7f4f015e22164dcb4221b"
+      "size": 10527,
+      "sha256": "07532f37074b23382cbf407c34ac579c799564beb343b0c3ba203d09f6182ad6"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode-Account-B.ps1",
-      "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Open-Codex-S-Hardmode-Account-B.ps1",
-      "role": "launcher_or_profile",
-      "size": 10823,
-      "sha256": "1733747359f3545b1515c9927a294bf59962d18d9bbe5a5e2a1a6579a4c423a4"
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\launchers\\Open-Codex-S-Hardmode-Account-B.ps1",
+      "role": "credential_b_compatibility_entry",
+      "size": 431,
+      "sha256": "73c130cca74bab51b5fa4ebf5455fd64e06046999cd44485f66a3c50b6286d20"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode.ps1",
-      "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Open-Codex-S-Hardmode.ps1",
-      "role": "launcher_or_profile",
-      "size": 3430,
-      "sha256": "462765ca44d049ea4ea47ea4b49e885c118c3e724bd39a59fd9b5ad7256af6f5"
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\launchers\\Open-Codex-S-Hardmode.ps1",
+      "role": "credential_a_compatibility_entry",
+      "size": 431,
+      "sha256": "6949898ae2fe04cd410034b5adbb705b0a3f8c1812ab4c104cd73cb83bcf0ef0"
+    },
+    {
+      "archive_path": "launchers/Open-Codex-S-SharedRuntime.ps1",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Open-Codex-S-SharedRuntime.ps1",
+      "role": "canonical_shared_runtime_launcher",
+      "size": 10924,
+      "sha256": "7bffcbda41e2782e147b617941e88f8a7c8e378b260671a975a25fa6c098678d"
     },
     {
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 4989,
-      "sha256": "6d2049e4e5f41f30c34b6361183a91363f045b0a1ee3c78d60301bac45071dbe"
+      "size": 7865,
+      "sha256": "b0ae555f3f4204cd0aaca83b09dd13b8067e656a313e7b0c2de91492f59cf3fc"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -63,7 +77,7 @@
       "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
       "role": "main_live_source",
       "size": 15030,
-      "sha256": "5331946033b7bd35c23950d29da7ceab35b57d9c27a52cab7a6dc77c719b3204"
+      "sha256": "8060ad3071b31649eff0714a39ddb6a2de2d28456390a2234e78a0a118c8568a"
     },
     {
       "archive_path": "main-home/hooks.json",
@@ -440,8 +454,8 @@
       "archive_path": "main-home/skills/productivity/agents/openai.yaml",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\productivity\\agents\\openai.yaml",
       "role": "generic_custom_skill",
-      "size": 270,
-      "sha256": "e0fcdd8536c3e5b97297d93b5d0b7f467d2dc27e3d6afc2bdde311df957f0c8e"
+      "size": 268,
+      "sha256": "ff614da192bae4807a0063a8ceacaac6e8dbcb93eeab7f1583ad51d06cd57270"
     },
     {
       "archive_path": "main-home/skills/productivity/references/protocol.md",
@@ -613,8 +627,9 @@
     }
   ],
   "source_and_projection": {
-    "main_home_is_live_source": true,
-    "account_b_is_generated_projection": true,
+    "main_home_is_canonical_shared_runtime_source": true,
+    "account_b_credential_home_links_to_shared_runtime": true,
+    "account_b_is_not_a_configuration_or_recovery_source": true,
     "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": true,
     "legacy_v1_is_separate_history_not_a_build_input": true
   },
@@ -639,7 +654,8 @@
     "owner_must_verify_exact_targets_backup_and_live_consumers_before_apply": true,
     "account_b_auth_and_sessions_must_never_be_copied_from_main": true,
     "required_post_apply_readback": [
-      "A/B projection equality for AGENTS hooks and cold capability overlay",
+      "B shared file and directory links resolve to the canonical main runtime",
+      "A/B credential files and active session state remain private",
       "fresh app-server hooks/list trust from each installed account",
       "changed-context positive and negative behavior consumer"
     ]

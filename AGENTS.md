@@ -10,6 +10,10 @@ S 只承载通用工程实现：launcher、WorkerPool、工具胶水、测试、
 
 在本仓工作时：
 
+`SENTINEL:S_DECLARED_UV_RUNTIME_V1`
+
+本仓 Python、pytest 与 Python 工具的声明运行身份由 `pyproject.toml`、`uv.lock` 和 `uv run ...` 共同绑定。裸 `python`、PATH 上的解释器或临时壳报缺依赖，只证明那个临时表面，不能上卷成仓库或应用缺失；验证与测试必须先经 `uv run` 重现。若声明环境确实缺依赖且当前任务已授权修复，依赖变更必须落回声明与锁文件、同步到该环境，并由真实消费者 fresh readback 验收，不能只装进 ambient interpreter 或停在报错。
+
 - 只改变当前具名作用域，保留无关 dirty 状态；
 - 先读真实消费者与依赖，再做最小可回滚实现；
 - 测试、Schema、回执与报告只证明有限工程谓词；

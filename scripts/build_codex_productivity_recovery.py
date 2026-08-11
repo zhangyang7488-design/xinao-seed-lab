@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+LIVE_REPO_ROOT = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
 RECOVERY_ROOT = REPO_ROOT / "infra" / "codex_productivity_recovery"
 LEGACY_V1_ROOT = RECOVERY_ROOT / "v1"
 DEFAULT_OUTPUT_ROOT = RECOVERY_ROOT / "v2"
@@ -59,9 +60,50 @@ MAIN_FILES = (
 )
 
 LAUNCHER_FILES = (
-    "Open-Codex-S-Hardmode.ps1",
-    "Open-Codex-S-Hardmode-Account-B.ps1",
     "CODEX_PRODUCTIVITY_PROFILE.md",
+)
+
+SHARED_RUNTIME_SOURCES = (
+    (
+        REPO_ROOT / "scripts" / "Open-Codex-S-SharedRuntime.ps1",
+        "launchers/Open-Codex-S-SharedRuntime.ps1",
+        "canonical_shared_runtime_launcher",
+    ),
+    (
+        REPO_ROOT / "scripts" / "launchers" / "Open-Codex-S-Hardmode.ps1",
+        "launchers/Open-Codex-S-Hardmode.ps1",
+        "credential_a_compatibility_entry",
+    ),
+    (
+        REPO_ROOT
+        / "scripts"
+        / "launchers"
+        / "Open-Codex-S-Hardmode-Account-B.ps1",
+        "launchers/Open-Codex-S-Hardmode-Account-B.ps1",
+        "credential_b_compatibility_entry",
+    ),
+    (
+        REPO_ROOT
+        / "docs"
+        / "tool_glue"
+        / "CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
+        "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
+        "shared_runtime_credential_boundary",
+    ),
+)
+
+INSTALLED_ENTRY_LINKS = (
+    (
+        LAUNCHER_ROOT / "Open-Codex-S-Hardmode.ps1",
+        LIVE_REPO_ROOT / "scripts" / "launchers" / "Open-Codex-S-Hardmode.ps1",
+    ),
+    (
+        LAUNCHER_ROOT / "Open-Codex-S-Hardmode-Account-B.ps1",
+        LIVE_REPO_ROOT
+        / "scripts"
+        / "launchers"
+        / "Open-Codex-S-Hardmode-Account-B.ps1",
+    ),
 )
 
 SITUATION_FILES = {
@@ -150,6 +192,15 @@ def _collect_sources() -> list[SourceEntry]:
             )
         )
 
+    for source, archive_path, role in SHARED_RUNTIME_SOURCES:
+        entries.append(
+            SourceEntry(
+                source=source,
+                archive_path=archive_path,
+                role=role,
+            )
+        )
+
     for relative, role in SITUATION_FILES.items():
         source = SITUATION_ROOT / Path(relative)
         entries.append(
@@ -224,8 +275,9 @@ def build(output_root: Path) -> dict[str, object]:
         "entry_count": len(manifest_entries),
         "entries": manifest_entries,
         "source_and_projection": {
-            "main_home_is_live_source": True,
-            "account_b_is_generated_projection": True,
+            "main_home_is_canonical_shared_runtime_source": True,
+            "account_b_credential_home_links_to_shared_runtime": True,
+            "account_b_is_not_a_configuration_or_recovery_source": True,
             "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": True,
             "legacy_v1_is_separate_history_not_a_build_input": True,
         },
@@ -253,7 +305,8 @@ def build(output_root: Path) -> dict[str, object]:
             "owner_must_verify_exact_targets_backup_and_live_consumers_before_apply": True,
             "account_b_auth_and_sessions_must_never_be_copied_from_main": True,
             "required_post_apply_readback": [
-                "A/B projection equality for AGENTS hooks and cold capability overlay",
+                "B shared file and directory links resolve to the canonical main runtime",
+                "A/B credential files and active session state remain private",
                 "fresh app-server hooks/list trust from each installed account",
                 "changed-context positive and negative behavior consumer",
             ],
@@ -332,15 +385,36 @@ def verify_live(output_root: Path) -> dict[str, object]:
         if _sha256_file(source) != row["sha256"]:
             raise ValueError(f"live source SHA256 drift: {source}")
 
-    for relative in (
+    shared_files = (
         "AGENTS.md",
+        "config.toml",
         "hooks.json",
-        "cold-capabilities.config.toml",
-    ):
+        *sorted(path.name for path in MAIN_HOME.glob("*.config.toml")),
+    )
+    for relative in dict.fromkeys(shared_files):
         main = MAIN_HOME / relative
         account_b = ACCOUNT_B_HOME / relative
-        if _sha256_file(main) != _sha256_file(account_b):
-            raise ValueError(f"A/B projection drift: {relative}")
+        if not account_b.is_symlink():
+            raise ValueError(f"B shared file is not a direct link: {account_b}")
+        if account_b.resolve(strict=True) != main.resolve(strict=True):
+            raise ValueError(f"B shared file link target drift: {account_b}")
+
+    for relative in ("agents", "skills", "rules", "plugins"):
+        main = MAIN_HOME / relative
+        account_b = ACCOUNT_B_HOME / relative
+        is_link = account_b.is_symlink() or (
+            hasattr(account_b, "is_junction") and account_b.is_junction()
+        )
+        if not is_link:
+            raise ValueError(f"B shared directory is not a direct link: {account_b}")
+        if account_b.resolve(strict=True) != main.resolve(strict=True):
+            raise ValueError(f"B shared directory link target drift: {account_b}")
+
+    for installed, canonical in INSTALLED_ENTRY_LINKS:
+        if not installed.is_symlink():
+            raise ValueError(f"installed credential entry is not a direct link: {installed}")
+        if installed.resolve(strict=True) != canonical.resolve(strict=True):
+            raise ValueError(f"installed credential entry link target drift: {installed}")
     return manifest
 
 

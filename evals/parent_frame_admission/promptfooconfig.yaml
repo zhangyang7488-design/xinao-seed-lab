@@ -43,6 +43,7 @@ providers:
           - credential_delivery
           - process_visibility
           - comparison_dimension
+          - environment_binding
           - decision_closure
           - reason
         properties:
@@ -392,6 +393,36 @@ providers:
                   - supporting_evidence_only
                   - primary_object
               configuration_proves_behavior_equivalence: { type: boolean, const: false }
+          environment_binding:
+            type: [object, "null"]
+            additionalProperties: false
+            required:
+              - declared_runtime_identified
+              - ambient_probe_authority
+              - formal_consumer_status
+              - selected_route
+              - authoritative_dependency_update_required
+              - global_environment_pollution_allowed
+              - recovery_or_rebuild_included
+              - consumer_readback_required
+            properties:
+              declared_runtime_identified: { type: boolean, const: true }
+              ambient_probe_authority:
+                enum:
+                  - non_authoritative
+                  - not_applicable
+              formal_consumer_status:
+                enum:
+                  - healthy
+                  - missing_dependency
+              selected_route:
+                enum:
+                  - use_declared_runtime_without_install
+                  - repair_declared_runtime_then_verify
+              authoritative_dependency_update_required: { type: boolean }
+              global_environment_pollution_allowed: { type: boolean, const: false }
+              recovery_or_rebuild_included: { type: boolean }
+              consumer_readback_required: { type: boolean, const: true }
           decision_closure:
             type: [object, "null"]
             additionalProperties: false

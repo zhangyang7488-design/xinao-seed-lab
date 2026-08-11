@@ -130,6 +130,20 @@ behavior claim, keep configuration as the primary object. Include
 `comparison_dimension` only for these comparison-dimension events and return it
 as `null` otherwise.
 
+Environment and dependency diagnosis is event-bound to the declared runtime and
+formal consumer. An ambient interpreter, PATH shell, or ad-hoc probe failure is
+non-authoritative for the repository or application when its declared runner is
+healthy; do not install into an unrelated global environment. If the formal
+consumer proves a real missing dependency and the current task authorizes repair,
+update the authoritative dependency declaration and lock, synchronize the intended
+runtime or recovery carrier, and verify the real consumer before completion. Do
+not stop at reporting or an install receipt. In `environment_binding`,
+`recovery_or_rebuild_included` is true only when this environment event actually
+requires a repair/rebuild or recovery-carrier update; do not copy the generic
+`mature_completion.recovery_and_verification_included` value into a healthy-runtime
+no-install branch. Include `environment_binding` only
+for environment/dependency attribution events and return it as `null` otherwise.
+
 An admitted stable cross-window behavior repair or reusable capability change
 has a delivery completion identity, not merely a local implementation identity.
 Before finalizing it, close the unique source, installed/active projection,

@@ -238,6 +238,12 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "S 只承载通用工程实现" in agreement
     assert "它不保存或选择人的父意图、科学课题、研究路线、认知生命周期或完成结论" in agreement
     assert "局部工程结果必须回到其真实消费者验证" in agreement
+    assert "SENTINEL:S_DECLARED_UV_RUNTIME_V1" in agreement
+    assert "pyproject.toml" in agreement
+    assert "uv.lock" in agreement
+    assert "uv run ..." in agreement
+    assert "不能上卷成仓库或应用缺失" in agreement
+    assert "真实消费者 fresh readback 验收" in agreement
     contract_text = contract.read_text(encoding="utf-8")
     assert "SENTINEL:GENERIC_ENGINEERING_SUBSTRATE_CURRENT_V1" in contract_text
     assert "不定义任何科学父意图" in contract_text
@@ -482,6 +488,42 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
         source = bridge_root / name
         assert source.is_file(), name
         assert hashlib.sha256(source.read_bytes()).hexdigest() == expected_sha256
+
+    capability_helper = bridge_root / "GrokSupervisorRootCapability.ps1"
+    selection_resolver = bridge_root / "resolve_grok_worker_selection_receipt.py"
+    selector_pointer = Path(
+        r"D:\XINAO_RESEARCH_RUNTIME\state\grok_supervisor_selector\current.json"
+    )
+    assert selector_pointer.is_file()
+
+    def ps_quote(value: object) -> str:
+        return str(value).replace("'", "''")
+
+    selector_check = subprocess.run(
+        [
+            "pwsh",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            (
+                f". '{ps_quote(capability_helper)}'; "
+                "$resolved = Resolve-GrokSupervisorSelectorRoot "
+                f"-SelectionResolver '{ps_quote(selection_resolver)}' "
+                "-RuntimeRoot 'D:\\XINAO_RESEARCH_RUNTIME'; "
+                "$resolved | ConvertTo-Json -Depth 12 -Compress"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert selector_check.returncode == 0, selector_check.stderr or selector_check.stdout
+    selector_resolution = json.loads(selector_check.stdout)
+    assert selector_resolution["selected_from"] == "stable_release_pointer"
+    assert selector_resolution["release_binding"]["release_id"]
 
     worker_text = (bridge_root / "Invoke-GrokComposer25Worker.ps1").read_text(encoding="utf-8")
     launcher_text = launcher_path.read_text(encoding="utf-8")
@@ -1204,13 +1246,13 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 102
+    assert suite_count == catalog["declared_case_count"] == 109
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
         "core": 18 + 1 + 9 + 9 + 6 + 2 + 1 + 2 + 8,
         "deep": 18 + 1 + 9 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
-        "intent": 58,
+        "intent": 65,
         "external": 9,
         "reconstitution": 9,
         "proactive": 6,
@@ -1220,7 +1262,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 58
+    assert intent["case_count"] == 65
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     external_reality = next(
@@ -1454,6 +1496,13 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     )
     launcher_path = Path(r"C:\Users\xx363\CodexLaunchers\Open-Codex-S-Hardmode-Account-B.ps1")
     contract_path = Path(r"C:\Users\xx363\CodexLaunchers\CODEX_PRODUCTIVITY_PROFILE.md")
+    shared_launcher_path = REPO_ROOT / "scripts" / "Open-Codex-S-SharedRuntime.ps1"
+    account_contract_path = (
+        REPO_ROOT
+        / "docs"
+        / "tool_glue"
+        / "CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md"
+    )
     required_paths = (
         main_path,
         account_b_path,
@@ -1461,6 +1510,8 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
         account_b_cold_profile_path,
         launcher_path,
         contract_path,
+        shared_launcher_path,
+        account_contract_path,
     )
     if not all(path.is_file() for path in required_paths):
         return
@@ -1555,31 +1606,55 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
         is False
     )
 
-    b_node_env = account_b["mcp_servers"]["node_repl"]["env"]
-    expected_b_home = r"C:\Users\xx363\.codex-s-hardmode-account-b"
-    assert b_node_env["CODEX_HOME"] == expected_b_home
-    assert b_node_env["NODE_REPL_TRUSTED_CODE_PATHS"] == expected_b_home
-    assert account_b["shell_environment_policy"]["set"]["NODE_REPL_TRUSTED_CODE_PATHS"] == (
-        expected_b_home
-    )
+    assert account_b_path.is_symlink()
+    assert account_b_path.resolve(strict=True) == main_path.resolve(strict=True)
+    for relative in (
+        "AGENTS.md",
+        "hooks.json",
+        "cold-capabilities.config.toml",
+        "native-collaboration.config.toml",
+        "inner-luna.config.toml",
+        "inner-terra.config.toml",
+        "inner-sol-verifier.config.toml",
+    ):
+        main_shared = main_path.with_name(relative)
+        account_b_shared = account_b_path.with_name(relative)
+        assert account_b_shared.is_symlink(), relative
+        assert account_b_shared.resolve(strict=True) == main_shared.resolve(strict=True), relative
+    for relative in ("agents", "skills", "rules", "plugins"):
+        main_shared = main_path.parent / relative
+        account_b_shared = account_b_path.parent / relative
+        assert account_b_shared.is_symlink() or (
+            hasattr(account_b_shared, "is_junction") and account_b_shared.is_junction()
+        ), relative
+        assert account_b_shared.resolve(strict=True) == main_shared.resolve(strict=True), relative
+
+    main_node_env = main["mcp_servers"]["node_repl"]["env"]
+    expected_main_home = r"C:\Users\xx363\.codex"
+    assert main_node_env["CODEX_HOME"] == expected_main_home
+    assert account_b["mcp_servers"]["node_repl"]["env"] == main_node_env
 
     launcher = launcher_path.read_text(encoding="utf-8-sig")
-    assert '"cold-capabilities.config.toml"' in launcher
-    assert "\"CODEX_HOME = '$mainCodexHome'\"" in launcher
-    assert "\"CODEX_HOME = '$codexHome'\"" in launcher
-    assert "Get-CodexHookStateBlocks" in launcher
-    assert "Merge-CodexHookStateBlocks" in launcher
-    assert "$preservedHookStateBlocks" in launcher
-    assert "B-local hook trust is preserved" in launcher
+    assert "Open-Codex-S-SharedRuntime.ps1" in launcher
+    assert "-AccountSlot B" in launcher
     assert "--dangerously-bypass-hook-trust" not in launcher
+
+    shared_launcher = shared_launcher_path.read_text(encoding="utf-8-sig")
+    assert "Ensure-SharedFileLink" in shared_launcher
+    assert "Ensure-SharedDirectoryJunction" in shared_launcher
+    assert "CODEX_CREDENTIAL_PRIVATE_STATE_MUST_NOT_BE_SHARED" in shared_launcher
+    assert "mcp_servers.node_repl.env.CODEX_HOME='$accountBCodexHome'" in shared_launcher
+    assert "Copy-Item" not in shared_launcher
+    assert "Merge-CodexHookStateBlocks" not in shared_launcher
 
     plugin_hook_prefix = "wt-agent-hooks@wt-local:hooks/hooks.json:"
     main_hook_state = main["hooks"]["state"]
     account_b_hook_state = account_b["hooks"]["state"]
-    # Hook trust is profile-local.  Main may have zero receipts or the same
-    # four after its own native approval; either is legitimate.  The invariant
-    # under test is that main-to-B sync never erases B's four local receipts.
-    assert sum(key.startswith(plugin_hook_prefix) for key in main_hook_state) in {0, 4}
+    # The shared config contains the same trust decisions.  User-hook keys
+    # remain path-specific because Codex discovers each credential carrier's
+    # hooks.json path, but there is no second config or merge step.
+    assert main_hook_state == account_b_hook_state
+    assert sum(key.startswith(plugin_hook_prefix) for key in main_hook_state) == 4
     assert sum(key.startswith(plugin_hook_prefix) for key in account_b_hook_state) == 4
     main_agents = main_path.with_name("AGENTS.md").read_text(encoding="utf-8-sig")
     account_b_agents = account_b_path.with_name("AGENTS.md").read_text(encoding="utf-8-sig")
@@ -1590,12 +1665,20 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     assert "窗口、compact、局部结果和阶段报告不会自动清空" in main_agents
     assert "Pi 是单独且仍在快速演化的官方产品" in main_agents
     assert "S 只承载通用工程能力，不产生科学课题" in main_agents
+    assert "SENTINEL:DECLARED_RUNTIME_BEFORE_ENVIRONMENT_REPAIR_V1" in main_agents
+    assert "SENTINEL:ONE_LOGICAL_CODEX_RUNTIME_TWO_CREDENTIALS_V1" in main_agents
+    assert "两个 ChatGPT credential slot" in main_agents
+    assert "不做复制同步、双向投影、哈希追平或从 B 反推主源" in main_agents
+    assert "临时解释器、PATH 裸壳或临时 probe 的失败" in main_agents
+    assert "不能上卷成仓库、应用或整台机器缺失" in main_agents
+    assert "声明依赖与锁定来源、安装或恢复载体" in main_agents
+    assert "真实消费者 fresh readback" in main_agents
     assert "00_先读我_主线入口与读取顺序.txt" in main_agents
     assert "不触碰 `C:\\Users\\xx363\\Desktop\\历史备用 不动`" in main_agents
 
     contract = contract_path.read_text(encoding="utf-8-sig")
-    assert "`hooks.state` 是各入口已经作出的本地信任选择" in contract
-    assert "不把一次已确认的信任在下次启动时抹掉" in contract
+    assert "它们只选择不同 ChatGPT credential，不代表两套 Codex" in contract
+    assert "不生成或同步第二套配置" in contract
     assert "这是已授予的任务适配权，不是逐次用户审批点" in contract
     assert "普通探索、一般第二意见、并行方便、烧额度" in contract
     assert "覆盖只对该进程生效，退出即回到默认冷态" in contract
@@ -1610,6 +1693,11 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     ):
         assert recovery_state in contract
     assert "能力发现、调用、回读和回冷是四个不同状态" in contract
+
+    account_contract = account_contract_path.read_text(encoding="utf-8-sig")
+    assert "SENTINEL:ONE_CODEX_RUNTIME_TWO_CREDENTIAL_SLOTS_V1" in account_contract
+    assert "不做复制、双向同步、哈希追平或反向恢复" in account_contract
+    assert "不得为了“看起来更统一”硬链接活动 SQLite/WAL" in account_contract
 
 
 def test_live_zero_beat_hook_is_trusted_for_each_account() -> None:

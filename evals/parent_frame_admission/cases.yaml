@@ -2385,6 +2385,99 @@
     expected_symmetric_alternatives_considered: '["continue_existing_parent","complete_parent"]'
     expected_residual_defeater: none
 
+- description: An ambient tool miss cannot overwrite a healthy declared application runtime
+  metadata:
+    id: REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING
+    restored_context: >-
+      A local application's verification parent is active. Its manifest and lock
+      declare a package-manager-owned runtime. A command typed through an unrelated
+      PATH shell cannot resolve one library, but the locked project runner imports
+      that library and the application's formal verification command succeeds. The
+      user wants the application finished without accumulating machine-wide fixes.
+    user_increment: >-
+      这个壳提示缺库；别让每个窗口都顺手往全局装东西。判断真正是哪层缺失，然后把当前应用验证完成。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: verified_parent_frame
+    expected_next_action: finalize_verified_parent
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: verified_parent_complete
+    expected_active_level: current_frame
+    expected_surface_role: verified_parent_completion
+    expected_blocked_promotion: downstream_means_to_parent_result
+    expected_required_projection_levels: '["parent_result","current_frame","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_parent_status: complete
+    expected_turn_disposition: complete_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: true
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: false
+    expected_implicit_stop_rejected: false
+    expected_next_parent_item_admitted: false
+    expected_legal_terminal_predicate: parent_verified_complete
+    expected_decision_family: continue_or_finalize
+    expected_selected_control_action: complete_parent
+    expected_symmetric_alternatives_considered: '["continue_existing_parent","complete_parent"]'
+    expected_residual_defeater: none
+    expected_environment_ambient_probe_authority: non_authoritative
+    expected_environment_formal_consumer_status: healthy
+    expected_environment_route: use_declared_runtime_without_install
+    expected_environment_authoritative_dependency_update_required: false
+    expected_environment_recovery_or_rebuild_included: false
+
+- description: A formal runtime dependency miss is repaired through declaration install recovery and consumer readback
+  metadata:
+    id: REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR
+    restored_context: >-
+      A named local application's repair parent is active and authorizes reversible
+      dependency work. The documented entry point runs inside its declared isolated
+      runtime and fails because a required library is absent from both the dependency
+      manifest and lock. No credential, payment, new audience, irreversible action,
+      or user-only value choice is involved. The application, its rebuild carrier,
+      and a harmless real consumer command are all locally available.
+    user_increment: >-
+      既然正式入口也确认是真缺失，就直接完整修好；不要只告诉我安装命令，做到以后能恢复并让真实应用通过。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: mature_delivery_frame
+    expected_next_action: derive_and_execute_hidden_prerequisites
+    expected_semantic_effect_profile: true
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: outcome_request
+    expected_blocked_promotion: technical_choice_to_user
+    allowed_blocked_promotions: '["technical_choice_to_user","available_action_to_defer"]'
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+    allowed_turn_finalizations: '[null,{"parent_status":"active","turn_disposition":"continue_existing_parent","user_input_required":false,"hand_back_to_user":false,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":true,"next_parent_item_admitted":true,"legal_terminal_predicate":"none"}]'
+    expected_mature_completion: true
+    expected_decision_family: infer_or_ask
+    expected_selected_control_action: infer_and_execute
+    expected_symmetric_alternatives_considered: '["infer_and_execute","ask_user_once"]'
+    expected_residual_defeater: none
+    expected_environment_ambient_probe_authority: non_authoritative
+    allowed_environment_ambient_probe_authorities: '["not_applicable","non_authoritative"]'
+    expected_environment_formal_consumer_status: missing_dependency
+    expected_environment_route: repair_declared_runtime_then_verify
+    expected_environment_authoritative_dependency_update_required: true
+    expected_environment_recovery_or_rebuild_included: true
+
 - description: An explicit request to record the correction admits a bounded behavior child
   metadata:
     id: REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD

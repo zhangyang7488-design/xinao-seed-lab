@@ -61,8 +61,9 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert manifest["archive_sha256"] == _sha256(ARCHIVE)
     assert manifest["entry_count"] == len(manifest["entries"])
     assert manifest["source_and_projection"] == {
-        "main_home_is_live_source": True,
-        "account_b_is_generated_projection": True,
+        "main_home_is_canonical_shared_runtime_source": True,
+        "account_b_credential_home_links_to_shared_runtime": True,
+        "account_b_is_not_a_configuration_or_recovery_source": True,
         "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": True,
         "legacy_v1_is_separate_history_not_a_build_input": True,
     }
@@ -73,6 +74,8 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert "main-home/hooks.json" in names
     assert "main-home/config.toml" in names
     assert "main-home/native-collaboration.config.toml" in names
+    assert "launchers/Open-Codex-S-SharedRuntime.ps1" in names
+    assert "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md" in names
     assert "main-home/skills/repair-agent-behavior/SKILL.md" in names
     assert "main-home/skills/operate-for-user/SKILL.md" in names
     assert "main-home/skills/productivity/SKILL.md" in names
@@ -133,7 +136,13 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert rebuilt.returncode == 0, rebuilt.stderr
     rebuilt_manifest = json.loads((rebuilt_root / "manifest.v2.json").read_text(encoding="utf-8"))
     assert rebuilt_manifest["archive_sha256"] == manifest["archive_sha256"]
-    assert rebuilt_manifest["entries"] == manifest["entries"]
+    def portable_entries(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [
+            {key: value for key, value in row.items() if key != "live_source"}
+            for row in rows
+        ]
+
+    assert portable_entries(rebuilt_manifest["entries"]) == portable_entries(manifest["entries"])
 
 
 def test_builder_refuses_to_refresh_legacy_v1_media() -> None:
@@ -149,13 +158,6 @@ def test_builder_refuses_to_refresh_legacy_v1_media() -> None:
 def test_live_non_pi_productivity_projection_matches_v2_recovery_media_when_installed() -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     live_sources = [Path(str(entry["live_source"])) for entry in manifest["entries"]]
-    live_sources.extend(
-        (
-            Path(r"C:\Users\xx363\.codex-s-hardmode-account-b\AGENTS.md"),
-            Path(r"C:\Users\xx363\.codex-s-hardmode-account-b\hooks.json"),
-            Path(r"C:\Users\xx363\.codex-s-hardmode-account-b\cold-capabilities.config.toml"),
-        )
-    )
     if not all(path.is_file() for path in live_sources):
         return
     verified = _run_builder("verify-live")

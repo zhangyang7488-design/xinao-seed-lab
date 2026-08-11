@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 63
+    assert len(cases) == 65
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -79,6 +79,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
         "REG_CORRECTION_UPDATES_PARENT_NOT_NEW_LOCAL_TASK",
         "REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD",
+        "REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING",
+        "REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
     assert all("intent" in case["metadata"]["profiles"] for case in cases)
@@ -90,6 +92,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "credential_delivery",
         "process_visibility",
         "comparison_dimension",
+        "environment_binding",
         "decision_closure",
     }
     assert set(schema["required"]) == set(schema["properties"])
@@ -139,12 +142,21 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         comparison_schema["properties"]["configuration_proves_behavior_equivalence"]["const"]
         is False
     )
+    environment_schema = schema["properties"]["environment_binding"]
+    assert set(environment_schema["required"]) == set(environment_schema["properties"])
+    assert environment_schema["properties"]["declared_runtime_identified"]["const"] is True
+    assert (
+        environment_schema["properties"]["global_environment_pollution_allowed"]["const"]
+        is False
+    )
+    assert environment_schema["properties"]["consumer_readback_required"]["const"] is True
     assertion_source = (suite_root / "assert_behavior.js").read_text(encoding="utf-8")
     prompt_source = (suite_root / "prompt.txt").read_text(encoding="utf-8")
     assert "current request was bound to its own" in prompt_source
     assert "effectCredentialDeliveryMatches" in assertion_source
     assert "effectProcessVisibilityMatches" in assertion_source
     assert "effectComparisonDimensionMatches" in assertion_source
+    assert "effectEnvironmentBindingMatches" in assertion_source
     assert "const optionalObjectsMatch = effectProfile" in assertion_source
     assert "const closureAlternativesAreBoundedAndSufficient = effectProfile" in assertion_source
 
@@ -302,6 +314,13 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL",
         "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
     }
+    environment_case_ids = {
+        "REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING",
+        "REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR",
+    }
+    environment_terminal_cases = {
+        "REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING",
+    }
     credential_terminal_cases = {
         "REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE",
         "REG_REJECTED_CREDENTIAL_IS_NOT_WORKING_AND_USES_ALTERNATE",
@@ -324,10 +343,11 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "REG_HUMAN_SLEEP_WITH_EXPLICIT_WAIT_PAUSES_PARENT",
         }
         | new_transition_cases
-        | behavior_delivery_terminal_cases
-        | credential_terminal_cases
-        | process_visibility_terminal_cases
-    )
+            | behavior_delivery_terminal_cases
+            | credential_terminal_cases
+            | process_visibility_terminal_cases
+            | environment_terminal_cases
+        )
     # Keep monopoly out of the terminal-object set while still counting it as
     # a dual-track control case in the broader suite inventory.
     assert dual_track_closure_only.isdisjoint(set(terminal_cases))
@@ -484,6 +504,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         | behavior_delivery_terminal_cases
         | credential_case_ids
         | process_visibility_case_ids
+        | environment_case_ids
     )
     assert {
         closure_cases["REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK"][
@@ -499,6 +520,18 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         if "expected_credential_route" in case["vars"]
     }
     assert set(credential_cases) == credential_case_ids
+    environment_cases = {
+        case["vars"]["case_id"]: case["vars"]
+        for case in cases
+        if "expected_environment_route" in case["vars"]
+    }
+    assert set(environment_cases) == environment_case_ids
+    assert environment_cases[
+        "REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING"
+    ]["expected_environment_route"] == "use_declared_runtime_without_install"
+    assert environment_cases[
+        "REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR"
+    ]["expected_environment_route"] == "repair_declared_runtime_then_verify"
     assert {
         credential_cases[case_id]["expected_credential_route"]
         for case_id in {
