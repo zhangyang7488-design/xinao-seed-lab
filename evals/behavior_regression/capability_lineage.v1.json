@@ -4,7 +4,7 @@
   "authority": false,
   "runtime_loaded": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-11T19:31:51+08:00",
+  "evidence_cutoff": "2026-08-11T19:37:07+08:00",
   "purpose": "Recover the complete capability, pain, consumer, and retirement lineage before another architecture migration. This registry prevents carrier deletion from being mistaken for authority cleanup or capability restoration; it never selects a task, domain route, tool, worker, or completion state.",
   "current_runtime_topology": {
     "active_hook_events": [

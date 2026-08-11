@@ -3,7 +3,7 @@
   "sentinel": "SENTINEL:CODEX_INTENT_ACTION_COVERAGE_V1",
   "authority": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-11T19:31:51+08:00",
+  "evidence_cutoff": "2026-08-11T19:37:07+08:00",
   "coverage_rule": "A general behavior claim requires text, a live consumer, positive and negative regression, fresh behavior, and live effect; missing layers remain explicit.",
   "current_runtime_topology": {
     "active_hook_events": [
@@ -297,7 +297,7 @@
         "every behavior-regression source snapshot and deterministic preflight"
       ],
       "positive_negative_regression": "all 124 historical context cases are partitioned exactly once; science/Goal/continuous cases remain retired from S live suites; every retained capability family names a current consumer while silent carrier loss fails preflight; recovery v2 restores its scoped generic carriers into staging and keeps recovery v1 frozen as history rather than a build source",
-      "fresh_behavior": "The current deterministic v2 recovery must seal the shared situation implementation and classify the former UserPromptSubmit and four lifecycle scripts as cold; staged restore and live hash verification remain migration evidence rather than runtime behavior or science claims.",
+      "fresh_behavior": "On 2026-08-11 the deterministic v2 recovery built from canonical main sealed 113 exact entries with archive SHA-256 c7414f7d2b8912df0108c72b25a9d34a44d42b53c1967559edf2097d52ad536d, including all five shared situation runtime sources; verify-archive, verify-live, and restore-to an empty staging root all passed, while the previous UserPrompt hook and four lifecycle scripts remained cold. This is migration evidence rather than runtime behavior or a science claim.",
       "live_effect": "A future behavior migration can no longer delete the mixed historical carrier and still pass the normal behavior battery without explicitly preserving, replacing, colding, or retiring each capability family; current A/B hot projections are also hash-bound to the cold recovery media without making that archive a second runtime authority.",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "Repository preflight cannot force an unrelated manual A/B config edit to run the behavior battery. Fresh model behavior and A/B two-event owned-context discovery remain separate evidence, and authentication must not be copied across accounts."

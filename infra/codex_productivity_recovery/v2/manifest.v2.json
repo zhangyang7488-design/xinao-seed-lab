@@ -13,8 +13,8 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "544813f2279fd62105aca1a3f561f56331d6aed5e70dea3e4d3d91772c1d72bb",
-  "entry_count": 108,
+  "archive_sha256": "c7414f7d2b8912df0108c72b25a9d34a44d42b53c1967559edf2097d52ad536d",
+  "entry_count": 113,
   "entries": [
     {
       "archive_path": "contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md",
@@ -104,15 +104,15 @@
       "archive_path": "main-home/config.toml",
       "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
       "role": "main_live_source",
-      "size": 15030,
-      "sha256": "8060ad3071b31649eff0714a39ddb6a2de2d28456390a2234e78a0a118c8568a"
+      "size": 14713,
+      "sha256": "7d1310f1b7f4315c76fd47b1014c22eb5947a6f89d4852c8302f26a19c93e4cc"
     },
     {
       "archive_path": "main-home/hooks.json",
       "live_source": "C:\\Users\\xx363\\.codex\\hooks.json",
       "role": "main_live_source",
-      "size": 459,
-      "sha256": "d1eab0404d32b17a54812565e3fedf6020f1ab86f88eb08044f4fd6be21c0314"
+      "size": 885,
+      "sha256": "a6abef2a0fd99171d77310941ecc3360f4caedf9b15d6a86d891e3bb63b5613b"
     },
     {
       "archive_path": "main-home/inner-luna.config.toml",
@@ -612,11 +612,46 @@
       "sha256": "9031dfed687e20d6191ab70abe7aa367013b1f1661886690f6409cbd6d7286ec"
     },
     {
+      "archive_path": "repository/scripts/codex_situation_context_hook.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\codex_situation_context_hook.py",
+      "role": "situation_hook_adapter",
+      "size": 1225,
+      "sha256": "e8ea5af0ea873dc232ae7d2e3ef8de437767cb5df62299102c973afac0c23824"
+    },
+    {
+      "archive_path": "repository/scripts/manage_current_situation.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\manage_current_situation.py",
+      "role": "explicit_situation_manager",
+      "size": 3498,
+      "sha256": "56f4dda8bcbc479d31c13fed5521e6b564caed2bf8efce7f111facff2ca71a21"
+    },
+    {
+      "archive_path": "repository/services/agent_runtime/codex_situation_hook.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\codex_situation_hook.py",
+      "role": "situation_hook_adapter",
+      "size": 15020,
+      "sha256": "df8c26303d69f93feecbec111ea49b5bd29254d03f38c5b7dacac5d07f719e67"
+    },
+    {
+      "archive_path": "repository/services/agent_runtime/current_situation.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\current_situation.py",
+      "role": "situation_runtime_source",
+      "size": 27131,
+      "sha256": "e8e420da4cecf10f2baccf25b762d8b9aa39abcf1f2db453ddacb9478624c1f0"
+    },
+    {
+      "archive_path": "repository/services/agent_runtime/runtime_observation.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\runtime_observation.py",
+      "role": "situation_runtime_source",
+      "size": 32214,
+      "sha256": "b1ae2e5dd7931737dc274bbc4a53072a7c1cb2fd2b31908eb089b5be752f38dc"
+    },
+    {
       "archive_path": "runtime/Codex_Situation_Island/README.md",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\README.md",
       "role": "situation_island_contract",
-      "size": 2485,
-      "sha256": "8643a432346f218bcc7c01b1c8cf3a8b21b899820307232f3d4c7c45458aff0b"
+      "size": 2885,
+      "sha256": "5b9571de42952d550d4c5b3c481f55bf779193146adc6311d7fc9ef5d8f580a4"
     },
     {
       "archive_path": "runtime/Codex_Situation_Island/scripts/bind_active_task_continuation_v1.ps1",
@@ -656,7 +691,7 @@
     {
       "archive_path": "runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\user_prompt_zero_beat_v1.ps1",
-      "role": "active_user_prompt_hook",
+      "role": "cold_previous_user_prompt_hook",
       "size": 1084,
       "sha256": "99edb9042d43ac754563a5299f276ec49f0eaf3b8170c6ba5ba2adb5b65d1f61"
     },
