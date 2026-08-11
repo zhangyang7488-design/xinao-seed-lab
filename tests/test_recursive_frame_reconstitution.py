@@ -28,18 +28,14 @@ def test_recursive_frame_suite_is_balanced_and_not_keyword_routed() -> None:
         "NEG_EXPLICIT_STOP_PRESERVED",
     }
     assert by_id["REG_CURRENT_ACTION_BINDS_TO_SELF"]["expected_current_action_in_object"]
-    assert by_id["REG_XINAO_WORLD_PRECEDES_QUESTION"][
-        "expected_whole_reality_before_compression"
-    ]
+    assert by_id["REG_XINAO_WORLD_PRECEDES_QUESTION"]["expected_whole_reality_before_compression"]
     assert by_id["REG_XINAO_WORLD_PRECEDES_QUESTION"]["expected_next_behavior"] == (
         "compute_xinao_reality_directly"
     )
     assert by_id["REG_SECOND_SOL_REMAINS_UNALLOCATED"]["expected_next_behavior"] == (
         "leave_second_sol_unallocated"
     )
-    assert by_id["REG_XINAO_REALITY_REMAINS_PRIMARY_OBJECT"][
-        "accepted_object_behavior_pairs"
-    ] == [
+    assert by_id["REG_XINAO_REALITY_REMAINS_PRIMARY_OBJECT"]["accepted_object_behavior_pairs"] == [
         {
             "active_object": "current_agent_action",
             "next_behavior": "change_current_behavior_now",
@@ -49,24 +45,20 @@ def test_recursive_frame_suite_is_balanced_and_not_keyword_routed() -> None:
             "next_behavior": "compute_xinao_reality_directly",
         },
     ]
-    assert by_id["REG_XINAO_SELF_MODEL_REMAINS_CONDITIONAL"][
-        "expected_next_behavior"
-    ] == "change_current_behavior_now"
-    assert by_id["REG_XINAO_SELF_MODEL_REMAINS_CONDITIONAL"][
-        "expected_active_object"
-    ] == "current_agent_action"
-    assert by_id["REG_XINAO_SELF_MODEL_REMAINS_CONDITIONAL"][
-        "expected_current_action_in_object"
-    ]
-    assert not by_id["NEG_EXACT_HASH_STAYS_BOUNDED"][
-        "expected_whole_reality_before_compression"
-    ]
+    assert (
+        by_id["REG_XINAO_SELF_MODEL_REMAINS_CONDITIONAL"]["expected_next_behavior"]
+        == "change_current_behavior_now"
+    )
+    assert (
+        by_id["REG_XINAO_SELF_MODEL_REMAINS_CONDITIONAL"]["expected_active_object"]
+        == "current_agent_action"
+    )
+    assert by_id["REG_XINAO_SELF_MODEL_REMAINS_CONDITIONAL"]["expected_current_action_in_object"]
+    assert not by_id["NEG_EXACT_HASH_STAYS_BOUNDED"]["expected_whole_reality_before_compression"]
     assert by_id["NEG_LOCAL_FIX_STAYS_LOCAL"]["expected_next_behavior"] == (
         "execute_bounded_operation"
     )
-    assert by_id["NEG_EXPLICIT_STOP_PRESERVED"]["expected_next_behavior"] == (
-        "preserve_stop"
-    )
+    assert by_id["NEG_EXPLICIT_STOP_PRESERVED"]["expected_next_behavior"] == ("preserve_stop")
 
 
 def test_recursive_frame_promptfoo_consumer_is_fresh_read_only_and_non_ceremonial() -> None:
@@ -92,9 +84,7 @@ def test_recursive_frame_promptfoo_consumer_is_fresh_read_only_and_non_ceremonia
 
 
 def test_recursive_frame_suite_is_a_production_behavior_consumer() -> None:
-    runner = (REPO_ROOT / "scripts" / "run_behavior_regression.ps1").read_text(
-        encoding="utf-8"
-    )
+    runner = (REPO_ROOT / "scripts" / "run_behavior_regression.ps1").read_text(encoding="utf-8")
     snapshot = (REPO_ROOT / "scripts" / "prepare_behavior_regression_snapshot.py").read_text(
         encoding="utf-8"
     )

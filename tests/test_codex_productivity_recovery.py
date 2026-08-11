@@ -115,16 +115,10 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         == "active_user_prompt_hook"
     )
     assert (
-        roles[
-            "runtime/Codex_Situation_Island/scripts/"
-            "manage_explicit_continuation_locator_v1.ps1"
-        ]
+        roles["runtime/Codex_Situation_Island/scripts/manage_explicit_continuation_locator_v1.ps1"]
         == "on_demand_explicit_continuation_consumer"
     )
-    assert (
-        roles["human-entries/00_先读我_主线入口与读取顺序.txt"]
-        == "stable_human_reentry_entry"
-    )
+    assert roles["human-entries/00_先读我_主线入口与读取顺序.txt"] == "stable_human_reentry_entry"
     for cold_script in (
         "bind_active_task_continuation_v1.ps1",
         "restore_parent_task_continuation_v1.ps1",
@@ -167,18 +161,14 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         assert "SENTINEL:LOCAL_DOCKER_EXCEPTION_ONLY_V1" in agents_text
         assert "SENTINEL:OWNER_DIRECT_GROK_DEFAULT_DUAL_TRACK_V1" in agents_text
         assert "不得把“用户明确同意启用 Grok”叙述成合法性来源" in agents_text
-        amplify_text = archive.read(
-            "main-home/skills/amplify-supervisor-worker/SKILL.md"
-        ).decode("utf-8")
+        amplify_text = archive.read("main-home/skills/amplify-supervisor-worker/SKILL.md").decode(
+            "utf-8"
+        )
         assert "chain-internal technical route" in amplify_text
         assert "make worker reports the exclusive path to reality" in amplify_text
-        operator_text = archive.read("contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md").decode(
-            "utf-8"
-        )
+        operator_text = archive.read("contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md").decode("utf-8")
         assert "daemon 未启动是正常状态" in operator_text
-        launcher_text = archive.read("launchers/Invoke-Codex-GrokWorkerPool.ps1").decode(
-            "utf-8"
-        )
+        launcher_text = archive.read("launchers/Invoke-Codex-GrokWorkerPool.ps1").decode("utf-8")
         assert "New-CodexGrokTemporaryWorktree" in launcher_text
         worker_text = archive.read(
             "runtime/grok-worker-pool/bridge/Invoke-GrokComposer25Worker.ps1"

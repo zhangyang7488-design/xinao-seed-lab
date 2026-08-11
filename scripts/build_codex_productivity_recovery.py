@@ -20,9 +20,7 @@ MAIN_HOME = Path(r"C:\Users\xx363\.codex")
 ACCOUNT_B_HOME = Path(r"C:\Users\xx363\.codex-s-hardmode-account-b")
 LAUNCHER_ROOT = Path(r"C:\Users\xx363\CodexLaunchers")
 SITUATION_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island")
-STABLE_MAIN_ENTRY = Path(
-    r"C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt"
-)
+STABLE_MAIN_ENTRY = Path(r"C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt")
 GROK_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool")
 GROK_RUNTIME_MANIFEST = GROK_RUNTIME_ROOT / "runtime-manifest.v1.json"
 GROK_BRIDGE_ROOT = GROK_RUNTIME_ROOT / "bridge"

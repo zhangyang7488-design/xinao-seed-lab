@@ -401,9 +401,7 @@ def _legacy_v1_pointer_identity(runtime_root: Path) -> dict[str, str]:
     if manifest.get("source_capture") is None:
         raise SelectorReleaseError("legacy v1 source capture missing")
     _validate_source_capture(manifest, observed_files)
-    selector_sha = _sha(
-        manifest.get("selector_source_sha256"), "legacy selector_source_sha256"
-    )
+    selector_sha = _sha(manifest.get("selector_source_sha256"), "legacy selector_source_sha256")
     selector_relative = "services/agent_runtime/routing_policy_reader.py"
     if observed_files[selector_relative]["sha256"] != selector_sha:
         raise SelectorReleaseError("legacy v1 selector source declaration mismatch")
@@ -415,7 +413,10 @@ def _legacy_v1_pointer_identity(runtime_root: Path) -> dict[str, str]:
         raise SelectorReleaseError("legacy v1 probe interpreter declaration mismatch")
     if probe.get("selector_source_sha256") != selector_sha:
         raise SelectorReleaseError("legacy v1 probe selector declaration mismatch")
-    if manifest.get("authority") is not False or manifest.get("completion_claim_allowed") is not False:
+    if (
+        manifest.get("authority") is not False
+        or manifest.get("completion_claim_allowed") is not False
+    ):
         raise SelectorReleaseError("legacy v1 authority declaration mismatch")
     if _read_stable_bytes(manifest_path, label="legacy v1 release manifest") != manifest_raw:
         raise SelectorReleaseError("legacy v1 release manifest changed during observation")
@@ -800,9 +801,7 @@ def build_selector_release(
     if migrate_current_v1 and not promote:
         raise SelectorReleaseError("migrate_current_v1 is only valid when promote=True")
     if migrate_current_v1 and expected_current is not None:
-        raise SelectorReleaseError(
-            "migrate_current_v1 observes its own exact legacy expectation"
-        )
+        raise SelectorReleaseError("migrate_current_v1 observes its own exact legacy expectation")
     promotion_expectation: dict[str, str] | None = None
     if expected_current is not None:
         promotion_expectation = _normalize_current_identity(expected_current)
@@ -1142,9 +1141,7 @@ def _normalize_current_identity(
         return {
             "state": CURRENT_STATE_LEGACY_V1_PRESENT,
             "release_id": _text(value.get("release_id"), "expected_current.release_id"),
-            "pointer_sha256": _sha(
-                value.get("pointer_sha256"), "expected_current.pointer_sha256"
-            ),
+            "pointer_sha256": _sha(value.get("pointer_sha256"), "expected_current.pointer_sha256"),
             "release_manifest_sha256": _sha(
                 value.get("release_manifest_sha256"),
                 "expected_current.release_manifest_sha256",
@@ -1328,8 +1325,7 @@ def promote_selector_release(
                     observed = _legacy_v1_pointer_identity(runtime)
                 except SelectorReleaseError as exc:
                     raise SelectorReleaseError(
-                        "selector release current pointer changed from expected legacy v1: "
-                        f"{exc}"
+                        f"selector release current pointer changed from expected legacy v1: {exc}"
                     ) from exc
             else:
                 observed = _current_pointer_identity(pointer_path)
@@ -1344,9 +1340,7 @@ def promote_selector_release(
                     )
                 _replace_pointer_candidate(temporary_pointer, pointer_path)
                 status = (
-                    "release_migrated_from_legacy_v1"
-                    if migrate_current_v1
-                    else "release_promoted"
+                    "release_migrated_from_legacy_v1" if migrate_current_v1 else "release_promoted"
                 )
         finally:
             temporary_pointer.unlink(missing_ok=True)

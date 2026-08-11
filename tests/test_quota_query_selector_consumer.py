@@ -45,9 +45,7 @@ def _embedded_binding(script: Path) -> tuple[dict[str, object], bytes]:
 
 
 def _rewrite_embedded_binding(script: Path, binding: dict[str, object]) -> None:
-    raw = (
-        json.dumps(binding, ensure_ascii=False, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
+    raw = (json.dumps(binding, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
     installed = script.read_text(encoding="utf-8")
     installed, sha_count = _BINDING_SHA_ASSIGNMENT.subn(
         f'$installedValidatorBindingSha256 = "{hashlib.sha256(raw).hexdigest()}"', installed
@@ -683,15 +681,15 @@ def test_installer_publishes_hash_bound_validator_and_receipt_readback(tmp_path:
     assert embedded_binding["schema_version"] == "xinao.selector_validator_binding.v2"
     assert embedded_binding["collector"]["sha256"] == receipt["collector_sha256"]
     assert embedded_binding["node"]["sha256"] == receipt["node_sha256"]
-    assert embedded_binding["python_candidate"]["path"] == receipt[
-        "validator_python_candidate_ref"
-    ]
-    assert embedded_binding["python_candidate"]["sha256"] == receipt[
-        "validator_python_candidate_sha256"
-    ]
-    assert embedded_binding["python_candidate"]["size_bytes"] == receipt[
-        "validator_python_candidate_size_bytes"
-    ]
+    assert embedded_binding["python_candidate"]["path"] == receipt["validator_python_candidate_ref"]
+    assert (
+        embedded_binding["python_candidate"]["sha256"]
+        == receipt["validator_python_candidate_sha256"]
+    )
+    assert (
+        embedded_binding["python_candidate"]["size_bytes"]
+        == receipt["validator_python_candidate_size_bytes"]
+    )
     assert receipt["target_sha256"] == hashlib.sha256(installed.read_bytes()).hexdigest()
     assert receipt["receipt_sha256"] == hashlib.sha256(persisted_bytes).hexdigest()
     assert persisted["validator_binding_sha256"] == binding_sha
@@ -793,9 +791,7 @@ def test_installer_rejects_collector_leaf_symlink(tmp_path: Path) -> None:
     target_directory = runtime / "state" / "quota_query"
     target_directory.mkdir(parents=True)
     external_collector = tmp_path / "external-collector.mjs"
-    external_collector.write_text(
-        "process.stdout.write('{}');\n", encoding="utf-8", newline="\n"
-    )
+    external_collector.write_text("process.stdout.write('{}');\n", encoding="utf-8", newline="\n")
     try:
         (target_directory / "quota-query.mjs").symlink_to(external_collector)
     except OSError as exc:
@@ -848,10 +844,7 @@ def test_installer_ignores_marker_writing_python_cmd_without_execution(tmp_path:
     shim.mkdir()
     marker = tmp_path / "python-shim-ran.txt"
     (shim / "python.cmd").write_text(
-        "@echo off\r\n"
-        f'echo executed>"{marker}"\r\n'
-        f'echo {sys.executable}\r\n'
-        "exit /b 0\r\n",
+        f'@echo off\r\necho executed>"{marker}"\r\necho {sys.executable}\r\nexit /b 0\r\n',
         encoding="utf-8",
         newline="",
     )

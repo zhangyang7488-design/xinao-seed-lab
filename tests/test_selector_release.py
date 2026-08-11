@@ -318,12 +318,11 @@ def test_versioned_selector_release_is_not_task_cwd_dependent(tmp_path: Path) ->
     assert current["execution_binding"]["schema_version"] == (
         "xinao.selector_release_execution_binding.v1"
     )
-    assert [row["path"] for row in current["execution_binding"]["files"]] == list(
-        RELEASE_FILES
+    assert [row["path"] for row in current["execution_binding"]["files"]] == list(RELEASE_FILES)
+    assert (
+        current["execution_binding"]["python"]["sha256"]
+        == current["release_manifest"]["python_sha256"]
     )
-    assert current["execution_binding"]["python"]["sha256"] == current[
-        "release_manifest"
-    ]["python_sha256"]
     assert current["release_manifest"]["probe"]["dependency_distributions"]["jsonschema"]
     assert current["release_manifest"]["probe"]["dependency_distributions"]["portalocker"]
     assert current["release_manifest"]["probe"]["dispatch_route_claim_callable"] is True
@@ -873,9 +872,11 @@ def test_legacy_v1_migration_is_recoverable_after_replace_before_return(
     pointer_path = Path(str(legacy["pointer_path"]))
 
     def crash_on_committed_readback(path: Path) -> dict[str, object]:
-        if Path(path) == pointer_path and json.loads(pointer_path.read_text(encoding="utf-8"))[
-            "release_id"
-        ] == "v2-after-crash":
+        if (
+            Path(path) == pointer_path
+            and json.loads(pointer_path.read_text(encoding="utf-8"))["release_id"]
+            == "v2-after-crash"
+        ):
             raise RuntimeError("simulated process crash after pointer replace")
         return real_validate(path)
 
@@ -897,13 +898,7 @@ def test_legacy_v1_migration_is_recoverable_after_replace_before_return(
     monkeypatch.setattr(selector_release, "validate_selector_release_pointer", real_validate)
 
     assert load_current_selector_release(runtime)["release_id"] == "v2-after-crash"
-    assert (
-        runtime
-        / "state"
-        / "grok_supervisor_selector"
-        / "releases"
-        / "v2-after-crash"
-    ).is_dir()
+    assert (runtime / "state" / "grok_supervisor_selector" / "releases" / "v2-after-crash").is_dir()
     assert Path(str(legacy["manifest_path"])).read_bytes() == legacy["manifest_raw"]
 
 

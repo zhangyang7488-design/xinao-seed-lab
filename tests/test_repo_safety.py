@@ -551,16 +551,14 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert '[string]$CommonPythonExe = ""' in launcher_text
     assert '[string]$CommonPythonExe = ""' in dispatch_text
     assert '[string]$CommonPythonExe = ""' in pool_text
-    assert (
-        "$CommonPythonExe = [string]$supervisorCapability.python_executable" in dispatch_text
-    )
+    assert "$CommonPythonExe = [string]$supervisorCapability.python_executable" in dispatch_text
     assert '[string]$CommonPythonExe = "python"' not in launcher_text
     assert '[string]$CommonPythonExe = "python"' not in dispatch_text
     assert '[string]$CommonPythonExe = "python"' not in pool_text
-    assert '[switch]$AllowExceptionalDocker' in launcher_text
+    assert "[switch]$AllowExceptionalDocker" in launcher_text
     assert "New-CodexGrokTemporaryWorktree" in launcher_text
     assert "CODEX_GROK_HOST_WORKTREE_REQUIRES_FRESH_SELECTION" in launcher_text
-    assert '$workerExecutionBackend = if ($AllowExceptionalDocker)' in pool_text
+    assert "$workerExecutionBackend = if ($AllowExceptionalDocker)" in pool_text
     assert "GROK_DOCKER_EXCEPTION_OPT_IN_REQUIRED" in worker_text
     assert 'HostIsolationMode = "temporary-git-worktree"' not in worker_text
     assert '"temporary-git-worktree"' in worker_text
@@ -672,9 +670,7 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
 def test_stable_reentry_uses_only_one_explicit_continuation_locator_when_installed(
     tmp_path: Path,
 ) -> None:
-    stable_entry = Path(
-        r"C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt"
-    )
+    stable_entry = Path(r"C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt")
     manager = Path(
         r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
         r"\manage_explicit_continuation_locator_v1.ps1"
@@ -1622,10 +1618,7 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     contract_path = Path(r"C:\Users\xx363\CodexLaunchers\CODEX_PRODUCTIVITY_PROFILE.md")
     shared_launcher_path = REPO_ROOT / "scripts" / "Open-Codex-S-SharedRuntime.ps1"
     account_contract_path = (
-        REPO_ROOT
-        / "docs"
-        / "tool_glue"
-        / "CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md"
+        REPO_ROOT / "docs" / "tool_glue" / "CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md"
     )
     required_paths = (
         main_path,

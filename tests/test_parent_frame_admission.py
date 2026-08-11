@@ -148,8 +148,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert set(environment_schema["required"]) == set(environment_schema["properties"])
     assert environment_schema["properties"]["declared_runtime_identified"]["const"] is True
     assert (
-        environment_schema["properties"]["global_environment_pollution_allowed"]["const"]
-        is False
+        environment_schema["properties"]["global_environment_pollution_allowed"]["const"] is False
     )
     assert environment_schema["properties"]["consumer_readback_required"]["const"] is True
     assertion_source = (suite_root / "assert_behavior.js").read_text(encoding="utf-8")
@@ -242,9 +241,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert scoped_owner["expected_frame_relation"] == "correction_to_existing_parent"
     assert scoped_owner["expected_task_switch"] is False
     assert scoped_owner["expected_surface_role"] == "semantic_scope_correction"
-    assert scoped_owner["expected_blocked_promotion"] == (
-        "product_identity_to_owner_appointment"
-    )
+    assert scoped_owner["expected_blocked_promotion"] == ("product_identity_to_owner_appointment")
     assert set(json.loads(scoped_owner["allowed_blocked_promotions"])) == {
         "product_identity_to_owner_appointment",
         "stale_object_to_current_object",
@@ -347,11 +344,11 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "REG_HUMAN_SLEEP_WITH_EXPLICIT_WAIT_PAUSES_PARENT",
         }
         | new_transition_cases
-            | behavior_delivery_terminal_cases
-            | credential_terminal_cases
-            | process_visibility_terminal_cases
-            | environment_terminal_cases
-        )
+        | behavior_delivery_terminal_cases
+        | credential_terminal_cases
+        | process_visibility_terminal_cases
+        | environment_terminal_cases
+    )
     # Keep monopoly out of the terminal-object set while still counting it as
     # a dual-track control case in the broader suite inventory.
     assert dual_track_closure_only.isdisjoint(set(terminal_cases))
@@ -530,12 +527,18 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         if "expected_environment_route" in case["vars"]
     }
     assert set(environment_cases) == environment_case_ids
-    assert environment_cases[
-        "REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING"
-    ]["expected_environment_route"] == "use_declared_runtime_without_install"
-    assert environment_cases[
-        "REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR"
-    ]["expected_environment_route"] == "repair_declared_runtime_then_verify"
+    assert (
+        environment_cases["REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING"][
+            "expected_environment_route"
+        ]
+        == "use_declared_runtime_without_install"
+    )
+    assert (
+        environment_cases["REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR"][
+            "expected_environment_route"
+        ]
+        == "repair_declared_runtime_then_verify"
+    )
     assert {
         credential_cases[case_id]["expected_credential_route"]
         for case_id in {
@@ -696,9 +699,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         == "dispatch_parallel_and_owner_consume"
     )
     assert (
-        closure_cases["REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN"][
-            "expected_blocked_promotion"
-        ]
+        closure_cases["REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN"]["expected_blocked_promotion"]
         == "internal_worker_routing_to_user_authorization"
     )
     assert (

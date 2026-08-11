@@ -3,11 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "infra" / "pi_upstream_dual_entry" / "v1"
@@ -73,8 +72,10 @@ def test_pi_contract_island_manifests_keep_one_home_and_cold_history() -> None:
         Path(surface["generated_contract_projection"]),
     )
     for projection in projections:
-        assert str(projection).replace("\\", "/").startswith(
-            "D:/XINAO_RESEARCH_RUNTIME/state/pi/0.84.1/profiles/"
+        assert (
+            str(projection)
+            .replace("\\", "/")
+            .startswith("D:/XINAO_RESEARCH_RUNTIME/state/pi/0.84.1/profiles/")
         )
         assert projection.name == "PI_CONTRACT.md"
 
@@ -131,9 +132,7 @@ def test_pi_desktop_launch_chain_parses_in_windows_powershell_51() -> None:
 
 
 def test_pi_windows_powershell_51_scripts_avoid_newer_dotnet_hash_apis() -> None:
-    scripts = "\n".join(
-        _text(path) for path in sorted((SOURCE_ROOT / "scripts").glob("*.ps1"))
-    )
+    scripts = "\n".join(_text(path) for path in sorted((SOURCE_ROOT / "scripts").glob("*.ps1")))
     assert "[Security.Cryptography.SHA256]::HashData" not in scripts
     assert "[Convert]::ToHexString" not in scripts
 
@@ -207,31 +206,27 @@ def test_main_prime_core_is_profile_scoped_and_cold_backup_stays_isolated() -> N
             "New-PiSBodyLab.ps1",
         )
     }
-    midturn_apply = _text(
-        SOURCE_ROOT / "scripts" / "Apply-PiSMidTurnCompactionCompatibility.ps1"
-    )
+    midturn_apply = _text(SOURCE_ROOT / "scripts" / "Apply-PiSMidTurnCompactionCompatibility.ps1")
     midturn_restore = _text(
         SOURCE_ROOT / "scripts" / "Restore-PiSMidTurnCompactionCompatibility.ps1"
     )
-    post_apply = _text(
-        SOURCE_ROOT / "scripts" / "Apply-PiSPost0841UpstreamCompatibility.ps1"
-    )
-    post_restore = _text(
-        SOURCE_ROOT / "scripts" / "Restore-PiSPost0841UpstreamCompatibility.ps1"
-    )
+    post_apply = _text(SOURCE_ROOT / "scripts" / "Apply-PiSPost0841UpstreamCompatibility.ps1")
+    post_restore = _text(SOURCE_ROOT / "scripts" / "Restore-PiSPost0841UpstreamCompatibility.ps1")
     start = consumers["Start-UpstreamPi.ps1"]
     installer = _text(SOURCE_ROOT / "scripts" / "Install-PiSMainCore.ps1")
     readme = _text(SOURCE_ROOT / "README.md")
     recovery = _text(
-        SOURCE_ROOT
-        / "codex-skills"
-        / "steward-pis-evolution"
-        / "references"
-        / "recovery-map.md"
+        SOURCE_ROOT / "codex-skills" / "steward-pis-evolution" / "references" / "recovery-map.md"
     )
 
-    assert "$script:PiDualEntryMainToolRoot = 'D:\\XINAO_RESEARCH_RUNTIME\\tools\\pi\\prime\\0.84.1'" in common
-    assert "$script:PiDualEntryBackupToolRoot = 'D:\\XINAO_RESEARCH_RUNTIME\\tools\\pi\\0.84.1'" in common
+    assert (
+        "$script:PiDualEntryMainToolRoot = 'D:\\XINAO_RESEARCH_RUNTIME\\tools\\pi\\prime\\0.84.1'"
+        in common
+    )
+    assert (
+        "$script:PiDualEntryBackupToolRoot = 'D:\\XINAO_RESEARCH_RUNTIME\\tools\\pi\\0.84.1'"
+        in common
+    )
     assert "PiToolRoot = $toolRoot" in common
     assert "PiCommand = Join-Path $toolRoot 'node_modules\\.bin\\pi.cmd'" in common
     assert "[Parameter(Mandatory)]$Spec" in common
@@ -254,9 +249,10 @@ def test_main_prime_core_is_profile_scoped_and_cold_backup_stays_isolated() -> N
     assert "shared_cold_backup_core_allowed = $false" in post_apply
     assert "Apply-PiSPost0841UpstreamCompatibility.ps1" in start
     assert "-PiToolRoot $spec.PiToolRoot" in start
-    assert "xinao.pi_main_with_cold_snapshot.acceptance.v4" in consumers[
-        "Test-UpstreamPiDualEntry.ps1"
-    ]
+    assert (
+        "xinao.pi_main_with_cold_snapshot.acceptance.v4"
+        in consumers["Test-UpstreamPiDualEntry.ps1"]
+    )
     assert "Get-PiDualEntrySpec -Profile 'prime-s'" in installer
     assert "$script:PiDualEntryMainToolRoot" in installer
     assert "$script:PiDualEntryBackupToolRoot" in installer
@@ -311,11 +307,7 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "prime-agent-local-cognition-island\\AGENTS.md" in common
     assert "explicitly frozen cold backup consume the same" in initializer
     assert (
-        SOURCE_ROOT
-        / "surface-overlays"
-        / "prime-s"
-        / "agents"
-        / "body-friction-auditor.md"
+        SOURCE_ROOT / "surface-overlays" / "prime-s" / "agents" / "body-friction-auditor.md"
     ).is_file()
     assert "agents\\evolution" not in initializer
     assert "日期化工程映射" in readme
@@ -379,7 +371,10 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "PI_SESSION_SELECTION_CONFLICTS_WITH_NEW_SESSION" in start
     assert "PI_SESSION_SELECTION_OUTSIDE_PROFILE" in start
     assert "$arguments += @('--session',$selectedSession)" in start
-    assert "Packages = @('npm:pi-subagents@0.44.0','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')" in common
+    assert (
+        "Packages = @('npm:pi-subagents@0.44.0','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')"
+        in common
+    )
     assert common.count("npm:pi-autoresearch@1.6.2") == 1
     assert "[string]$_ -cne 'npm:pi-autoresearch@1.6.2'" in initializer
     assert "ExcludedOverlayAgentNames = @('body-friction-auditor.md')" in common
@@ -404,10 +399,20 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert (control_root / "README.md").is_file()
     assert (control_root / "pi-native-control.mjs").is_file()
     assert not (
-        SOURCE_ROOT / "surface-overlays" / "prime-s" / "skills" / "understand-and-steer-prime" / "SKILL.md"
+        SOURCE_ROOT
+        / "surface-overlays"
+        / "prime-s"
+        / "skills"
+        / "understand-and-steer-prime"
+        / "SKILL.md"
     ).exists()
     assert not (
-        SOURCE_ROOT / "surface-overlays" / "prime-b" / "skills" / "understand-and-steer-prime" / "SKILL.md"
+        SOURCE_ROOT
+        / "surface-overlays"
+        / "prime-b"
+        / "skills"
+        / "understand-and-steer-prime"
+        / "SKILL.md"
     ).exists()
     assert (
         SOURCE_ROOT / "surface-overlays" / "prime-s" / "extensions" / "return-to-parent.ts"
@@ -417,27 +422,17 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     ).exists()
     assert (SOURCE_ROOT / "surface-overlays" / "prime-s" / "agents" / "peer.md").is_file()
     assert not (SOURCE_ROOT / "surface-overlays" / "prime-b" / "agents" / "peer.md").exists()
-    snapshot_contract = _text(
-        SOURCE_ROOT / "surface-overlays" / "prime-b" / "COLD_SNAPSHOT.md"
-    )
+    snapshot_contract = _text(SOURCE_ROOT / "surface-overlays" / "prime-b" / "COLD_SNAPSHOT.md")
     assert "Never copied from main or cross-linked: Codex OAuth" in snapshot_contract
     assert "ordinary maintenance, upgrade, test, reporting, and mention cone" in snapshot_contract
 
 
 def test_prime_s_programmatic_restart_preserves_visible_terminal_profile() -> None:
-    restart = _text(
-        SOURCE_ROOT / "scripts" / "Start-PrimeSInWindowsTerminal.ps1"
-    )
+    restart = _text(SOURCE_ROOT / "scripts" / "Start-PrimeSInWindowsTerminal.ps1")
     readme = _text(SOURCE_ROOT / "README.md")
-    steward = _text(
-        SOURCE_ROOT / "codex-skills" / "steward-pis-evolution" / "SKILL.md"
-    )
+    steward = _text(SOURCE_ROOT / "codex-skills" / "steward-pis-evolution" / "SKILL.md")
     recovery = _text(
-        SOURCE_ROOT
-        / "codex-skills"
-        / "steward-pis-evolution"
-        / "references"
-        / "recovery-map.md"
+        SOURCE_ROOT / "codex-skills" / "steward-pis-evolution" / "references" / "recovery-map.md"
     )
 
     assert "$terminalProfileName = 'prime'" in restart
@@ -458,9 +453,7 @@ def test_prime_s_programmatic_restart_preserves_visible_terminal_profile() -> No
 
 
 def test_prime_s_numpad_enter_follow_preserves_native_input_and_is_nonblocking() -> None:
-    helper = _text(
-        SOURCE_ROOT / "helpers" / "PrimeS-NumPadEnter-Follow.ahk"
-    )
+    helper = _text(SOURCE_ROOT / "helpers" / "PrimeS-NumPadEnter-Follow.ahk")
     configure = _text(SOURCE_ROOT / "scripts" / "Set-PiSNumpadEnterFollow.ps1")
     probe = _text(SOURCE_ROOT / "scripts" / "Test-PiSNumpadEnterFollow.mjs")
     initializer = _text(SOURCE_ROOT / "scripts" / "Initialize-UpstreamPiProfiles.ps1")
@@ -493,7 +486,7 @@ def test_prime_s_numpad_enter_follow_preserves_native_input_and_is_nonblocking()
     assert 'manager.getKeys("tui.input.submit")' in probe
     assert 'manager.matches("\\u001b[24~", "tui.altScreen.bottom")' in probe
     assert 'manager.matches("\\r", "tui.input.submit")' in probe
-    assert 'f12Claimants.length !== 1' in probe
+    assert "f12Claimants.length !== 1" in probe
 
     assert "Set-PiSNumpadEnterFollow.ps1" in initializer
     assert "Set-PiSNumpadEnterFollow.ps1" in start
@@ -511,11 +504,7 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     initializer = _text(SOURCE_ROOT / "scripts" / "Initialize-UpstreamPiProfiles.ps1")
     start = _text(SOURCE_ROOT / "scripts" / "Start-UpstreamPi.ps1")
     extension = _text(
-        SOURCE_ROOT
-        / "surface-overlays"
-        / "prime-s"
-        / "extensions"
-        / "supervisor-ingress.ts"
+        SOURCE_ROOT / "surface-overlays" / "prime-s" / "extensions" / "supervisor-ingress.ts"
     )
     control_root = SOURCE_ROOT / "operator-tools" / "pi-native-ingress"
     control_note = _text(control_root / "README.md")
@@ -589,9 +578,25 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "client_fails_fast_on_typed_delivery_failure: true" in regression
     assert "stop_cancels_unconsumed_owned_delivery: true" in regression
     assert "stop_request_not_misreported_as_process_exit: true" in regression
-    assert (SOURCE_ROOT / "surface-overlays" / "prime-b" / "extensions" / "supervisor-ingress.ts").is_file()
-    assert not (SOURCE_ROOT / "surface-overlays" / "prime-b" / "skills" / "understand-and-steer-prime" / "SKILL.md").exists()
-    assert not (SOURCE_ROOT / "surface-overlays" / "prime-s" / "skills" / "understand-and-steer-prime" / "SKILL.md").exists()
+    assert (
+        SOURCE_ROOT / "surface-overlays" / "prime-b" / "extensions" / "supervisor-ingress.ts"
+    ).is_file()
+    assert not (
+        SOURCE_ROOT
+        / "surface-overlays"
+        / "prime-b"
+        / "skills"
+        / "understand-and-steer-prime"
+        / "SKILL.md"
+    ).exists()
+    assert not (
+        SOURCE_ROOT
+        / "surface-overlays"
+        / "prime-s"
+        / "skills"
+        / "understand-and-steer-prime"
+        / "SKILL.md"
+    ).exists()
 
 
 def test_pi_s_body_lab_is_isolated_version_pinned_and_session_empty() -> None:
@@ -603,7 +608,7 @@ def test_pi_s_body_lab_is_isolated_version_pinned_and_session_empty() -> None:
     assert "$activeAuthSource = Join-Path $source.AgentDir 'auth.json'" in body_lab
     assert "Copy-Item -LiteralPath $activeAuthSource" in body_lab
     assert "Sync-PiDualEntrySurfaceOverlay -Spec $labSpec" in body_lab
-    assert 'if ($ownedRelative -in @($overlay.OwnedFiles))' in body_lab
+    assert "if ($ownedRelative -in @($overlay.OwnedFiles))" in body_lab
     assert "PI_S_BODY_LAB_OVERLAY_PROJECTION_MISSING" in body_lab
     assert "PI_S_BODY_LAB_OVERLAY_PROJECTION_DRIFT" in body_lab
     assert "surface_overlay_projection_verified = $true" in body_lab
@@ -624,15 +629,9 @@ def test_pi_s_body_lab_is_isolated_version_pinned_and_session_empty() -> None:
 
 
 def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() -> None:
-    compatibility = _text(
-        SOURCE_ROOT / "scripts" / "Apply-PiSMidTurnCompactionCompatibility.ps1"
-    )
-    restore = _text(
-        SOURCE_ROOT / "scripts" / "Restore-PiSMidTurnCompactionCompatibility.ps1"
-    )
-    regression = _text(
-        SOURCE_ROOT / "scripts" / "Test-PiSMidTurnCompaction.mjs"
-    )
+    compatibility = _text(SOURCE_ROOT / "scripts" / "Apply-PiSMidTurnCompactionCompatibility.ps1")
+    restore = _text(SOURCE_ROOT / "scripts" / "Restore-PiSMidTurnCompactionCompatibility.ps1")
+    regression = _text(SOURCE_ROOT / "scripts" / "Test-PiSMidTurnCompaction.mjs")
     installer = _text(SOURCE_ROOT / "scripts" / "Install-UpstreamPiCapabilities.ps1")
     start = _text(SOURCE_ROOT / "scripts" / "Start-UpstreamPi.ps1")
     body_lab = _text(SOURCE_ROOT / "scripts" / "New-PiSBodyLab.ps1")
@@ -688,7 +687,10 @@ def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() ->
     assert "$env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE = '1'" in start
     assert "Remove-Item Env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE" in start
     assert "midturn_compaction_compatibility" in start
-    assert "midturn_compaction_runtime_enabled = (-not $DisableMidTurnCompactionCompatibility)" in start
+    assert (
+        "midturn_compaction_runtime_enabled = (-not $DisableMidTurnCompactionCompatibility)"
+        in start
+    )
     assert "DisableMidTurnCompactionCompatibility" in start
     assert "Restore-PiSMidTurnCompactionCompatibility.ps1" in start
     assert "PI_SURFACE_TEST_MIDTURN_PATCH_STATUS_INVALID" in surface_test
@@ -713,13 +715,9 @@ def test_prime_s_native_continuation_is_root_only_abort_fenced_and_reversible() 
     mechanical = _text(SOURCE_ROOT / "scripts" / "Test-PiSReturnToParent.mjs")
     live = _text(SOURCE_ROOT / "scripts" / "Test-PiSReturnToParentLive.mjs")
     core_patch = _text(
-        SOURCE_ROOT
-        / "patches"
-        / "pi-coding-agent-0.84.1-native-continuation-abort-fence.patch"
+        SOURCE_ROOT / "patches" / "pi-coding-agent-0.84.1-native-continuation-abort-fence.patch"
     )
-    apply_native = _text(
-        SOURCE_ROOT / "scripts" / "Apply-PiSNativeContinuationCompatibility.ps1"
-    )
+    apply_native = _text(SOURCE_ROOT / "scripts" / "Apply-PiSNativeContinuationCompatibility.ps1")
     restore_native = _text(
         SOURCE_ROOT / "scripts" / "Restore-PiSNativeContinuationCompatibility.ps1"
     )
@@ -738,7 +736,7 @@ def test_prime_s_native_continuation_is_root_only_abort_fenced_and_reversible() 
     assert 'deliverAs: "followUp", triggerTurn: true' in extension
     assert "continuationRunSignal" in extension
     assert "xinao-return-to-parent-continuation" in extension
-    assert "provider_context_visibility: \"single_current_arm\"" in extension
+    assert 'provider_context_visibility: "single_current_arm"' in extension
 
     assert "xinao.pi_return_to_parent.acceptance.v5" in mechanical
     assert "provider_calls_multi_provider_continuation" in mechanical
@@ -783,9 +781,7 @@ def test_prime_s_native_continuation_is_root_only_abort_fenced_and_reversible() 
 
 def test_prime_s_filesystem_policy_receipt_is_bound_to_current_active_packages() -> None:
     surface_test = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
-    filesystem_apply = _text(
-        SOURCE_ROOT / "scripts" / "Apply-PiSSubagentsFilesystemPolicy.ps1"
-    )
+    filesystem_apply = _text(SOURCE_ROOT / "scripts" / "Apply-PiSSubagentsFilesystemPolicy.ps1")
     filesystem_acceptance = _text(
         SOURCE_ROOT / "scripts" / "Test-PiSFilesystemPolicyAcceptance.ps1"
     )
@@ -802,10 +798,11 @@ def test_prime_s_filesystem_policy_receipt_is_bound_to_current_active_packages()
     assert "$startMidTurnApplyIndex" in filesystem_acceptance
     assert (
         "$startText.LastIndexOf('if ($DisableMidTurnCompactionCompatibility)',"
-        "$startMidTurnApplyIndex,[StringComparison]::Ordinal)"
-        in filesystem_acceptance
+        "$startMidTurnApplyIndex,[StringComparison]::Ordinal)" in filesystem_acceptance
     )
-    assert "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_REQUIRES_PAIRED_ISOLATED_CORE" in filesystem_acceptance
+    assert (
+        "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_REQUIRES_PAIRED_ISOLATED_CORE" in filesystem_acceptance
+    )
     assert "Join-Path $target 'pi-tool-root'" in filesystem_acceptance
     assert "Join-Path $FixtureRoot 'codex-home'" in filesystem_acceptance
     assert "'--codex-home', $isolatedCodexHome" in filesystem_acceptance
@@ -820,16 +817,30 @@ def test_prime_s_filesystem_policy_receipt_is_bound_to_current_active_packages()
     assert "PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT = $piCodingAgentRoot" in filesystem_acceptance
     assert "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_CHILD_PI_RESOLUTION_DRIFT" in filesystem_acceptance
     assert "pi_binary_override_neutralized = $true" in filesystem_acceptance
-    assert "Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $peer.Value" in filesystem_acceptance
+    assert (
+        "Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $peer.Value" in filesystem_acceptance
+    )
     assert "isolated_pi_entrypoints_unchanged = $true" in filesystem_acceptance
     assert filesystem_acceptance.count("Invoke-PiDualEntryNativeCommand") == 3
     assert "$LASTEXITCODE" not in filesystem_acceptance
     assert "spawn-resolver-probe.mjs" in filesystem_acceptance
     assert "process.argv.slice(2)" in filesystem_acceptance
-    assert "CapacityV41 = 'ef0ba69b0c6d083b27e5f05336031556ad0a7a2646cfb018ec91a3100c8eadf4'" in filesystem_apply
-    assert "CapacityV41 = 'a32eb20de710ec4b443b1027d8bff76afc8d6e853d4d4e72783501b839764661'" in filesystem_apply
-    assert "Capacity = '64ecfc461aea05adf809dda9a296364e8e85098ffb7b9c0d71c9d4c5101fb921'" in filesystem_apply
-    assert "Capacity = '6356456ead3ad359324a5664786da74dc0077de80448e35f209a797127482371'" in filesystem_apply
+    assert (
+        "CapacityV41 = 'ef0ba69b0c6d083b27e5f05336031556ad0a7a2646cfb018ec91a3100c8eadf4'"
+        in filesystem_apply
+    )
+    assert (
+        "CapacityV41 = 'a32eb20de710ec4b443b1027d8bff76afc8d6e853d4d4e72783501b839764661'"
+        in filesystem_apply
+    )
+    assert (
+        "Capacity = '64ecfc461aea05adf809dda9a296364e8e85098ffb7b9c0d71c9d4c5101fb921'"
+        in filesystem_apply
+    )
+    assert (
+        "Capacity = '6356456ead3ad359324a5664786da74dc0077de80448e35f209a797127482371'"
+        in filesystem_apply
+    )
     assert "high_capacity_generation_accepted = $capacityGeneration" in filesystem_apply
 
 
@@ -842,18 +853,16 @@ def test_prime_s_high_capacity_is_typed_main_only_and_transactional() -> None:
     main_core = _text(SOURCE_ROOT / "scripts" / "Install-PiSMainCore.ps1")
     body_lab = _text(SOURCE_ROOT / "scripts" / "New-PiSBodyLab.ps1")
     surface_test = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
-    recursive_peer = _text(SOURCE_ROOT / "surface-overlays" / "prime-s" / "agents" / "recursive-peer.md")
-    readme = _text(SOURCE_ROOT / "README.md")
-    capacity_public = _text(
-        SOURCE_ROOT / "scripts" / "Test-PiSHighCapacityPublicTasks.test.mjs"
+    recursive_peer = _text(
+        SOURCE_ROOT / "surface-overlays" / "prime-s" / "agents" / "recursive-peer.md"
     )
+    readme = _text(SOURCE_ROOT / "README.md")
+    capacity_public = _text(SOURCE_ROOT / "scripts" / "Test-PiSHighCapacityPublicTasks.test.mjs")
     capacity_width = _text(
         SOURCE_ROOT / "scripts" / "Test-PiSHighCapacityWidthTurnPreflight.test.mjs"
     )
     capacity_resume_delta = _text(
-        SOURCE_ROOT
-        / "patches"
-        / "pi-subagents-0.44.0-high-capacity-v4.2-descriptor-resume.patch"
+        SOURCE_ROOT / "patches" / "pi-subagents-0.44.0-high-capacity-v4.2-descriptor-resume.patch"
     )
 
     assert "maxSubagentDepth = 3" in common
@@ -884,12 +893,10 @@ def test_prime_s_high_capacity_is_typed_main_only_and_transactional() -> None:
     assert start.index("$capacityCompatibilityMutex = [Threading.Mutex]::new") < start.index(
         "Sync-PiDualEntrySurfaceOverlay"
     )
-    assert start.index("$held = $mutex.WaitOne(0)") < start.index(
-        "Sync-PiDualEntrySurfaceOverlay"
-    )
-    assert start.index("$capacityCompatibilityHeld = $capacityCompatibilityMutex.WaitOne(0)") < start.index(
-        "Sync-PiDualEntrySurfaceOverlay"
-    )
+    assert start.index("$held = $mutex.WaitOne(0)") < start.index("Sync-PiDualEntrySurfaceOverlay")
+    assert start.index(
+        "$capacityCompatibilityHeld = $capacityCompatibilityMutex.WaitOne(0)"
+    ) < start.index("Sync-PiDualEntrySurfaceOverlay")
     assert "PI_S_HIGH_CAPACITY_RUNTIME_HANDSHAKE_WITHOUT_VERIFIED_PACKAGE_AND_CORE" in start
     for consumer in (installer, main_core, body_lab):
         assert "Apply-PiSHighCapacityCompatibility.ps1" in consumer
@@ -901,12 +908,15 @@ def test_prime_s_high_capacity_is_typed_main_only_and_transactional() -> None:
     assert "PI_SURFACE_TEST_HIGH_CAPACITY_LAB_REPLAY_RECEIPT_MISSING" in surface_test
     assert "PI_SURFACE_TEST_HIGH_CAPACITY_LAB_REPLAY_INVALID" in surface_test
     assert "acceptance_sources.aggregate_sha256" in surface_test
-    assert 'body-labs\\prime-s' in surface_test
+    assert "body-labs\\prime-s" in surface_test
     assert "xinao.pi_s_high_capacity_filesystem_resume_acceptance.v1" in surface_test
     assert "currentFilesystemResumeScriptSha256" in surface_test
     assert "currentBodyLabHarnessSha256" in surface_test
     assert "filesystem_resume_cross_product.status" in surface_test
-    assert "high_capacity_active_projection = $highCapacityActiveProjectionReceiptIdentity" in surface_test
+    assert (
+        "high_capacity_active_projection = $highCapacityActiveProjectionReceiptIdentity"
+        in surface_test
+    )
     assert "high_capacity_replay = $highCapacityReplayReceiptIdentity" in surface_test
     assert "high_capacity_acceptance = $highCapacityAcceptance" not in surface_test
     assert "filesystem_policy_digest" in surface_test
@@ -987,12 +997,8 @@ def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> Non
     hermes_compatibility = _text(
         SOURCE_ROOT / "scripts" / "Apply-PiSHermesSessionCompatibility.ps1"
     )
-    hermes_probe = _text(
-        SOURCE_ROOT / "scripts" / "Test-PiSHermesSessionCompatibility.mjs"
-    )
-    hermes_capacity = _text(
-        SOURCE_ROOT / "scripts" / "Test-PiSHermesMemoryCapacity.mjs"
-    )
+    hermes_probe = _text(SOURCE_ROOT / "scripts" / "Test-PiSHermesSessionCompatibility.mjs")
+    hermes_capacity = _text(SOURCE_ROOT / "scripts" / "Test-PiSHermesMemoryCapacity.mjs")
 
     assert "npm:pi-hermes-memory@0.9.4" in common
     assert "npm:pi-mcp-adapter@2.21.1" in common
@@ -1078,13 +1084,9 @@ def test_prime_s_native_children_cover_openai_account_follow_deepseek_and_portab
     child = _text(SOURCE_ROOT / "scripts" / "Test-PiSubagentRpc.mjs")
     deepseek = _text(SOURCE_ROOT / "scripts" / "Set-PiSDeepSeekCredential.ps1")
     deepseek_child = _text(SOURCE_ROOT / "scripts" / "Test-PiSDeepSeekChildRpc.mjs")
-    compatibility = _text(
-        SOURCE_ROOT / "scripts" / "Apply-PiSSubagentsWindowsCompatibility.ps1"
-    )
+    compatibility = _text(SOURCE_ROOT / "scripts" / "Apply-PiSSubagentsWindowsCompatibility.ps1")
     async_probe = _text(SOURCE_ROOT / "scripts" / "Test-PiSAsyncWorkflowRpc.mjs")
-    file_only_probe = _text(
-        SOURCE_ROOT / "scripts" / "Test-PiSFileOnlyAcceptanceRpc.mjs"
-    )
+    file_only_probe = _text(SOURCE_ROOT / "scripts" / "Test-PiSFileOnlyAcceptanceRpc.mjs")
 
     assert "deepseek/deepseek-v4-*" in initializer
     assert "if ($property.Name -cne 'openai-codex')" in seed
@@ -1120,16 +1122,15 @@ def test_prime_s_native_children_cover_openai_account_follow_deepseek_and_portab
     assert "FRESH_PIS_MSYS_FILE_ONLY_STRUCTURED" in file_only_probe
     assert "writeCalls.length !== 1" in file_only_probe
     assert "structured_acceptance_consumed: true" in file_only_probe
-    assert '"wrong-drive", "sibling", "failed-write", "unanswered-write", "edit", "non-authored-prose"' in file_only_probe
+    assert (
+        '"wrong-drive", "sibling", "failed-write", "unanswered-write", "edit", "non-authored-prose"'
+        in file_only_probe
+    )
 
 
 def test_prime_s_serper_is_profile_native_strict_and_has_no_exa_fallback() -> None:
     extension = _text(
-        SOURCE_ROOT
-        / "surface-overlays"
-        / "prime-s"
-        / "extensions"
-        / "serper-search.ts"
+        SOURCE_ROOT / "surface-overlays" / "prime-s" / "extensions" / "serper-search.ts"
     )
     credential = _text(SOURCE_ROOT / "scripts" / "Set-PiSSerperCredential.ps1")
 
@@ -1157,7 +1158,9 @@ def test_prime_s_serper_is_profile_native_strict_and_has_no_exa_fallback() -> No
     assert "PI_SERPER_LAB_MANIFEST_IDENTITY_MISMATCH" in credential
     assert "credential_updated_at" in credential
     assert "PI_SERPER_ACTIVE_PROFILE_REQUIRES_PROVIDER_PROBE" in credential
-    assert credential.index("Invoke-WebRequest") < credential.index("Write-PiDualEntryJsonAtomic -Path $credentialPath")
+    assert credential.index("Invoke-WebRequest") < credential.index(
+        "Write-PiDualEntryJsonAtomic -Path $credentialPath"
+    )
     assert "PI_SERPER_AUTH_REJECTED" in credential
     assert "PI_SERPER_QUOTA_REJECTED" in credential
 
@@ -1168,8 +1171,8 @@ def test_prime_s_serper_is_profile_native_strict_and_has_no_exa_fallback() -> No
     assert "starts.length !== 1" in rpc
     assert "SERPER_AUTH_REJECTED" in rpc
     assert "SERPER_QUOTA_REJECTED" in rpc
-    assert 'strict_provider: true' in rpc
-    assert 'no_other_tool_called: true' in rpc
+    assert "strict_provider: true" in rpc
+    assert "no_other_tool_called: true" in rpc
 
 
 def test_codex_pis_steward_skill_tracks_live_pi_without_defining_it() -> None:
@@ -1181,19 +1184,27 @@ def test_codex_pis_steward_skill_tracks_live_pi_without_defining_it() -> None:
 
     assert "name: steward-pis-evolution" in skill
     assert "rapidly evolving live product" in normalized_skill
-    assert "do not freeze a model, child topology, research role, supervisor relation, or" in normalized_skill
+    assert (
+        "do not freeze a model, child topology, research role, supervisor relation, or"
+        in normalized_skill
+    )
     assert "Owner belongs to a named live effect scope" in skill
     assert "current official Pi installation" in skill
     assert "superseded by upstream and ready for bounded retirement" in skill
     assert "operator-tools\\pi-native-ingress\\pi-native-control.mjs" in skill
     assert "operator files stay outside Pi's active Skill directory" in skill
     assert "sent -> acknowledged -> runtime accepted -> message consumed" in skill
-    assert "Root/child behavior is whatever the addressed live Pi version actually implements" in skill
+    assert (
+        "Root/child behavior is whatever the addressed live Pi version actually implements" in skill
+    )
     assert "do not make" in skill.lower() and "part of Pi's identity" in skill
     assert "Address external transport and observation mechanically" in skill
     assert "exact Pi" in skill and "named mechanical scope" in skill
     assert "currently appointed effect Owner" in skill
-    assert "current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay" in skill
+    assert (
+        "current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay"
+        in skill
+    )
     assert "主管模式.txt" not in skill
     assert "studies" not in skill and "study-check" not in skill
 
@@ -1227,9 +1238,7 @@ def test_codex_pis_steward_skill_tracks_live_pi_without_defining_it() -> None:
 
     live_skill_root = MAIN_CODEX / "skills" / "steward-pis-evolution"
     if live_skill_root.exists():
-        assert (skill_root / "SKILL.md").read_bytes() == (
-            live_skill_root / "SKILL.md"
-        ).read_bytes()
+        assert (skill_root / "SKILL.md").read_bytes() == (live_skill_root / "SKILL.md").read_bytes()
         assert (skill_root / "references" / "recovery-map.md").read_bytes() == (
             live_skill_root / "references" / "recovery-map.md"
         ).read_bytes()
@@ -1264,9 +1273,9 @@ def test_pi_child_acceptance_reads_native_profile_session_root() -> None:
     assert "findCompletedChild(sessionDir" in rpc
     assert "visit(sessionRoot, 0)" in rpc
     assert "child_sessions_under_profile_root: true" in rpc
-    assert 'startsWith(normalizedSessionRoot)' in rpc
-    assert 'pi-subagent-session-' not in rpc
-    assert 'root_and_child_native_openai_consumed: true' in rpc
+    assert "startsWith(normalizedSessionRoot)" in rpc
+    assert "pi-subagent-session-" not in rpc
+    assert "root_and_child_native_openai_consumed: true" in rpc
 
 
 @pytest.mark.skipif(not STATE_ROOT.exists(), reason="local Pi surface runtime is not present")
@@ -1348,7 +1357,10 @@ def test_pi_contract_islands_preserve_only_versioned_machine_boundaries() -> Non
         "不分配功能、本体、结算或消费者优先级。具体作用由当前关系、"
         "仓库现实与真实消费者决定。"
     ) in family
-    assert "current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay" in family
+    assert (
+        "current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay"
+        in family
+    )
     assert "主管模式.txt" not in family
     assert "studies" not in family and "study-check" not in family
     assert "任何验收都只覆盖当时版本与相交能力" in family
@@ -1412,8 +1424,14 @@ def test_codex_and_pi_instruction_sources_are_separate() -> None:
     common = _text(SOURCE_ROOT / "scripts" / "PiDualEntry.Common.ps1")
     initializer = _text(SOURCE_ROOT / "scripts" / "Initialize-UpstreamPiProfiles.ps1")
     test_script = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
-    assert "AgentsSource = 'E:\\XINAO_RESEARCH_WORKSPACES\\prime-s-local-cognition-island\\AGENTS.md'" in common
-    assert "AgentsSource = 'E:\\XINAO_RESEARCH_WORKSPACES\\prime-agent-local-cognition-island\\AGENTS.md'" in common
+    assert (
+        "AgentsSource = 'E:\\XINAO_RESEARCH_WORKSPACES\\prime-s-local-cognition-island\\AGENTS.md'"
+        in common
+    )
+    assert (
+        "AgentsSource = 'E:\\XINAO_RESEARCH_WORKSPACES\\prime-agent-local-cognition-island\\AGENTS.md'"
+        in common
+    )
     assert "AgentsSource = Join-Path $script:PiDualEntryBehaviorCodexHome 'AGENTS.md'" not in common
     assert "skills = @()" in initializer
     assert "PI_SURFACE_TEST_CODEX_SKILL_TREE_INJECTED" in test_script
