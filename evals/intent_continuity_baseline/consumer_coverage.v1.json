@@ -3,14 +3,15 @@
   "sentinel": "SENTINEL:CODEX_INTENT_ACTION_COVERAGE_V1",
   "authority": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-10T22:54:00+08:00",
+  "evidence_cutoff": "2026-08-11T19:31:51+08:00",
   "coverage_rule": "A general behavior claim requires text, a live consumer, positive and negative regression, fresh behavior, and live effect; missing layers remain explicit.",
   "current_runtime_topology": {
     "active_hook_events": [
+      "SessionStart:resume|compact",
       "UserPromptSubmit"
     ],
-    "active_situation_script": "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
-    "active_hook_effect": "thin_attention_reanchor_to_current_human_words_without_task_binding_lifecycle_restore_or_finalization_gate",
+    "active_situation_script": "E:/XINAO_RESEARCH_WORKSPACES/S/scripts/codex_situation_context_hook.py",
+    "active_hook_effect": "thin_attention_reanchor_plus_compact_runtime_observation_and_exact_session_provisional_checkpoint_without_task_binding_lifecycle_restore_or_finalization_gate",
     "cold_repair_scripts_not_installed_as_hooks": [
       "bind_active_task_continuation_v1.ps1",
       "restore_parent_task_continuation_v1.ps1",
@@ -48,17 +49,17 @@
       "id": "window_start_and_phase_boundary_default_owner_posture",
       "text_contract": [
         "global A/B AGENTS user-side technical Owner default",
-        "sole UserPromptSubmit current-increment source reanchor with lifecycle scripts retained cold",
+        "UserPromptSubmit current-increment reanchor plus narrow resume/compact checkpoint reader with legacy lifecycle scripts retained cold",
         "repair human-agency operate-for-user Decision and verified-loop consumers"
       ],
       "live_consumer": [
         "global AGENTS loaded by A/B Codex",
-        "trusted A/B UserPromptSubmit hook",
+        "trusted A/B UserPromptSubmit and narrow SessionStart resume/compact hooks",
         "parent-frame window phase package-field and return-to-native canaries"
       ],
       "positive_negative_regression": "window start resumes a surviving parent; phase and package approval fields do not reset scope; migration verification returns only to an exact pre-existing return point; repository status cannot manufacture a native task; a real new external effect still asks once",
       "fresh_behavior": "the current production thread supplied two direct recurrences: planning first treated M1/root activation as a new approval gate, then the Owner treated generic native validation as authority to invent a product-cashflow science question from another repository STATUS. Fresh B run 20260805-224311-125-40040-eb9ef36d explicitly rejected STATUS and open research seams as task sources, kept the engineering parent, rejected hand-back, and selected the already-bound prerequisite action; the same untouched model output passes the corrected event-bounded assertion offline.",
-      "live_effect": "the erroneous science-study delta was removed without touching the user's dirty state; A/B AGENTS plus the sole trusted UserPromptSubmit hook now keep current human words ahead of artifacts and state that validation is exact readback rather than task generation",
+      "live_effect": "the erroneous science-study delta was removed without touching the user's dirty state; A/B AGENTS plus the owned thin context hook keep current human words ahead of artifacts, keep runtime/checkpoint data non-authoritative, and state that validation is exact readback rather than task generation",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "The validation-scope case now has one independent fresh output that passes the corrected event-bounded assertion; the new window phase and package-field families still lack independent fresh outputs, and no finite suite proves universal model adherence."
     },
@@ -71,14 +72,15 @@
       ],
       "live_consumer": [
         "A/B AGENTS preserve semantic parent continuity without requiring a per-turn manifest",
-        "the sole UserPromptSubmit hook reanchors attention but records no digest and binds no task",
+        "UserPromptSubmit reanchors attention and reports compact mechanical facts without binding a task",
+        "SessionStart resume/compact may read only one exact-session provisional checkpoint and has no automatic writer",
         "evals/parent_frame_admission checks exact-return and no-synthetic-task behavior"
       ],
-      "positive_negative_regression": "fresh A/B discovery contains exactly UserPromptSubmit and no SessionStart Stop or PreToolUse hook; historical binder restore and Stop cases remain cold evidence and cannot claim a current consumer",
-      "fresh_behavior": "fresh A and B hooks/list readback reports exactly one trusted UserPromptSubmit hook; the v2 recovery manifest classifies the former SessionStart Stop binder and restore scripts as cold repair material",
-      "live_effect": "new processes receive only the thin current-increment reanchor; task source still comes from current words or a semantically surviving parent rather than a digest cwd STATUS report test or cold script",
+      "positive_negative_regression": "fresh A/B discovery contains the two owned context events and no owned Stop or PreToolUse hook; missing/corrupt/nonmatching checkpoints fail open; historical binder restore and Stop cases remain cold evidence",
+      "fresh_behavior": "2026-08-11 fresh A and B app-server hooks/list each returned exactly the owned sessionStart and userPromptSubmit events as trusted with no warnings or errors; official-Python JSON-stdio readback returned L0 plus RuntimeObservation without prompt echo for UserPromptSubmit, RuntimeObservation plus the exact-session checkpoint for resume, and RuntimeObservation only for a compact event whose session had no checkpoint",
+      "live_effect": "new increments receive the thin reanchor and mechanical local facts; resume/compact may receive a provisional exact-session handoff, while task source still comes from current words or a semantically surviving parent",
       "status": "PARTIAL_CONSUMER",
-      "open_gap": "No installed mechanical cross-window continuation consumer currently exists; later natural windows must test semantic survival, and any future restore mechanism requires a new explicit adoption and fresh readback."
+      "open_gap": "The checkpoint reader does not prove autonomous world revision or a continuing subject; later natural long-horizon recurrence must measure whether user correction and re-entry burden falls."
     },
     {
       "id": "utterance_increment_to_active_subject_object",
@@ -237,7 +239,7 @@
         "Owner finalization under the current completion ruler"
       ],
       "positive_negative_regression": "continue, explicit Pause, bounded wait, premature defer, branch no-action, retry, exact blocker, verified parent completion, and material user-gate metamorphic cases; former Stop-script cases remain historical regression evidence rather than a current Hook claim",
-      "fresh_behavior": "earlier continuation/finalization cases and eight transition outputs from 20260805-183443-096 remain historical behavior evidence; current A/B app-servers discover only UserPromptSubmit",
+      "fresh_behavior": "earlier continuation/finalization cases and eight transition outputs from 20260805-183443-096 remain historical behavior evidence; current A/B app-servers discover the thin UserPromptSubmit context event and the distinct non-finalizing SessionStart resume/compact reader, with no owned Stop hook",
       "live_effect": "the Owner and hot A/B instructions keep local completion separate from parent completion; there is no installed Stop gate and no hook receipt can substitute for the current completion ruler",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "No installed finalization Hook mechanically covers recorded or unrecorded parents; later natural turn transitions remain the real consumer readback."
@@ -275,7 +277,7 @@
         "behavior candidate and eval evidence"
       ],
       "positive_negative_regression": "candidate material cannot auto-promote; current words and live facts supersede history",
-      "fresh_behavior": "the former SessionStart direct invocation remains historical evidence; current hooks/list readback excludes it and the v2 archive retains its script only as cold repair material",
+      "fresh_behavior": "the former lifecycle SessionStart invocation remains historical evidence; the new exact-session checkpoint reader has a distinct non-task contract, while the old script remains cold repair material",
       "live_effect": "the current task-provenance recurrence and its positive/negative consumers are retained in the behavior model and regression ledger; the user explicitly cancelled new desktop-incident and memory-update artifacts for this turn",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "Only later real recurrence can prove long-horizon user correction burden has actually decreased."
@@ -295,27 +297,27 @@
         "every behavior-regression source snapshot and deterministic preflight"
       ],
       "positive_negative_regression": "all 124 historical context cases are partitioned exactly once; science/Goal/continuous cases remain retired from S live suites; every retained capability family names a current consumer while silent carrier loss fails preflight; recovery v2 restores its scoped generic carriers into staging and keeps recovery v1 frozen as history rather than a build source",
-      "fresh_behavior": "The current deterministic v2 build sealed 84 exact scoped carrier files into a SHA-verified cold archive, verified every live source against it, restored every entry into an empty staging root, and classifies UserPromptSubmit as the only active Situation hook while four former lifecycle scripts remain cold. This is migration evidence rather than a runtime behavior or science claim.",
+      "fresh_behavior": "The current deterministic v2 recovery must seal the shared situation implementation and classify the former UserPromptSubmit and four lifecycle scripts as cold; staged restore and live hash verification remain migration evidence rather than runtime behavior or science claims.",
       "live_effect": "A future behavior migration can no longer delete the mixed historical carrier and still pass the normal behavior battery without explicitly preserving, replacing, colding, or retiring each capability family; current A/B hot projections are also hash-bound to the cold recovery media without making that archive a second runtime authority.",
       "status": "PARTIAL_CONSUMER",
-      "open_gap": "Repository preflight cannot force an unrelated manual A/B config edit to run the behavior battery. Fresh model behavior and A/B single-hook discovery remain separate evidence, and authentication must not be copied across accounts."
+      "open_gap": "Repository preflight cannot force an unrelated manual A/B config edit to run the behavior battery. Fresh model behavior and A/B two-event owned-context discovery remain separate evidence, and authentication must not be copied across accounts."
     },
     {
       "id": "stable_behavior_delivery_closure",
       "text_contract": [
-        "global A/B AGENTS and the sole hot UserPromptSubmit context require closure for an admitted stable behavior repair or reusable capability change",
+        "global A/B AGENTS and the owned thin situation context consumers require closure for an admitted stable behavior repair or reusable capability change",
         "repair-agent-behavior behavior-change closure and operate-for-user pre-report completion classification",
         "applicable repository adoption is one conditional consumer edge rather than a universal git gate"
       ],
       "live_consumer": [
         "A/B AGENTS loaded by future Codex windows",
-        "trusted A/B UserPromptSubmit hook",
+        "trusted A/B UserPromptSubmit and narrow SessionStart resume/compact hooks",
         "paired parent-frame delivery-incomplete and explicit-local-only cases",
         "repository transaction and recovery readback when a repository is an actual consumer"
       ],
       "positive_negative_regression": "a cross-window stable repair remains partial while any applicable unique-source projection changed-context fresh-consumer balanced-regression repository-adoption rollback or migration-survival edge is open; an explicit disposable local-only experiment may finish without commit push install or publication; Pause and Stop still freeze; retired science routing remains retired",
       "fresh_behavior": "The current recurrence directly showed the positive failure: hot text and static tests were treated as completion while authoritative repository changes remained unadopted. B fresh model run 20260806-162439-243-50780-08867a5d then produced two real outputs and passed 2/2 with runtime claim eligibility: the stable repair stayed active and the explicit local-only comparison finished without forced adoption. A ran the same sources but returned zero model outputs because its own refresh token is revoked, so no A behavior pass is claimed.",
-      "live_effect": "The closure predicate is projected into both A/B hot instruction carriers and the sole wired UserPromptSubmit hook; fresh app-server discovery trusts exactly that one hook in both homes, while changed-context behavior and repository readback remain separate evidence rather than being silently declared complete.",
+      "live_effect": "The closure predicate remains in both A/B hot instruction carriers; the thin hook adds current-word/runtime context and optional exact-session handoff without becoming a completion authority.",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "Formal repository adoption and remote readback remain open, and the main A account requires its owner to reauthenticate before an A model-behavior pass is possible. Missing applicable edges continue as partial without reviving science, copying credentials, or creating a new controller."
     }
@@ -328,14 +330,14 @@
     "thin_invariant_preserves_dynamic_exploration"
   ],
   "remaining_nonuniversal_boundaries": [
-    "ActiveTaskContinuation binder restore SessionStart and Stop scripts are cold repair material rather than installed consumers; later natural windows must still show semantic parent survival without recurring manifest rituals",
+    "ActiveTaskContinuation binder restore lifecycle SessionStart and Stop scripts remain cold; only the distinct exact-session provisional checkpoint reader is installed",
     "the retired PreToolUse script remains as a fail-open stale-process shim until no already-running consumer can reference it; fresh A/B discovery excludes it",
     "there is no installed Stop gate; current finalization depends on the Owner preserving the live parent completion ruler",
     "fresh canaries are decision-only and do not prove every product surface executes the selected action",
     "the default-owner phase-boundary families have deterministic and live-thread evidence but no independent fresh changed-context outputs",
     "the current live recurrence proves that generic return-to-native wording can still drift unless an exact pre-existing object and return point are bound",
     "long-horizon burden reduction requires later real recurrence evidence",
-    "fresh A/B app-servers read the exact single-hook configuration; historical three-hook receipts are retained only as dated evidence"
+    "fresh A/B app-servers must read and trust the exact two-event owned context configuration; historical lifecycle-hook receipts remain dated evidence only"
   ],
   "anti_overclaim": "No row may be upgraded to VERIFIED solely because text, static tests, infrastructure receipts, or one model output are green."
 }

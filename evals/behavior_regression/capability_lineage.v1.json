@@ -4,13 +4,14 @@
   "authority": false,
   "runtime_loaded": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-10T22:54:00+08:00",
+  "evidence_cutoff": "2026-08-11T19:31:51+08:00",
   "purpose": "Recover the complete capability, pain, consumer, and retirement lineage before another architecture migration. This registry prevents carrier deletion from being mistaken for authority cleanup or capability restoration; it never selects a task, domain route, tool, worker, or completion state.",
   "current_runtime_topology": {
     "active_hook_events": [
+      "SessionStart:resume|compact",
       "UserPromptSubmit"
     ],
-    "active_situation_script": "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
+    "active_situation_script": "E:/XINAO_RESEARCH_WORKSPACES/S/scripts/codex_situation_context_hook.py",
     "cold_lifecycle_recovery_manifest": "infra/codex_productivity_recovery/v2/manifest.v2.json",
     "legacy_v1_disposition": "IMMUTABLE_HISTORICAL_EVIDENCE"
   },
@@ -21,7 +22,7 @@
     "hot_carriers": [
       "C:/Users/xx363/.codex/AGENTS.md",
       "C:/Users/xx363/.codex-s-hardmode-account-b/AGENTS.md",
-      "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1"
+      "E:/XINAO_RESEARCH_WORKSPACES/S/scripts/codex_situation_context_hook.py"
     ]
   },
   "migration_rule": {
@@ -88,7 +89,7 @@
         "task_selection_authority": "current human words plus live facts interpreted by Codex Owner",
         "consumers": [
           "external:A/B AGENTS.md",
-          "external:UserPromptSubmit zero-beat hook",
+          "external:UserPromptSubmit zero-beat plus compact runtime observation hook",
           "evals/parent_frame_admission"
         ],
         "readback": "fresh changed-surface source, scope-preservation, and explicit-scope-reduction cases",
@@ -96,14 +97,16 @@
       },
       {
         "id": "lifecycle_event_reanchor",
-        "activation": "hot_current_increment_plus_cold_lifecycle_repair",
+        "activation": "hot_current_increment_plus_narrow_resume_compact_checkpoint_reader",
         "task_selection_authority": "none",
         "consumers": [
           "external:UserPromptSubmit current-increment hook",
+          "external:SessionStart resume/compact exact-session provisional checkpoint reader",
+          "services/agent_runtime/codex_situation_hook.py",
           "services/agent_runtime/action_resume_receipt.py",
           "evals/parent_frame_admission"
         ],
-        "readback": "fresh A/B hooks/list reports exactly UserPromptSubmit; v2 recovery roles mark SessionStart Stop binder and restore scripts cold; exact-return and no-binding behavior negatives remain separate",
+        "readback": "fresh A/B hooks/list trusts both owned context events; direct resume/compact readback is exact-session and fail-open; v2 recovery keeps former lifecycle scripts cold",
         "fallback": "cold or missing continuation cannot block current words or manufacture a return point",
         "cold_recovery_material": "infra/codex_productivity_recovery/v2/manifest.v2.json"
       },
@@ -300,6 +303,8 @@
       ],
       "current_consumers": [
         "external:A/B AGENTS semantic parent-continuity rule",
+        "services/agent_runtime/codex_situation_hook.py",
+        "scripts/manage_current_situation.py",
         "services/agent_runtime/action_resume_receipt.py",
         "evals/parent_frame_admission"
       ],
@@ -309,7 +314,7 @@
       "rollback": "Remove only the failing advisory projection or binding; never restore the retired PreToolUse permission gate or science-bearing predecision injection.",
       "unknowns": [
         "Natural long-horizon compact and arbitrary interruption recurrence remain only partially sampled.",
-        "No SessionStart binder or restore consumer is currently installed; their v2-archived scripts are cold repair material only."
+        "The installed SessionStart reader only consumes an explicit exact-session provisional checkpoint; it does not prove autonomous revision or restore the v2-archived lifecycle scripts."
       ],
       "cold_recovery_material": "infra/codex_productivity_recovery/v2/manifest.v2.json"
     },

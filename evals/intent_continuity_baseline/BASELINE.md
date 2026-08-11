@@ -42,9 +42,12 @@ The baseline is carried by four current consumers and one cold recovery surface:
 
 1. **Hot runtime:** the global A/B `AGENTS.md` files hold the minimal zero-beat,
    speech-as-increment rule, and event-triggered bounded-closure obligation.
-2. **Current increment:** the sole installed Hook is UserPromptSubmit. It injects one thin zero-beat
-   reminder before each new user increment. It does not call another model or
-   serialize the personal decision model, bind a task, or restore a lifecycle.
+2. **Current increment and bounded re-entry:** UserPromptSubmit injects one thin
+   zero-beat reminder plus a compact mechanical runtime observation before each
+   new user increment. SessionStart is installed only for `resume|compact`; it
+   may read one explicitly written, exact-session, provisional CurrentSituation
+   checkpoint. Neither path calls another model, binds a task, selects a route,
+   restores the retired lifecycle controller, or grants authority.
 3. **Conditional behavior:** `human-agency-grounding`, Decision Skill,
    `operate-for-user`, `repair-agent-behavior`, and worker amplification consume
    only their own task-fit slices. They do not all load on every turn.
@@ -110,21 +113,23 @@ materially change a high-impact or general repair claim.
 Ordinary low-risk continuous execution does not serialize this frame, enumerate
 the full graph, or call a second model.
 
-The runtime cost is therefore bounded: the sole installed UserPromptSubmit Hook
-adds a small fixed context once per user increment. Session start and handing
-control back remain semantic transition events for the Owner, but no
-SessionStart or Stop Hook currently implements them. Independent workers and
-the full decision lineage remain conditional rather than permanently loaded.
+The runtime cost is therefore bounded: UserPromptSubmit adds the short L0 and a
+compact local observation once per user increment. SessionStart adds context
+only on `resume|compact`, and only an exact-session checkpoint if one was
+explicitly written; absence and corruption fail open. There is no installed
+Stop gate and no automatic checkpoint writer. Independent workers and the full
+decision lineage remain conditional rather than permanently loaded.
 
 ## Migration admission
 
 The direct fresh canaries cover the high-leverage control families used at
 migration boundaries: ask/infer, act/wait/defer/no-action, continue/finalize,
 retry/block, worker return/refill, blocker isolation, and compact/resume. A
-fresh A/B app-server currently discovers and trusts exactly one user Hook,
-UserPromptSubmit. The former lifecycle scripts remain cold recovery evidence;
-their old runs are historical engineering evidence, not a claim that those
-Hooks are installed now and not an authorization source. Conversely, a
+fresh A/B app-server must discover and trust the two owned context events:
+UserPromptSubmit and the narrow `SessionStart(resume|compact)` reader. The
+former lifecycle SessionStart/Stop/binder/restore scripts remain cold recovery
+evidence; their old runs are historical engineering evidence, not authority or
+proof that their lifecycle semantics were restored. Conversely, a
 migration phase or package approval field cannot revoke or reset authorization
 already established by the current parent scope.
 

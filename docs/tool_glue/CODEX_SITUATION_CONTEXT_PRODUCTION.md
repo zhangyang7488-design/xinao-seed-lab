@@ -21,6 +21,8 @@ Account A/B 通过共享的 `hooks.json`、`config.toml` 与 S 源码消费同�
 ## 权力边界
 
 - CurrentSituation 始终 `provisional=true`、`authority=false`，只是一份当前世界的交接投影。
+- checkpoint 是会被下一次模型调用看见的明文上下文；禁止写入 token、密码、API key、
+  cookie 或其他秘密。它继承本机目录 ACL，不是跨 Windows 用户的秘密保险箱。
 - session identity 只接受规范小写 UUID；session 目录或 current 文件的 link/redirect
   被拒绝，避免一个名字读取另一个 session。
 - 当前用户整句话和 live facts 可立即替换 checkpoint；checkpoint 不能授权行动、证明完成或证明自主 world revision。

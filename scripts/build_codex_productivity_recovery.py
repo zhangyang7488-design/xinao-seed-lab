@@ -106,6 +106,34 @@ SHARED_RUNTIME_SOURCES = (
     ),
 )
 
+SITUATION_RUNTIME_SOURCES = (
+    (
+        REPO_ROOT / "services" / "agent_runtime" / "runtime_observation.py",
+        "repository/services/agent_runtime/runtime_observation.py",
+        "situation_runtime_source",
+    ),
+    (
+        REPO_ROOT / "services" / "agent_runtime" / "current_situation.py",
+        "repository/services/agent_runtime/current_situation.py",
+        "situation_runtime_source",
+    ),
+    (
+        REPO_ROOT / "services" / "agent_runtime" / "codex_situation_hook.py",
+        "repository/services/agent_runtime/codex_situation_hook.py",
+        "situation_hook_adapter",
+    ),
+    (
+        REPO_ROOT / "scripts" / "codex_situation_context_hook.py",
+        "repository/scripts/codex_situation_context_hook.py",
+        "situation_hook_adapter",
+    ),
+    (
+        REPO_ROOT / "scripts" / "manage_current_situation.py",
+        "repository/scripts/manage_current_situation.py",
+        "explicit_situation_manager",
+    ),
+)
+
 INSTALLED_ENTRY_LINKS = (
     (
         LAUNCHER_ROOT / "Open-Codex-S-Hardmode.ps1",
@@ -126,7 +154,7 @@ SITUATION_FILES = {
     "scripts/restore_parent_task_continuation_v1.ps1": "cold_continuity_repair_material",
     "scripts/session_start_continuity_pointer_v1.ps1": "cold_continuity_repair_material",
     "scripts/turn_finalization_gate_v1.ps1": "cold_continuity_repair_material",
-    "scripts/user_prompt_zero_beat_v1.ps1": "active_user_prompt_hook",
+    "scripts/user_prompt_zero_beat_v1.ps1": "cold_previous_user_prompt_hook",
 }
 
 EXCLUDED_PARTS = {
@@ -207,6 +235,15 @@ def _collect_sources() -> list[SourceEntry]:
         )
 
     for source, archive_path, role in SHARED_RUNTIME_SOURCES:
+        entries.append(
+            SourceEntry(
+                source=source,
+                archive_path=archive_path,
+                role=role,
+            )
+        )
+
+    for source, archive_path, role in SITUATION_RUNTIME_SOURCES:
         entries.append(
             SourceEntry(
                 source=source,

@@ -240,7 +240,7 @@
   },
   "active_task_continuation_advisory": {
     "purpose": "optionally_preserve_an_exact_cross_window_or_cross_repository_return_point_without_turning_continuity_into_task_authority_or_a_tool_permission_system",
-    "mechanical_runtime_status": "NOT_INSTALLED_SESSION_START_STOP_BINDER_AND_RESTORE_ARE_COLD_REPAIR_MATERIAL",
+    "mechanical_runtime_status": "NARROW_EXACT_SESSION_RESUME_COMPACT_CHECKPOINT_READER_INSTALLED_NO_AUTOMATIC_WRITER_OR_TASK_RESTORE",
     "cold_recovery_ref": "infra/codex_productivity_recovery/v2/manifest.v2.json",
     "minimum_recovery_record": [
       "task_id_and_parent_task_id",
@@ -317,7 +317,7 @@
   "activity_consumers": [
     "C:\\Users\\xx363\\.codex\\AGENTS.md",
     "C:\\Users\\xx363\\.codex-s-hardmode-account-b\\AGENTS.md",
-    "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\user_prompt_zero_beat_v1.ps1",
+    "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\codex_situation_context_hook.py",
     "human-agency-grounding for current human practice and bounded closure",
     "Decision Skill when metacognition or stable preference is actually relevant",
     "operate-for-user when hidden technical or lifecycle burden is actually relevant",

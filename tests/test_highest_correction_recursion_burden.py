@@ -8,12 +8,11 @@ from pathlib import Path
 def test_live_first_beat_applies_correction_before_artifact_work() -> None:
     main_agents = Path(r"C:\Users\xx363\.codex\AGENTS.md")
     account_b_agents = Path(r"C:\Users\xx363\.codex-s-hardmode-account-b\AGENTS.md")
-    prompt_hook = Path(
-        r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island"
-        r"\scripts\user_prompt_zero_beat_v1.ps1"
+    prompt_hook = Path(__file__).resolve().parents[1] / "scripts" / "codex_situation_context_hook.py"
+    python = Path(
+        r"D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official\python.exe"
     )
-    pwsh = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
-    if not all(path.is_file() for path in (main_agents, account_b_agents, prompt_hook, pwsh)):
+    if not all(path.is_file() for path in (main_agents, account_b_agents, prompt_hook, python)):
         return
 
     main_text = main_agents.read_text(encoding="utf-8-sig")
@@ -30,7 +29,7 @@ def test_live_first_beat_applies_correction_before_artifact_work() -> None:
         "turn_id": "highest-correction-recursion-regression-turn",
     }
     completed = subprocess.run(
-        [str(pwsh), "-NoProfile", "-File", str(prompt_hook)],
+        [str(python), "-I", "-B", str(prompt_hook)],
         input=json.dumps(event, ensure_ascii=False).encode("utf-8"),
         capture_output=True,
         check=False,

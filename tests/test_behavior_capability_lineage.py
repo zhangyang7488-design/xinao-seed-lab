@@ -25,8 +25,11 @@ def test_capability_lineage_recovers_history_without_becoming_runtime_authority(
     assert lineage["frozen_baseline"]["capability_id"] == ("intent_source_parent_admission")
     assert lineage["frozen_baseline"]["decision"] == "KEEP_FROZEN"
     topology = lineage["current_runtime_topology"]
-    assert topology["active_hook_events"] == ["UserPromptSubmit"]
-    assert topology["active_situation_script"].endswith("user_prompt_zero_beat_v1.ps1")
+    assert topology["active_hook_events"] == [
+        "SessionStart:resume|compact",
+        "UserPromptSubmit",
+    ]
+    assert topology["active_situation_script"].endswith("codex_situation_context_hook.py")
     assert topology["cold_lifecycle_recovery_manifest"] == (
         "infra/codex_productivity_recovery/v2/manifest.v2.json"
     )
@@ -125,6 +128,8 @@ def test_capability_lineage_recovers_history_without_becoming_runtime_authority(
     )
     assert lifecycle["consumers"] == [
         "external:UserPromptSubmit current-increment hook",
+        "external:SessionStart resume/compact exact-session provisional checkpoint reader",
+        "services/agent_runtime/codex_situation_hook.py",
         "services/agent_runtime/action_resume_receipt.py",
         "evals/parent_frame_admission",
     ]
@@ -136,10 +141,11 @@ def test_capability_lineage_recovers_history_without_becoming_runtime_authority(
         for family in families
         if family["id"] == "transition_reanchor_and_exact_continuation"
     )
+    assert "services/agent_runtime/codex_situation_hook.py" in transition["current_consumers"]
     assert not any(
         token in consumer
         for consumer in transition["current_consumers"]
-        for token in ("SessionStart", "binder", "restore")
+        for token in ("binder", "restore")
     )
     bounded = next(
         family

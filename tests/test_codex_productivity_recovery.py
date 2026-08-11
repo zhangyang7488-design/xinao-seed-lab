@@ -46,7 +46,17 @@ def test_legacy_v1_recovery_media_remains_byte_frozen() -> None:
 def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     tmp_path: Path,
 ) -> None:
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    installed_manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert installed_manifest["archive_sha256"] == _sha256(ARCHIVE)
+    installed_verified = _run_builder("verify-archive")
+    assert installed_verified.returncode == 0, installed_verified.stderr
+
+    candidate_root = tmp_path / "candidate-v2"
+    built = _run_builder("build", "--output-root", str(candidate_root))
+    assert built.returncode == 0, built.stderr
+    candidate_manifest_path = candidate_root / "manifest.v2.json"
+    candidate_archive = candidate_root / "codex-productivity-recovery.non-pi.v2.zip"
+    manifest = json.loads(candidate_manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema_version"] == "xinao.codex_productivity_recovery.v2"
     assert manifest["sentinel"] == "SENTINEL:CODEX_NON_PI_PRODUCTIVITY_RECOVERY_COLD_V2"
     assert manifest["authority"] is False
@@ -58,7 +68,7 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         "excluded_product_skill_trees": [EXCLUDED_PRODUCT_SKILL],
         "excluded_trees_are_not_read_verified_or_restored": True,
     }
-    assert manifest["archive_sha256"] == _sha256(ARCHIVE)
+    assert manifest["archive_sha256"] == _sha256(candidate_archive)
     assert manifest["entry_count"] == len(manifest["entries"])
     assert manifest["source_and_projection"] == {
         "main_home_is_canonical_shared_runtime_source": True,
@@ -98,6 +108,14 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert "main-home/skills/research-external-reality/agents/openai.yaml" in names
     assert "main-home/skills/research-external-reality/references/evaluation-cases.md" in names
     assert "runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1" in names
+    situation_runtime_roles = {
+        "repository/services/agent_runtime/runtime_observation.py": "situation_runtime_source",
+        "repository/services/agent_runtime/current_situation.py": "situation_runtime_source",
+        "repository/services/agent_runtime/codex_situation_hook.py": "situation_hook_adapter",
+        "repository/scripts/codex_situation_context_hook.py": "situation_hook_adapter",
+        "repository/scripts/manage_current_situation.py": "explicit_situation_manager",
+    }
+    assert situation_runtime_roles.keys() <= names
     assert (
         "runtime/Codex_Situation_Island/scripts/"
         "manage_explicit_continuation_locator_v1.ps1" in names
@@ -112,8 +130,9 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert {roles[name] for name in grok_bridge_names} == {"grok_worker_pool_sealed_transport"}
     assert (
         roles["runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1"]
-        == "active_user_prompt_hook"
+        == "cold_previous_user_prompt_hook"
     )
+    assert {name: roles[name] for name in situation_runtime_roles} == situation_runtime_roles
     assert (
         roles["runtime/Codex_Situation_Island/scripts/manage_explicit_continuation_locator_v1.ps1"]
         == "on_demand_explicit_continuation_consumer"
@@ -149,13 +168,19 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     ):
         assert forbidden not in serialized_names
 
-    verified = _run_builder("verify-archive")
+    verified = _run_builder("verify-archive", "--output-root", str(candidate_root))
     assert verified.returncode == 0, verified.stderr
 
     restore_root = tmp_path / "restored"
-    restored = _run_builder("restore-to", "--target", str(restore_root))
+    restored = _run_builder(
+        "restore-to",
+        "--output-root",
+        str(candidate_root),
+        "--target",
+        str(restore_root),
+    )
     assert restored.returncode == 0, restored.stderr
-    with zipfile.ZipFile(ARCHIVE) as archive:
+    with zipfile.ZipFile(candidate_archive) as archive:
         assert set(archive.namelist()) == names
         agents_text = archive.read("main-home/AGENTS.md").decode("utf-8")
         assert "SENTINEL:LOCAL_DOCKER_EXCEPTION_ONLY_V1" in agents_text
