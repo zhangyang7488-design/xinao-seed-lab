@@ -66,6 +66,10 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         "account_b_is_not_a_configuration_or_recovery_source": True,
         "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": True,
         "legacy_v1_is_separate_history_not_a_build_input": True,
+        "grok_worker_pool_live_manifest_is_the_runtime_truth": True,
+        "local_docker_is_exception_only_not_a_default_runtime_dependency": True,
+        "dated_worker_pool_recovery_snapshots_are_not_current_sources": True,
+        "live_continuation_locator_is_not_a_recovery_source": True,
     }
     assert manifest["recovery_contract"]["legacy_v1_must_not_be_refreshed_or_used_as_a_source"]
 
@@ -76,6 +80,15 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert "main-home/native-collaboration.config.toml" in names
     assert "launchers/Open-Codex-S-SharedRuntime.ps1" in names
     assert "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md" in names
+    assert "contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md" in names
+    assert "launchers/Invoke-Codex-GrokWorkerPool.ps1" in names
+    assert "launchers/Invoke-GrokWorkerOAuthRecovery.ps1" in names
+    assert "runtime/grok-worker-pool/runtime-manifest.v1.json" in names
+    grok_bridge_names = {
+        name for name in names if name.startswith("runtime/grok-worker-pool/bridge/")
+    }
+    assert len(grok_bridge_names) == 15
+    assert "runtime/grok-worker-pool/bridge/GrokSupervisorRootCapability.ps1" in grok_bridge_names
     assert "main-home/skills/repair-agent-behavior/SKILL.md" in names
     assert "main-home/skills/operate-for-user/SKILL.md" in names
     assert "main-home/skills/productivity/SKILL.md" in names
@@ -85,11 +98,32 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert "main-home/skills/research-external-reality/agents/openai.yaml" in names
     assert "main-home/skills/research-external-reality/references/evaluation-cases.md" in names
     assert "runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1" in names
+    assert (
+        "runtime/Codex_Situation_Island/scripts/"
+        "manage_explicit_continuation_locator_v1.ps1" in names
+    )
+    assert "human-entries/00_先读我_主线入口与读取顺序.txt" in names
     roles = {entry["archive_path"]: entry["role"] for entry in manifest["entries"]}
     assert roles["runtime/Codex_Situation_Island/README.md"] == "situation_island_contract"
     assert (
+        roles["runtime/grok-worker-pool/runtime-manifest.v1.json"]
+        == "grok_worker_pool_runtime_manifest"
+    )
+    assert {roles[name] for name in grok_bridge_names} == {"grok_worker_pool_sealed_transport"}
+    assert (
         roles["runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1"]
         == "active_user_prompt_hook"
+    )
+    assert (
+        roles[
+            "runtime/Codex_Situation_Island/scripts/"
+            "manage_explicit_continuation_locator_v1.ps1"
+        ]
+        == "on_demand_explicit_continuation_consumer"
+    )
+    assert (
+        roles["human-entries/00_先读我_主线入口与读取顺序.txt"]
+        == "stable_human_reentry_entry"
     )
     for cold_script in (
         "bind_active_task_continuation_v1.ps1",
@@ -115,6 +149,9 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         "auth.json",
         "/sessions/",
         "/memories/",
+        ".grok-bg-workers",
+        "explicit_continuation_locator.v1.json",
+        "/runs/continue_prior_issues_20260811/",
     ):
         assert forbidden not in serialized_names
 
@@ -126,6 +163,27 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert restored.returncode == 0, restored.stderr
     with zipfile.ZipFile(ARCHIVE) as archive:
         assert set(archive.namelist()) == names
+        agents_text = archive.read("main-home/AGENTS.md").decode("utf-8")
+        assert "SENTINEL:LOCAL_DOCKER_EXCEPTION_ONLY_V1" in agents_text
+        assert "SENTINEL:OWNER_DIRECT_GROK_DEFAULT_DUAL_TRACK_V1" in agents_text
+        assert "不得把“用户明确同意启用 Grok”叙述成合法性来源" in agents_text
+        amplify_text = archive.read(
+            "main-home/skills/amplify-supervisor-worker/SKILL.md"
+        ).decode("utf-8")
+        assert "chain-internal technical route" in amplify_text
+        assert "make worker reports the exclusive path to reality" in amplify_text
+        operator_text = archive.read("contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md").decode(
+            "utf-8"
+        )
+        assert "daemon 未启动是正常状态" in operator_text
+        launcher_text = archive.read("launchers/Invoke-Codex-GrokWorkerPool.ps1").decode(
+            "utf-8"
+        )
+        assert "New-CodexGrokTemporaryWorktree" in launcher_text
+        worker_text = archive.read(
+            "runtime/grok-worker-pool/bridge/Invoke-GrokComposer25Worker.ps1"
+        ).decode("utf-8")
+        assert "GROK_DOCKER_EXCEPTION_OPT_IN_REQUIRED" in worker_text
     for entry in manifest["entries"]:
         restored_path = restore_root / Path(*entry["archive_path"].split("/"))
         assert restored_path.is_file()
@@ -136,11 +194,9 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert rebuilt.returncode == 0, rebuilt.stderr
     rebuilt_manifest = json.loads((rebuilt_root / "manifest.v2.json").read_text(encoding="utf-8"))
     assert rebuilt_manifest["archive_sha256"] == manifest["archive_sha256"]
+
     def portable_entries(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-        return [
-            {key: value for key, value in row.items() if key != "live_source"}
-            for row in rows
-        ]
+        return [{key: value for key, value in row.items() if key != "live_source"} for row in rows]
 
     assert portable_entries(rebuilt_manifest["entries"]) == portable_entries(manifest["entries"])
 

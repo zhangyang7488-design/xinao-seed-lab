@@ -1,7 +1,7 @@
 # Local behavior regression
 
 This is a bounded S engineering capability, not a research platform, scheduler,
-authority source, or completion gate. The catalog currently inventories 65
+authority source, or completion gate. The catalog currently inventories 67
 live and reusable specifications. XINAO domain research and economic evidence
 belong to `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`.
 

@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 65
+    assert len(cases) == 67
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -46,6 +46,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK",
         "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION",
         "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
+        "REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN",
+        "REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY",
         "REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR",
         "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
         "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
@@ -273,6 +275,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK",
         "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION",
         "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
+        "REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN",
+        "REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY",
         "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
         "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
         "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
@@ -672,6 +676,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     )
     dual_track_cases = {
         "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
+        "REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN",
+        "REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY",
         "REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR",
         "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
         "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
@@ -685,6 +691,30 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert native_routing_cases <= set(closure_cases)
     assert (
         closure_cases["REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME"][
+            "expected_selected_control_action"
+        ]
+        == "dispatch_parallel_and_owner_consume"
+    )
+    assert (
+        closure_cases["REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN"][
+            "expected_blocked_promotion"
+        ]
+        == "internal_worker_routing_to_user_authorization"
+    )
+    assert (
+        closure_cases["REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN"][
+            "expected_user_input_required"
+        ]
+        is False
+    )
+    assert (
+        closure_cases["REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY"][
+            "expected_blocked_promotion"
+        ]
+        == "worker_report_to_owner_reality_contact"
+    )
+    assert (
+        closure_cases["REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY"][
             "expected_selected_control_action"
         ]
         == "dispatch_parallel_and_owner_consume"
@@ -970,6 +1000,9 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
 
     prompt = (suite_root / "prompt.txt").read_text(encoding="utf-8")
     assert "dual tracks" in prompt
+    assert "no worker-specific opt-in sentence" in prompt
+    assert "personally contact and understand source reality" in prompt
+    assert "exclusive" in prompt and "Worker mediation" in prompt
     assert "standing exception" in prompt
     assert "multi_agent=false" in prompt
     assert "positive-value width" in prompt

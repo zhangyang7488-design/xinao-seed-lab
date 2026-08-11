@@ -13,9 +13,16 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "c14d70a735976a59b2ca2c2347503f7891fa729c508e6cadbb2cfda0e8ea6bc9",
-  "entry_count": 87,
+  "archive_sha256": "544813f2279fd62105aca1a3f561f56331d6aed5e70dea3e4d3d91772c1d72bb",
+  "entry_count": 108,
   "entries": [
+    {
+      "archive_path": "contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md",
+      "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_GROK_WORKER_POOL_DEFAULT.md",
+      "role": "grok_worker_pool_operator_contract",
+      "size": 4420,
+      "sha256": "2293bb5c2c9b269cb49eae1db9d702d6f274957ecf32418772eefd5828cf69a7"
+    },
     {
       "archive_path": "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
@@ -24,11 +31,32 @@
       "sha256": "a0c171dab953291070ebb350646f46c7de5ee8e53e40f5a7178b8205c9d97f12"
     },
     {
+      "archive_path": "human-entries/00_先读我_主线入口与读取顺序.txt",
+      "live_source": "C:\\Users\\xx363\\Desktop\\主线\\00_先读我_主线入口与读取顺序.txt",
+      "role": "stable_human_reentry_entry",
+      "size": 3298,
+      "sha256": "83a1785b72bdecd3af42c5261913cd56f1641429e0a986029d535949a7b59885"
+    },
+    {
       "archive_path": "launchers/CODEX_PRODUCTIVITY_PROFILE.md",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_PRODUCTIVITY_PROFILE.md",
       "role": "launcher_or_profile",
       "size": 10527,
       "sha256": "07532f37074b23382cbf407c34ac579c799564beb343b0c3ba203d09f6182ad6"
+    },
+    {
+      "archive_path": "launchers/Invoke-Codex-GrokWorkerPool.ps1",
+      "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-Codex-GrokWorkerPool.ps1",
+      "role": "grok_worker_pool_public_launcher",
+      "size": 39694,
+      "sha256": "864069c41e7869fe0b03fd2cf51bce287dca240481404dc29f2a668d40ef795e"
+    },
+    {
+      "archive_path": "launchers/Invoke-GrokWorkerOAuthRecovery.ps1",
+      "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-GrokWorkerOAuthRecovery.ps1",
+      "role": "grok_worker_pool_oauth_recovery_entry",
+      "size": 6084,
+      "sha256": "cc44df72f6f0f57eebfc7f1d3db26e79c8d004d28d6e776fb8ea3827646f71da"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode-Account-B.ps1",
@@ -55,8 +83,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 7865,
-      "sha256": "b0ae555f3f4204cd0aaca83b09dd13b8067e656a313e7b0c2de91492f59cf3fc"
+      "size": 9807,
+      "sha256": "dc316e936cb003630b5fbf24d5c21495233bcf79cc59acc8cbf329ed159c9d2a"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -118,22 +146,22 @@
       "archive_path": "main-home/skills/amplify-supervisor-worker/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\amplify-supervisor-worker\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 21495,
-      "sha256": "07c6832b62583c6081e77aab92805225749e708514730606a4652abafd3ca7ef"
+      "size": 22546,
+      "sha256": "0f02d730185c046213e811740a840313bae7641dcf2764841d545fdaefa0855b"
     },
     {
       "archive_path": "main-home/skills/amplify-supervisor-worker/agents/openai.yaml",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\amplify-supervisor-worker\\agents\\openai.yaml",
       "role": "generic_custom_skill",
-      "size": 534,
-      "sha256": "7bf132a017d817f99acd121aa31420f3b0e099536823f8371db9d718ff515d1c"
+      "size": 731,
+      "sha256": "34fef55586d07e75ec19d59a2d63ece2b320f19098ce5a1e4fd8a0f6028c374e"
     },
     {
       "archive_path": "main-home/skills/amplify-supervisor-worker/references/decision-cases.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\amplify-supervisor-worker\\references\\decision-cases.md",
       "role": "generic_custom_skill",
-      "size": 11627,
-      "sha256": "ca8a85ad529680a0d6272ace4ad06da3f4fbdd5f0d165971e8f4a986dcc83960"
+      "size": 12535,
+      "sha256": "cb1c6c30e2f6d4f12fd9041657e2e213d4ca8150dd2f1a75bf1d5fb440c390d9"
     },
     {
       "archive_path": "main-home/skills/ast-grep-structural-search/SKILL.md",
@@ -153,8 +181,8 @@
       "archive_path": "main-home/skills/dispatch-grok-worker-pool/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-grok-worker-pool\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 11389,
-      "sha256": "8314ce013eeac1ff85d169e043d084c74fe91ee2bee5667b0dc445a8851d294e"
+      "size": 12080,
+      "sha256": "3ee6e14934142dcbe8737e8f655305adf154944f9359d3b1eb8e8cc9bd8a7e1f"
     },
     {
       "archive_path": "main-home/skills/dispatch-grok-worker-pool/agents/openai.yaml",
@@ -587,8 +615,8 @@
       "archive_path": "runtime/Codex_Situation_Island/README.md",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\README.md",
       "role": "situation_island_contract",
-      "size": 1665,
-      "sha256": "44f56f79c90efb22a1f12b13af82c0e60d2ccb00d4378164d6c4e7eda61ac8be"
+      "size": 2485,
+      "sha256": "8643a432346f218bcc7c01b1c8cf3a8b21b899820307232f3d4c7c45458aff0b"
     },
     {
       "archive_path": "runtime/Codex_Situation_Island/scripts/bind_active_task_continuation_v1.ps1",
@@ -596,6 +624,13 @@
       "role": "cold_continuity_repair_material",
       "size": 7261,
       "sha256": "d033c71af09eeee12b67f359d38796655ce38262e6c3005bd91512cdb46e5e57"
+    },
+    {
+      "archive_path": "runtime/Codex_Situation_Island/scripts/manage_explicit_continuation_locator_v1.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\manage_explicit_continuation_locator_v1.ps1",
+      "role": "on_demand_explicit_continuation_consumer",
+      "size": 10227,
+      "sha256": "8baf6a375c2a44633278972869eaa7971fc209dbe759e8c3a5544c2e6517cf5b"
     },
     {
       "archive_path": "runtime/Codex_Situation_Island/scripts/restore_parent_task_continuation_v1.ps1",
@@ -624,6 +659,118 @@
       "role": "active_user_prompt_hook",
       "size": 1084,
       "sha256": "99edb9042d43ac754563a5299f276ec49f0eaf3b8170c6ba5ba2adb5b65d1f61"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/GrokAuthenticatedCatalogRefresh.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\GrokAuthenticatedCatalogRefresh.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 9438,
+      "sha256": "31c9b4e492da51ccce09136c9162e4c9208e5cf6e397e251b813a100c04538b4"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/GrokAuthenticatedCatalogTime.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\GrokAuthenticatedCatalogTime.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 2269,
+      "sha256": "86af7146b20a960a2a9da4b77e057e4bba89d85591984a0426b924021cc03c0e"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/GrokSupervisorRootCapability.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\GrokSupervisorRootCapability.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 10015,
+      "sha256": "87b72f485c096046b8f93b72bfac2192c308dd8874c313e20a1507b64222d161"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/GrokWindowsPathIdentity.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\GrokWindowsPathIdentity.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 7492,
+      "sha256": "e58aa91abaf79c08ec79147c6ac9ecb090e8c90b73ce49682a6c65453a1f4271"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/GrokWorkerPoolAccounting.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\GrokWorkerPoolAccounting.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 3679,
+      "sha256": "043ef1c8ad6e2312e03edc5b741f16a1c914565d1e4a68bdab475e6d25fb3055"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/GrokWorkerProcessRuntime.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\GrokWorkerProcessRuntime.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 1278,
+      "sha256": "efe1501032d55fd60872c73ddf22da6d50f781be477f70577fcb69081c78f81c"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/GrokWorkerSelectionReceipt.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\GrokWorkerSelectionReceipt.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 8599,
+      "sha256": "6440ff66749b4471941e4a06a8ca3b45361fbc4838e9c79f8c22e2585aca5721"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Invoke-CodexDispatchGrokWorkerPool.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 46555,
+      "sha256": "8716c20f2f44156c95c321b3cafc133cf3be14b17c8906cde6e953fb692722ef"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/Invoke-CodexGrokPackageBatch.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Invoke-CodexGrokPackageBatch.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 5287,
+      "sha256": "abbf3421acc48c9568f4b43cd70a1933e7b59840bf5cdadde4ccd4268737084e"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/Invoke-GrokComposer25Worker.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Invoke-GrokComposer25Worker.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 74463,
+      "sha256": "c1f3a7aad2946ab2020ff2dd3d78ca7e2249bb54767bbe270c9cc751e8d28e4c"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/Invoke-GrokWorkerPool.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Invoke-GrokWorkerPool.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 39474,
+      "sha256": "d4b540e17d2774e521693b107c2495770c8d16adc80cdc40aabbe99859ad41bf"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/Prepare-CodexGrokTaskLocalCheckpoint.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Prepare-CodexGrokTaskLocalCheckpoint.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 6794,
+      "sha256": "bf36d3e31d1e7a78fe381586219a5b489eedf9d602de7a8993d8b7a0a7f06957"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/Test-GrokCliEffectiveOutput.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Test-GrokCliEffectiveOutput.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 23370,
+      "sha256": "d909c465ea439f6632be02547833ce7cfb80cc391f2ac7ac94a48220efd1f57a"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/resolve_grok_worker_selection_receipt.py",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\resolve_grok_worker_selection_receipt.py",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 10540,
+      "sha256": "2192f00e0653f4850768bc2fd3f63acaaa4b0b97dd9f1bcc2acba4e55faad736"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/run_grok_package_batch.py",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\run_grok_package_batch.py",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 113410,
+      "sha256": "2565755f230375b73a5e38895ad5a6fe52b07a53b734f3d201d3cec2dedb2228"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/runtime-manifest.v1.json",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\runtime-manifest.v1.json",
+      "role": "grok_worker_pool_runtime_manifest",
+      "size": 4442,
+      "sha256": "6aaf20dfba9925b95027333b661d776ca4bea413639d217e58b14cd4a21b74dd"
     }
   ],
   "source_and_projection": {
@@ -631,10 +778,15 @@
     "account_b_credential_home_links_to_shared_runtime": true,
     "account_b_is_not_a_configuration_or_recovery_source": true,
     "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": true,
-    "legacy_v1_is_separate_history_not_a_build_input": true
+    "legacy_v1_is_separate_history_not_a_build_input": true,
+    "grok_worker_pool_live_manifest_is_the_runtime_truth": true,
+    "local_docker_is_exception_only_not_a_default_runtime_dependency": true,
+    "dated_worker_pool_recovery_snapshots_are_not_current_sources": true,
+    "live_continuation_locator_is_not_a_recovery_source": true
   },
   "excluded_on_purpose": [
     "authentication credentials and refresh tokens",
+    "live explicit-continuation locator and live task runs",
     "sessions transcripts and memory data",
     "plugin caches and reinstallable bundled or curated plugins",
     "conduct-xinao-native-research and all science-domain authority",
@@ -657,7 +809,11 @@
       "B shared file and directory links resolve to the canonical main runtime",
       "A/B credential files and active session state remain private",
       "fresh app-server hooks/list trust from each installed account",
-      "changed-context positive and negative behavior consumer"
-    ]
+      "changed-context positive and negative behavior consumer",
+      "Grok public launcher verifies the restored 15-file runtime manifest",
+      "fresh SelectionOnly succeeds before any real Grok dispatch",
+      "fresh common read-only dispatch uses a disposable host worktree while Docker is stopped"
+    ],
+    "selector_release_rebuild_source": "the current S repository plus pyproject.toml and uv.lock; a dated recovery snapshot or ambient Python is not a selector source"
   }
 }

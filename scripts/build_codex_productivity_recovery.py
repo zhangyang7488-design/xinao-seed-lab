@@ -20,6 +20,12 @@ MAIN_HOME = Path(r"C:\Users\xx363\.codex")
 ACCOUNT_B_HOME = Path(r"C:\Users\xx363\.codex-s-hardmode-account-b")
 LAUNCHER_ROOT = Path(r"C:\Users\xx363\CodexLaunchers")
 SITUATION_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island")
+STABLE_MAIN_ENTRY = Path(
+    r"C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt"
+)
+GROK_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool")
+GROK_RUNTIME_MANIFEST = GROK_RUNTIME_ROOT / "runtime-manifest.v1.json"
+GROK_BRIDGE_ROOT = GROK_RUNTIME_ROOT / "bridge"
 
 NON_PI_GENERIC_SKILLS = (
     "amplify-supervisor-worker",
@@ -59,8 +65,24 @@ MAIN_FILES = (
     "agents/luna-worker.toml",
 )
 
-LAUNCHER_FILES = (
-    "CODEX_PRODUCTIVITY_PROFILE.md",
+LAUNCHER_FILES = ("CODEX_PRODUCTIVITY_PROFILE.md",)
+
+GROK_OPERATOR_SOURCES = (
+    (
+        LAUNCHER_ROOT / "Invoke-Codex-GrokWorkerPool.ps1",
+        "launchers/Invoke-Codex-GrokWorkerPool.ps1",
+        "grok_worker_pool_public_launcher",
+    ),
+    (
+        LAUNCHER_ROOT / "Invoke-GrokWorkerOAuthRecovery.ps1",
+        "launchers/Invoke-GrokWorkerOAuthRecovery.ps1",
+        "grok_worker_pool_oauth_recovery_entry",
+    ),
+    (
+        LAUNCHER_ROOT / "CODEX_GROK_WORKER_POOL_DEFAULT.md",
+        "contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md",
+        "grok_worker_pool_operator_contract",
+    ),
 )
 
 SHARED_RUNTIME_SOURCES = (
@@ -75,18 +97,12 @@ SHARED_RUNTIME_SOURCES = (
         "credential_a_compatibility_entry",
     ),
     (
-        REPO_ROOT
-        / "scripts"
-        / "launchers"
-        / "Open-Codex-S-Hardmode-Account-B.ps1",
+        REPO_ROOT / "scripts" / "launchers" / "Open-Codex-S-Hardmode-Account-B.ps1",
         "launchers/Open-Codex-S-Hardmode-Account-B.ps1",
         "credential_b_compatibility_entry",
     ),
     (
-        REPO_ROOT
-        / "docs"
-        / "tool_glue"
-        / "CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
+        REPO_ROOT / "docs" / "tool_glue" / "CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
         "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
         "shared_runtime_credential_boundary",
     ),
@@ -99,15 +115,15 @@ INSTALLED_ENTRY_LINKS = (
     ),
     (
         LAUNCHER_ROOT / "Open-Codex-S-Hardmode-Account-B.ps1",
-        LIVE_REPO_ROOT
-        / "scripts"
-        / "launchers"
-        / "Open-Codex-S-Hardmode-Account-B.ps1",
+        LIVE_REPO_ROOT / "scripts" / "launchers" / "Open-Codex-S-Hardmode-Account-B.ps1",
     ),
 )
 
 SITUATION_FILES = {
     "README.md": "situation_island_contract",
+    "scripts/manage_explicit_continuation_locator_v1.ps1": (
+        "on_demand_explicit_continuation_consumer"
+    ),
     "scripts/bind_active_task_continuation_v1.ps1": "cold_continuity_repair_material",
     "scripts/restore_parent_task_continuation_v1.ps1": "cold_continuity_repair_material",
     "scripts/session_start_continuity_pointer_v1.ps1": "cold_continuity_repair_material",
@@ -201,6 +217,60 @@ def _collect_sources() -> list[SourceEntry]:
             )
         )
 
+    for source, archive_path, role in GROK_OPERATOR_SOURCES:
+        entries.append(
+            SourceEntry(
+                source=source,
+                archive_path=archive_path,
+                role=role,
+            )
+        )
+
+    runtime_manifest = json.loads(GROK_RUNTIME_MANIFEST.read_text(encoding="utf-8"))
+    if runtime_manifest.get("schema_version") != "xinao.grok_worker_pool_runtime_manifest.v1":
+        raise ValueError("Grok WorkerPool runtime manifest schema mismatch")
+    declared_bridge = Path(str(runtime_manifest.get("bridge_root", "")))
+    if declared_bridge.resolve() != GROK_BRIDGE_ROOT.resolve():
+        raise ValueError("Grok WorkerPool runtime manifest bridge root mismatch")
+    runtime_files = runtime_manifest.get("files")
+    if not isinstance(runtime_files, list) or len(runtime_files) != 15:
+        raise ValueError("Grok WorkerPool runtime manifest must declare 15 exact files")
+    entries.append(
+        SourceEntry(
+            source=GROK_RUNTIME_MANIFEST,
+            archive_path="runtime/grok-worker-pool/runtime-manifest.v1.json",
+            role="grok_worker_pool_runtime_manifest",
+        )
+    )
+    seen_runtime_paths: set[str] = set()
+    for item in runtime_files:
+        if not isinstance(item, dict):
+            raise ValueError("Grok WorkerPool runtime manifest file entry must be an object")
+        relative_text = str(item.get("path", ""))
+        relative = PurePosixPath(relative_text)
+        if (
+            not relative_text
+            or relative.is_absolute()
+            or len(relative.parts) != 1
+            or relative.parts[0] in {".", ".."}
+            or relative_text in seen_runtime_paths
+        ):
+            raise ValueError(f"unsafe or duplicate Grok runtime path: {relative_text!r}")
+        seen_runtime_paths.add(relative_text)
+        source = GROK_BRIDGE_ROOT / relative_text
+        expected_sha256 = str(item.get("sha256", "")).lower()
+        if len(expected_sha256) != 64 or _sha256_file(source) != expected_sha256:
+            raise ValueError(f"Grok runtime source does not match sealed manifest: {relative_text}")
+        entries.append(
+            SourceEntry(
+                source=source,
+                archive_path=PurePosixPath(
+                    "runtime", "grok-worker-pool", "bridge", relative_text
+                ).as_posix(),
+                role="grok_worker_pool_sealed_transport",
+            )
+        )
+
     for relative, role in SITUATION_FILES.items():
         source = SITUATION_ROOT / Path(relative)
         entries.append(
@@ -212,6 +282,14 @@ def _collect_sources() -> list[SourceEntry]:
                 role=role,
             )
         )
+
+    entries.append(
+        SourceEntry(
+            source=STABLE_MAIN_ENTRY,
+            archive_path="human-entries/00_先读我_主线入口与读取顺序.txt",
+            role="stable_human_reentry_entry",
+        )
+    )
 
     missing = [str(entry.source) for entry in entries if not entry.source.is_file()]
     if missing:
@@ -280,9 +358,14 @@ def build(output_root: Path) -> dict[str, object]:
             "account_b_is_not_a_configuration_or_recovery_source": True,
             "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": True,
             "legacy_v1_is_separate_history_not_a_build_input": True,
+            "grok_worker_pool_live_manifest_is_the_runtime_truth": True,
+            "local_docker_is_exception_only_not_a_default_runtime_dependency": True,
+            "dated_worker_pool_recovery_snapshots_are_not_current_sources": True,
+            "live_continuation_locator_is_not_a_recovery_source": True,
         },
         "excluded_on_purpose": [
             "authentication credentials and refresh tokens",
+            "live explicit-continuation locator and live task runs",
             "sessions transcripts and memory data",
             "plugin caches and reinstallable bundled or curated plugins",
             "conduct-xinao-native-research and all science-domain authority",
@@ -309,7 +392,14 @@ def build(output_root: Path) -> dict[str, object]:
                 "A/B credential files and active session state remain private",
                 "fresh app-server hooks/list trust from each installed account",
                 "changed-context positive and negative behavior consumer",
+                "Grok public launcher verifies the restored 15-file runtime manifest",
+                "fresh SelectionOnly succeeds before any real Grok dispatch",
+                "fresh common read-only dispatch uses a disposable host worktree while Docker is stopped",
             ],
+            "selector_release_rebuild_source": (
+                "the current S repository plus pyproject.toml and uv.lock; "
+                "a dated recovery snapshot or ambient Python is not a selector source"
+            ),
         },
     }
     manifest_path = output_root / MANIFEST_NAME

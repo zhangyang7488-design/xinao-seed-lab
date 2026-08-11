@@ -399,7 +399,7 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     assert '"context": False' in snapshot
 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(encoding="utf-8")
-    assert "currently inventories 65" in readme
+    assert "currently inventories 67" in readme
     assert "-Profile context" not in readme
 
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
@@ -526,6 +526,10 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert selector_resolution["release_binding"]["release_id"]
 
     worker_text = (bridge_root / "Invoke-GrokComposer25Worker.ps1").read_text(encoding="utf-8")
+    dispatch_text = (bridge_root / "Invoke-CodexDispatchGrokWorkerPool.ps1").read_text(
+        encoding="utf-8"
+    )
+    pool_text = (bridge_root / "Invoke-GrokWorkerPool.ps1").read_text(encoding="utf-8")
     launcher_text = launcher_path.read_text(encoding="utf-8")
     assert "GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md" in worker_text
     assert "软件工具胶水宪法_当前有效.txt" not in worker_text
@@ -544,6 +548,72 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert '[string]$CommonSealedInputRoot = ""' in launcher_text
     assert "$arguments.CommonSealedInputRoot = $CommonSealedInputRoot" in launcher_text
     assert "CommonSealedInputRoot does not exist" in launcher_text
+    assert '[string]$CommonPythonExe = ""' in launcher_text
+    assert '[string]$CommonPythonExe = ""' in dispatch_text
+    assert '[string]$CommonPythonExe = ""' in pool_text
+    assert (
+        "$CommonPythonExe = [string]$supervisorCapability.python_executable" in dispatch_text
+    )
+    assert '[string]$CommonPythonExe = "python"' not in launcher_text
+    assert '[string]$CommonPythonExe = "python"' not in dispatch_text
+    assert '[string]$CommonPythonExe = "python"' not in pool_text
+    assert '[switch]$AllowExceptionalDocker' in launcher_text
+    assert "New-CodexGrokTemporaryWorktree" in launcher_text
+    assert "CODEX_GROK_HOST_WORKTREE_REQUIRES_FRESH_SELECTION" in launcher_text
+    assert '$workerExecutionBackend = if ($AllowExceptionalDocker)' in pool_text
+    assert "GROK_DOCKER_EXCEPTION_OPT_IN_REQUIRED" in worker_text
+    assert 'HostIsolationMode = "temporary-git-worktree"' not in worker_text
+    assert '"temporary-git-worktree"' in worker_text
+
+    global_agents = Path(r"C:\Users\xx363\.codex\AGENTS.md")
+    assert global_agents.is_file()
+    global_agents_text = global_agents.read_text(encoding="utf-8")
+    assert "SENTINEL:LOCAL_DOCKER_EXCEPTION_ONLY_V1" in global_agents_text
+    assert "默认禁止启动或采用 Docker、Docker Compose 或 Docker 容器" in global_agents_text
+    assert "SENTINEL:OWNER_DIRECT_GROK_DEFAULT_DUAL_TRACK_V1" in global_agents_text
+    assert "普通 Grok 派工是链内技术路由" in global_agents_text
+    assert "Codex 不得派完就等待或只转述报告" in global_agents_text
+
+    docker_without_opt_in = subprocess.run(
+        [
+            "pwsh",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(bridge_root / "Invoke-GrokComposer25Worker.ps1"),
+            "-Prompt",
+            "NO_MODEL_CALL_EXPECTED",
+            "-Cwd",
+            str(REPO_ROOT),
+            "-GrokHome",
+            r"C:\Users\xx363\.grok-bg-workers",
+            "-ExecutionBackend",
+            "linux-container",
+            "-Quiet",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert docker_without_opt_in.returncode != 0
+    assert "GROK_DOCKER_EXCEPTION_OPT_IN_REQUIRED" in (
+        docker_without_opt_in.stdout + docker_without_opt_in.stderr
+    )
+
+    selector_python = Path(selector_resolution["python_executable"])
+    assert selector_python.is_file()
+    formal_import_check = subprocess.run(
+        [str(selector_python), "-I", "-B", "-c", "import portalocker"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert formal_import_check.returncode == 0, formal_import_check.stderr
 
     auth_helper = bridge_root / "GrokAuthenticatedCatalogRefresh.ps1"
     quoted_helper = str(auth_helper).replace("'", "''")
@@ -597,6 +667,60 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert 'profile_identity = "generic_workerpool_transport"' in oauth_text
     assert "profile_role_authority = $false" in oauth_text
     assert "worker_transport_auth_present" in oauth_text
+
+
+def test_stable_reentry_uses_only_one_explicit_continuation_locator_when_installed(
+    tmp_path: Path,
+) -> None:
+    stable_entry = Path(
+        r"C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt"
+    )
+    manager = Path(
+        r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
+        r"\manage_explicit_continuation_locator_v1.ps1"
+    )
+    if not stable_entry.is_file() or not manager.is_file():
+        return
+
+    entry_text = stable_entry.read_text(encoding="utf-8")
+    manager_text = manager.read_text(encoding="utf-8")
+    assert str(manager) in entry_text
+    assert "-Action Inspect" in entry_text
+    assert "不得枚举 `runs/`" in entry_text
+    assert "active_validated" in entry_text
+    assert "Never enumerate runs or choose by recency" in manager_text
+    assert "task creation" in manager_text
+    assert "hidden-state continuity" in manager_text
+
+    absent_pointer = tmp_path / "absent-explicit-continuation.json"
+    inspected = subprocess.run(
+        [
+            "pwsh",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(manager),
+            "-Action",
+            "Inspect",
+            "-PointerPath",
+            str(absent_pointer),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert inspected.returncode == 0, inspected.stderr
+    payload = json.loads(inspected.stdout)
+    assert payload == {
+        "schema_version": "xinao.explicit_continuation_inspection.v1",
+        "status": "absent",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "pointer_path": str(absent_pointer),
+    }
 
 
 def test_live_grok_catalog_refresh_prefers_verified_postcondition_over_stale_terminal_text(
@@ -1246,13 +1370,13 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 109
+    assert suite_count == catalog["declared_case_count"] == 111
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
         "core": 18 + 1 + 9 + 9 + 6 + 2 + 1 + 2 + 8,
         "deep": 18 + 1 + 9 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
-        "intent": 65,
+        "intent": 67,
         "external": 9,
         "reconstitution": 9,
         "proactive": 6,
@@ -1262,7 +1386,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 65
+    assert intent["case_count"] == 67
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     external_reality = next(

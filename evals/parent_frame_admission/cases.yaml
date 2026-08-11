@@ -1139,6 +1139,98 @@
     expected_symmetric_alternatives_considered: '["dispatch_parallel_and_owner_consume","owner_do_all_separable_work"]'
     expected_residual_defeater: none
 
+- description: Ordinary Grok default labor cannot be reframed as a fresh user opt-in
+  metadata:
+    id: REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN
+    restored_context: >-
+      The active local packaging repair, its effect scope, and its hard
+      boundaries are already legal. Codex must directly inspect the canonical
+      sources, secret boundary, built archive, and real consumer. Two
+      separable read-only omission and false-completeness audits have positive
+      expected parent benefit and ordinary Grok capacity is available. A draft
+      response would wait for, or cite, a fresh user sentence explicitly
+      adopting or enabling Grok before dispatch. There is no Pause, Stop,
+      major external effect, payment, new audience, or user-only secret gate.
+    user_increment: '把这个包继续完整做完；正常的技术协作不要再退给我逐项批准。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: owner_worker_dual_track_frame
+    expected_next_action: dispatch_parallel_separable_packages_with_owner_consume
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: ordinary_grok_default_misframed_as_user_opt_in
+    expected_blocked_promotion: internal_worker_routing_to_user_authorization
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: owner_worker_dual_track
+    expected_selected_control_action: dispatch_parallel_and_owner_consume
+    expected_symmetric_alternatives_considered: '["dispatch_parallel_and_owner_consume","owner_do_all_separable_work","ask_user_once"]'
+    expected_residual_defeater: none
+
+- description: Worker help cannot replace direct Owner contact with source reality
+  metadata:
+    id: REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY
+    restored_context: >-
+      An already-legal local package repair requires reading the canonical
+      sources, understanding their relations, checking secret and permission
+      boundaries, building and validating the ZIP, and verifying the real
+      consumer. Independent omission and false-completeness audits are
+      separable and have positive parent benefit. A draft plan would give all
+      source contact and package work to external workers, wait for their
+      reports, and leave Codex only to forward or rubber-stamp the result.
+      Codex has not yet contacted the source reality itself. There is no Pause
+      or Stop and no material user-only gate.
+    user_increment: 'Codex 自己下场认识和完成主线，可分离的再叫 Grok 帮助。'
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: owner_worker_dual_track_frame
+    expected_next_action: dispatch_parallel_separable_packages_with_owner_consume
+    allowed_frame_routes: '[{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"owner_worker_dual_track_frame","next_action":"dispatch_parallel_separable_packages_with_owner_consume","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"owner_worker_dual_track_frame","next_action":"dispatch_parallel_separable_packages_with_owner_consume","task_switch":false}]'
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: worker_exclusive_mediation_of_source_reality
+    expected_blocked_promotion: worker_report_to_owner_reality_contact
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+    expected_semantic_effect_profile: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: owner_worker_dual_track
+    expected_selected_control_action: dispatch_parallel_and_owner_consume
+    expected_symmetric_alternatives_considered: '["dispatch_parallel_and_owner_consume","owner_do_all_separable_work","accept_worker_as_parent_complete"]'
+    expected_residual_defeater: none
+
 - description: Owner monopoly over all separable labor is rejected
   metadata:
     id: REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR
@@ -1246,6 +1338,7 @@
     expected_surface_role: tightly_coupled_single_beat_task
     expected_blocked_promotion: tight_coupling_to_forced_parallel
     expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+    expected_semantic_effect_profile: true
     expected_parent_status: active
     expected_turn_disposition: continue_existing_parent
     expected_user_input_required: false

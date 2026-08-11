@@ -364,13 +364,15 @@
     },
     {
       "id": "owner_worker_fanin_and_adoption",
-      "pain": "Sole Owner was confused with sole labor, while worker terminal, model identity, or agreement could be confused with adoption and completion.",
-      "causal_work": "Dispatch separable positive-value labor, keep Codex in direct contact with the real object, and separate candidate, Owner adoption, effect, and parent completion.",
+      "pain": "Sole Owner was confused with sole labor; the inverse correction could make Codex a report-forwarding intermediary, while ordinary Grok routing was repeatedly narrated as if fresh user opt-in created its legality. Worker terminal, model identity, or agreement could still be confused with adoption and completion.",
+      "causal_work": "Codex personally contacts and advances the source reality while ordinary Grok concurrently receives every separable positive-value package as chain-internal default labor without fresh worker-specific approval; keep candidate, Owner adoption, effect, and parent completion separate.",
       "historical_carriers": [
         "git:4096f52^:evals/context_intent_alignment/cases.yaml",
         "D:/XINAO_RESEARCH_RUNTIME/state/grok_worker_pool"
       ],
       "current_consumers": [
+        "external:A/B shared AGENTS.md owner-direct plus default-Grok hot invariant",
+        "external:amplify-supervisor-worker no-opt-in and no-exclusive-mediation contract",
         "external:dispatch-grok-worker-pool skill",
         "external:Invoke-GrokWorkerPool.ps1",
         "services/agent_runtime/dispatch_economics.py",
@@ -382,7 +384,8 @@
       "cost_and_failure_radius": "Fan-out spends independent quota and creates Owner fan-in burden; auto-adoption would have parent-wide failure radius.",
       "rollback": "Reject or quarantine a candidate receipt; never translate accepted worker execution into Owner adoption.",
       "unknowns": [
-        "External WorkerPool has strong terminal receipts but no universal automated Owner-adoption consumer by design."
+        "External WorkerPool has strong terminal receipts but no universal automated Owner-adoption consumer by design.",
+        "Focused fresh trajectories can falsify the two known poles but cannot prove that every future natural window will preserve both direct Owner contact and default positive-value Grok labor."
       ]
     },
     {

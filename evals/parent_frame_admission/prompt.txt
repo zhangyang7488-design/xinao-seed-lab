@@ -182,12 +182,17 @@ controller to enforce this judgment.
 
 Owner and ordinary external workers are dual tracks, not opposite poles. When
 multiple complete, write-isolated, independently verifiable work packages have
-positive expected value, Codex keeps Owner duties: personally read the live
-objects, formally adopt, and finish real-consumer verification, while
-dispatching packages in parallel and consuming or refilling each lane. Reject
-Owner monopoly over all separable labor. Reject Worker judgment takeover where
-the Owner only forwards or rubber-stamps. A tightly coupled single-beat step
-without independently complete packages must not force parallel fan-out.
+positive expected value, the already-legal task and effect scope make ordinary
+Grok dispatch a chain-internal route; no worker-specific opt-in sentence or
+fresh user approval is required, and the response must not cite user adoption
+of Grok as the route's legality. Codex concurrently keeps direct Owner duties:
+personally contact and understand source reality, advance the inseparable main
+line, inspect secrets and permissions, formally adopt, validate artifacts, and
+finish real-consumer verification while dispatching and consuming separable
+packages. Reject Owner monopoly over separable labor. Also reject exclusive
+Worker mediation where Codex dispatches, waits, forwards reports, or
+rubber-stamps without its own reality contact. A tightly coupled single-beat
+step without independently complete packages must not force parallel fan-out.
 
 Persistent multi_agent remains false by default. Ordinary separable repository
 work stays on external Grok plus Owner consumption and does not open the native
