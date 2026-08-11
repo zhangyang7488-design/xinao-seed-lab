@@ -34,6 +34,51 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def test_pi_contract_island_manifests_keep_one_home_and_cold_history() -> None:
+    family = json.loads(_text(FAMILY_ISLAND / "island.manifest.json"))
+    surface = json.loads(_text(PRIME_S_ISLAND / "island.manifest.json"))
+
+    assert family["schema"] == "xinao.pi_local_contract_source.v2"
+    assert surface["schema"] == "xinao.pi_surface_contract_source.v2"
+    for manifest in (family, surface):
+        assert manifest["owner_product"] == "pi"
+        assert manifest["live_discovery_required"] == [
+            "official_version",
+            "model",
+            "child_topology",
+        ]
+        assert manifest["dated_compatibility_fact"]["observed_on"] == "2026-08-10"
+        assert manifest["dated_compatibility_fact"]["projected_runtime_line"] == "0.84.1"
+        assert "behavior_source" not in manifest
+        assert "skills_source" not in manifest
+        assert "promotes_to" not in manifest
+        assert "kind" not in manifest
+
+    assert family["source_kind"] == "local-family-contract"
+    assert family["surfaces"]["prime"]["compatibility_profile"] == "prime-s"
+    assert family["legacy_evidence_policy"] == {
+        "temperature": "cold",
+        "default_load": False,
+        "generated_projection": False,
+    }
+    assert surface["source_kind"] == "local-surface-contract"
+    assert surface["surface_name"] == "prime"
+    assert surface["compatibility_profile"] == "prime-s"
+    assert surface["legacy_evidence"]["temperature"] == "cold"
+    assert surface["legacy_evidence"]["default_load"] is False
+    assert surface["legacy_evidence"]["generated_projection"] is False
+
+    projections = (
+        Path(family["surfaces"]["prime"]["generated_contract_projection"]),
+        Path(surface["generated_contract_projection"]),
+    )
+    for projection in projections:
+        assert str(projection).replace("\\", "/").startswith(
+            "D:/XINAO_RESEARCH_RUNTIME/state/pi/0.84.1/profiles/"
+        )
+        assert projection.name == "PI_CONTRACT.md"
+
+
 def _frontmatter_description(path: Path) -> str:
     lines = _text(path).splitlines()
     start = next(index for index, line in enumerate(lines) if line.startswith("description:"))
@@ -292,8 +337,44 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "$matrix" not in installer
     assert "foreach ($profileName in $Profile)" in installer
     assert "foreach ($profile in $Profile)" not in installer
-    assert "--no-session --tools read" in cross_repo
-    assert "SENTINEL:XINAO_REALITY_DIRECT_TO_CURRENT_SOL_V2" in cross_repo
+    assert "'--mode', 'rpc'" in cross_repo
+    assert "'--no-session'" in cross_repo
+    assert "'--tools', 'read'" in cross_repo
+    assert "tool_execution_start" in cross_repo
+    assert "tool_execution_end" in cross_repo
+    assert "agent_settled" in cross_repo
+    assert "expected=$expectedValue actual=$actualValue" in cross_repo
+    assert "$Spec.ContractProjection" in cross_repo
+    assert "AGENTS.md" in cross_repo
+    assert "README.md" in cross_repo
+    assert "derivability_ab" in cross_repo
+    assert "derivability_ba" in cross_repo
+    assert "independent_evidence" in cross_repo
+    assert "derivability_scope" in cross_repo
+    assert "functional_status" in cross_repo
+    assert "ontology_priority" in cross_repo
+    assert "local_settlement" in cross_repo
+    assert "local_effect_disposition" in cross_repo
+    assert "returned_material_ref" in cross_repo
+    assert "consumer_operation" in cross_repo
+    assert "next_question_required" not in cross_repo
+    assert "parent_close_authorized" not in cross_repo
+    assert "subsequent question" not in cross_repo.lower()
+    assert "external_effect_performed" not in cross_repo
+    assert " idle " not in cross_repo.lower()
+    assert "no action" not in cross_repo.lower()
+    assert "openness_control" in cross_repo
+    assert "working_relation_status" in cross_repo
+    assert "only as a working hypothesis" in cross_repo
+    assert "neither the observations nor the provisional relation qualify" in cross_repo
+    assert "claim_qualification" in cross_repo
+    assert "effect_qualification" in cross_repo
+    assert "SENTINEL:XINAO_REALITY_LOCAL_MECHANICS_V4" in cross_repo
+    assert "SENTINEL:XINAO_REALITY_DIRECT_TO_CURRENT_SOL_V2" not in cross_repo
+    assert "xinao_research current" not in cross_repo
+    assert "xinao_research event" not in cross_repo
+    assert "xinao_research trajectory" not in cross_repo
+    assert "--print" not in cross_repo
     assert "Resolve-PiProfileSessionSelection" in start
     assert "PI_SESSION_SELECTION_CONFLICTS_WITH_NEW_SESSION" in start
     assert "PI_SESSION_SELECTION_OUTSIDE_PROFILE" in start

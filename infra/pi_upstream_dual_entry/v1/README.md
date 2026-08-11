@@ -228,9 +228,9 @@ Start 时 MidTurn 层只验证 exact downstream-composed 三文件组合，不�
 历史兼容工具，不产生默认同步任务；账号、auth、sessions、memory、活动状态和整岛始终排除。
 
 `scripts\Test-PiCrossRepositoryContext.ps1` 默认只验证主 `prime`；只有明确恢复冷备时才显式传
-`-Profile prime-b`。探针用 fresh、no-session、只读工具实际读取新澳仓的 `AGENTS.md` 与
-`README.md` 与 `python -B -m xinao_research current`，验证跨仓接触来自当前对象识别和 live
-事实读取，而不是切换 Pi 身份或只让模型复述热合同。
+`-Profile prime-b`。四个彼此独立的 fresh、no-session 合成用例只开放 `read`，并要求实际读取
+活动 `PI_CONTRACT.md` 与新澳仓 `AGENTS.md`、`README.md`。验收从 JSONL 工具事件核对精确读取，
+以 AB/BA 镜像、局部结算和开放关系控制验证热语义；不调用新澳数据命令，也不保存长 transcript。
 
 `codex-skills\steward-pis-evolution` 是 Codex 侧的薄恢复/操作入口：它不复制 Pi 认知正文，
 而是先回读共同合同岛与当前能力谱系，再按需进入真实 profile、通信边缘、身体实验室和消费者。
