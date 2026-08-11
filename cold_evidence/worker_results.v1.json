@@ -1,0 +1,76 @@
+{
+  "schema_version": "codex.situation_snapshot_lab.worker_results.v1",
+  "runtime_loaded": false,
+  "authority": false,
+  "completion_claim_allowed": false,
+  "source_head": "f68818197e55b57ede2b25e5e308cbe1c9b6d9a5",
+  "source_worktree": "E:\\XINAO_RESEARCH_WORKSPACES\\worktrees\\situation-snapshot-grok-readonly-20260811",
+  "accepted_transport_results": [
+    {
+      "pool_id": "gwp_20260811T164119_03667d47",
+      "role": "continuity red team",
+      "summary_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_03667d47\\pool_summary.json",
+      "summary_sha256": "2a7b0b2c317eaf0f648753b2096daf05af09b5f45df1ae5516b8b64244539c00",
+      "output_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_03667d47\\lane_00\\c25_20260811T164127_1a5d0896.out.log",
+      "output_sha256": "64c7dc09f15cfa970fb2ce9ccb96abb882ddffd36a5e77c55ee8fb7c4b3f7ace"
+    },
+    {
+      "pool_id": "gwp_20260811T164119_9ae0525d",
+      "role": "cold recovery design",
+      "summary_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_9ae0525d\\pool_summary.json",
+      "summary_sha256": "1f4cdc28743d2103924931d69ca811cc404644dcf478d4c23e163b4782ea1a86",
+      "output_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_9ae0525d\\lane_00\\c25_20260811T164128_c7b9e998.out.log",
+      "output_sha256": "0a2e987b3ae1e631bbc892936929ff5115d461edd38f6d6f8410104559fe255b"
+    },
+    {
+      "pool_id": "gwp_20260811T164119_b103c020",
+      "role": "CurrentSituation transition design",
+      "summary_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_b103c020\\pool_summary.json",
+      "summary_sha256": "91fc8580d786685bb1fe56fa4dbd2e74d200b3e858c3a7f0eb59f84573176b81",
+      "output_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_b103c020\\lane_00\\c25_20260811T164127_244304a0.out.log",
+      "output_sha256": "a5becd68a060ae7257807e52aec7f4616ee75a46c07665fa0a427127470f9aca"
+    },
+    {
+      "pool_id": "gwp_20260811T164119_c1d2d5f3",
+      "role": "existing capability reuse audit",
+      "summary_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_c1d2d5f3\\pool_summary.json",
+      "summary_sha256": "da3f5dc1fbd7fe0f4812a2d18e21314314d3820142b33797d0d216009a056b17",
+      "output_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_c1d2d5f3\\lane_00\\c25_20260811T164128_1bb021f6.out.log",
+      "output_sha256": "1608c3c6e5ac5274b6f483313b4ebb3d359e0340839ff6fcf4d4879453509d41"
+    },
+    {
+      "pool_id": "gwp_20260811T164119_ee22a93f",
+      "role": "deterministic RuntimeObservation design",
+      "summary_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_ee22a93f\\pool_summary.json",
+      "summary_sha256": "f8f0b3f02167ea0243e9f70e83428f5f39f14f90eec04ae9ae48ae7c91c0e43b",
+      "output_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_ee22a93f\\lane_00\\c25_20260811T164127_a0ce4166.out.log",
+      "output_sha256": "68a0cfa0fb0d6f1c462737824932b0826a7af866564c7af882968418a2dc0942"
+    },
+    {
+      "pool_id": "gwp_20260811T164119_f7796921",
+      "role": "B0-B5 causal ablation design",
+      "summary_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_f7796921\\pool_summary.json",
+      "summary_sha256": "10611d72442a71b2d18dbf85646a5660149e0355739cd5c0fd4d8ab7a4fd5559",
+      "output_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164119_f7796921\\lane_00\\c25_20260811T164128_ae07f747.out.log",
+      "output_sha256": "88cf008736cad64fb9956599f4011cd62f41057868c43a236c80312b9671317e"
+    },
+    {
+      "pool_id": "gwp_20260811T164120_125ca872",
+      "role": "semantic accident evaluation design",
+      "summary_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164120_125ca872\\pool_summary.json",
+      "summary_sha256": "c5101978e331ea83b0e4ade70c774e8bbf6bbcee80087d419ccacc179d38f3f1",
+      "output_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260811T164120_125ca872\\lane_00\\c25_20260811T164128_22fa3780.out.log",
+      "output_sha256": "89c4ba9d8c305d81586e85d08ee53ffd16297d119102ea8478fe883aff66967c"
+    }
+  ],
+  "interrupted_unadopted_pools": [
+    "gwp_20260811T163244_2386abdd",
+    "gwp_20260811T163244_59aa9030",
+    "gwp_20260811T163244_6aff4f3c",
+    "gwp_20260811T163244_73d40c64",
+    "gwp_20260811T163244_c67dcc0a",
+    "gwp_20260811T163244_fec1f2e9",
+    "gwp_20260811T163245_b71ee30b"
+  ],
+  "disposition": "transport accepted; substantive findings remain candidate inputs selected individually by Codex Owner"
+}

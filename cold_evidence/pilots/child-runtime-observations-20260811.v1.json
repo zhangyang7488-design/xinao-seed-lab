@@ -1,0 +1,158 @@
+{
+  "schema": "xinao.situation_snapshot_lab.child_runtime_observations.v1",
+  "status": "cold_candidate_evidence",
+  "production_registered": false,
+  "truth_source": "selected child CODEX_HOME sessions rollout only",
+  "observer": {
+    "relative_path": "evals/situation_snapshot_lab/child_runtime_observation.py",
+    "sha256": "fd525d201dd1f73e8aa4cafa2f27340645e6dcae45504891c4d0abd603291238",
+    "test_relative_path": "tests/test_situation_snapshot_lab_child_runtime_observation.py",
+    "test_sha256": "026880b2d8c40c540954d888ac831b8676d93c4dd3d6ad1ebf33d0a277fa2b1c"
+  },
+  "observations": [
+    {
+      "run_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\situation_snapshot_lab\\pilot-20260811-01",
+      "track": "action-boundary-b4",
+      "thread_id": "019ff03a-005d-70c3-bf84-2cd36e1101f0",
+      "observed": {
+        "approval_policy": "never",
+        "cwd": "D:\\XINAO_RESEARCH_RUNTIME\\state\\situation_snapshot_lab\\pilot-20260811-01\\tracks\\action-boundary-b4\\workspace",
+        "effort": "max",
+        "model": "gpt-5.6-sol",
+        "permission_profile": {
+          "file_system": {
+            "entries": [
+              {
+                "access": "read",
+                "path": {
+                  "type": "special",
+                  "value": {
+                    "kind": "root"
+                  }
+                }
+              }
+            ],
+            "type": "restricted"
+          },
+          "network": "restricted",
+          "type": "managed"
+        },
+        "sandbox_policy": {
+          "type": "read-only"
+        }
+      },
+      "rollout": {
+        "bytes": 78359,
+        "relative_path": "2026/08/11/rollout-2026-08-11T17-49-20-019ff03a-005d-70c3-bf84-2cd36e1101f0.jsonl",
+        "sha256": "04b5a7f202c1d8aa427a5f2b7c18170ce2ee413550a6c97ba85c6cf890caf5e9",
+        "turn_context_count": 3
+      },
+      "turn_context_permission_evidence": [
+        {
+          "index": 1,
+          "line_number": 8,
+          "sandbox_policy_type": "read-only",
+          "permission_profile_type": "managed",
+          "root_access": "read",
+          "cross_check_status": "single_source",
+          "preceding_thread_settings_line": null
+        },
+        {
+          "index": 2,
+          "line_number": 18,
+          "sandbox_policy_type": "read-only",
+          "permission_profile_type": "managed",
+          "root_access": "read",
+          "cross_check_status": "match",
+          "preceding_thread_settings_line": 16
+        },
+        {
+          "index": 3,
+          "line_number": 28,
+          "sandbox_policy_type": "read-only",
+          "permission_profile_type": "managed",
+          "root_access": "read",
+          "cross_check_status": "match",
+          "preceding_thread_settings_line": 26
+        }
+      ],
+      "unknown": []
+    },
+    {
+      "run_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\situation_snapshot_lab\\pilot-20260811-action-02",
+      "track": "action-boundary-b4",
+      "thread_id": "019ff042-5bb3-7130-bdcb-05c9812a6962",
+      "observed": {
+        "approval_policy": "never",
+        "cwd": "D:\\XINAO_RESEARCH_RUNTIME\\state\\situation_snapshot_lab\\pilot-20260811-action-02\\tracks\\action-boundary-b4\\workspace",
+        "effort": "max",
+        "model": "gpt-5.6-sol",
+        "permission_profile": {
+          "file_system": {
+            "entries": [
+              {
+                "access": "read",
+                "path": {
+                  "type": "special",
+                  "value": {
+                    "kind": "root"
+                  }
+                }
+              }
+            ],
+            "type": "restricted"
+          },
+          "network": "restricted",
+          "type": "managed"
+        },
+        "sandbox_policy": {
+          "type": "read-only"
+        }
+      },
+      "rollout": {
+        "bytes": 81032,
+        "relative_path": "2026/08/11/rollout-2026-08-11T17-58-28-019ff042-5bb3-7130-bdcb-05c9812a6962.jsonl",
+        "sha256": "79b9e0df6d427fb0ab23a116b42cb274b1f0190febc60fb2e59ba821197d15a2",
+        "turn_context_count": 3
+      },
+      "turn_context_permission_evidence": [
+        {
+          "index": 1,
+          "line_number": 8,
+          "sandbox_policy_type": "read-only",
+          "permission_profile_type": "managed",
+          "root_access": "read",
+          "cross_check_status": "single_source",
+          "preceding_thread_settings_line": null
+        },
+        {
+          "index": 2,
+          "line_number": 18,
+          "sandbox_policy_type": "read-only",
+          "permission_profile_type": "managed",
+          "root_access": "read",
+          "cross_check_status": "match",
+          "preceding_thread_settings_line": 16
+        },
+        {
+          "index": 3,
+          "line_number": 28,
+          "sandbox_policy_type": "read-only",
+          "permission_profile_type": "managed",
+          "root_access": "read",
+          "cross_check_status": "match",
+          "preceding_thread_settings_line": 26
+        }
+      ],
+      "unknown": []
+    }
+  ],
+  "adjudication_boundary": {
+    "supported": "both observed child carriers were managed root-read-only for all three recorded turn contexts",
+    "not_supported": [
+      "the requested workspace-write configuration became effective",
+      "the explicit action effect completed",
+      "a general cause beyond this nested carrier boundary"
+    ]
+  }
+}

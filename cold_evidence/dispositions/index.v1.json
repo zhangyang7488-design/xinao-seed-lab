@@ -1,0 +1,16 @@
+{
+  "schema_version": "codex.situation_snapshot_lab.disposition_index.v1",
+  "runtime_loaded": false,
+  "records": [
+    {
+      "record_id": "remove-transaction-added-task-run-binding-20260811",
+      "path": "records/remove-transaction-added-task-run-binding-20260811.json",
+      "disposition": "REMOVE_TRANSACTION_ADDED_OBJECT"
+    },
+    {
+      "record_id": "retire-readonly-baseline-worktree-20260811",
+      "path": "records/retire-readonly-baseline-worktree-20260811.json",
+      "disposition": "RETIRE_TRANSACTION_ADDED_REBUILDABLE_WORKTREE"
+    }
+  ]
+}

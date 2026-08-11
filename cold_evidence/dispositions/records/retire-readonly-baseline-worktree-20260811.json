@@ -1,0 +1,53 @@
+{
+  "schema_version": "codex.disposition_recovery_record.v1",
+  "record_id": "retire-readonly-baseline-worktree-20260811",
+  "object_id": "git-worktree:situation-snapshot-grok-readonly-20260811",
+  "disposition": "RETIRE_TRANSACTION_ADDED_REBUILDABLE_WORKTREE",
+  "reason": "the detached worktree was created only to reproduce one baseline test at the lab base commit; that reproduction is complete and leaving its uv environment would make the local baseline less clean",
+  "exact_path": "E:\\XINAO_RESEARCH_WORKSPACES\\worktrees\\situation-snapshot-grok-readonly-20260811",
+  "git_identity": {
+    "head": "f68818197e55b57ede2b25e5e308cbe1c9b6d9a5",
+    "branch": null,
+    "detached": true,
+    "tracked_or_untracked_changes": false
+  },
+  "disposable_ignored_objects": [
+    ".pytest_cache/",
+    ".venv/",
+    "tests/__pycache__/"
+  ],
+  "consumer_check": {
+    "purpose_completed": true,
+    "unique_source_state": false,
+    "active_process_consumer_required_before_removal": false
+  },
+  "recovery": {
+    "source": "S Git object f68818197e55b57ede2b25e5e308cbe1c9b6d9a5 plus tracked pyproject.toml and uv.lock",
+    "method": "git worktree add --detach <new-exact-path> f68818197e55b57ede2b25e5e308cbe1c9b6d9a5; uv recreates the environment on the next declared uv run",
+    "preimage_bytes_required": false
+  },
+  "removal_receipt": {
+    "status": "removed_by_exact_git_worktree_remove",
+    "source_changes_before": 0,
+    "ignored_objects_before": 3,
+    "active_process_consumers_before": 0,
+    "path_absent_after": true,
+    "registration_absent_after": true
+  },
+  "non_effects": [
+    "does not remove the Situation Snapshot Lab worktree",
+    "does not change the main S worktree",
+    "does not remove a branch or Git object",
+    "does not touch production configuration, credentials, hooks, or XINAO"
+  ],
+  "do_not_load_into": [
+    "ordinary Codex turns",
+    "AGENTS.md",
+    "Hooks",
+    "CurrentSituation"
+  ],
+  "authority": false,
+  "runtime_loaded": false,
+  "completion_claim_allowed": false,
+  "backup_presence_is_restore_proof": false
+}

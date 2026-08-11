@@ -1,0 +1,53 @@
+{
+  "schema_version": "codex.disposition_recovery_record.v1",
+  "record_id": "remove-transaction-added-task-run-binding-20260811",
+  "object_id": "Codex_Situation_Island.current_thread_binding:019fef07-4cb5-78e1-ab7c-39fcec576ecb",
+  "disposition": "REMOVE_TRANSACTION_ADDED_OBJECT",
+  "reason": "verified-agent-loop task_run init created a current-session binding while the lab required a zero-modification production baseline; the sole active UserPromptSubmit hook did not consume this binding",
+  "before_expected_state": "ABSENT",
+  "removed_objects": [
+    {
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\state\\compaction_frontiers\\bindings\\019fef07-4cb5-78e1-ab7c-39fcec576ecb.json",
+      "sha256": "3103cf895ab94701c55af4bbc94a7b029e3ac65ffc4decf63f91c10b20564ae9",
+      "unique_state": false
+    },
+    {
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\state\\compaction_frontiers\\bindings\\019fef07-4cb5-78e1-ab7c-39fcec576ecb.lock",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "unique_state": false
+    }
+  ],
+  "consumer_check": {
+    "active_hook": "UserPromptSubmit only",
+    "binding_consumed": false,
+    "production_source_or_config_changed": false
+  },
+  "recovery": {
+    "source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_task_runs\\situation-snapshot-lab-20260811-v2",
+    "method": "regenerate an authority-false session binding from the retained task run only if a future explicit recovery operation adopts it",
+    "preimage_bytes_required": false
+  },
+  "removal_receipt": {
+    "safe_cleanup_plan_id": "902822302d744d8d9e4aeaa038d1d073",
+    "safe_cleanup_plan_sha256": "5753e586e7aceb2ac936f0c6c5a23315b61d4ba62e5c72951859ace5aa00f4a5",
+    "task_run_event": "production-baseline-binding-restored-v1",
+    "both_objects_absent_after": true
+  },
+  "non_effects": [
+    "did_not_remove_or_restore_any production hook",
+    "did_not change Situation Island README",
+    "did_not adopt a compact or resume mechanism",
+    "did_not modify XINAO or S source"
+  ],
+  "do_not_load_into": [
+    "ordinary Codex turns",
+    "AGENTS.md",
+    "UserPromptSubmit",
+    "SessionStart",
+    "CurrentSituation"
+  ],
+  "authority": false,
+  "runtime_loaded": false,
+  "completion_claim_allowed": false,
+  "backup_presence_is_restore_proof": false
+}
