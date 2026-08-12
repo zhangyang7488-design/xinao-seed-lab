@@ -59,9 +59,7 @@ _SCHEMA_FAMILIES = {
 DEFAULT_SOURCE_REPO = Path(r"E:\CODEX_CLEANROOM\workspace")
 DEFAULT_LAUNCHER = Path(r"E:\CODEX_CLEANROOM\Open-Codex-Cleanroom.ps1")
 DEFAULT_POWERSHELL = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
-DEFAULT_RUNTIME_ROOT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute"
-)
+DEFAULT_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute")
 LEGACY_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c")
 DEDICATED_A_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a")
 DEFAULT_CLONE_ROOT = Path(r"E:\CODEX_CLEANROOM\research-lineages")
@@ -128,9 +126,7 @@ def validate_account_slot(value: object) -> str:
     return slot
 
 
-def validate_recovery_account_slot(
-    config: Mapping[str, Any], *, expected: object | None
-) -> str:
+def validate_recovery_account_slot(config: Mapping[str, Any], *, expected: object | None) -> str:
     frozen = validate_account_slot(config.get("account_slot"))
     if expected is not None and validate_account_slot(expected) != frozen:
         raise PerpetualRuntimeError(
@@ -1578,9 +1574,7 @@ def validate_recovery_identity(config: Mapping[str, Any]) -> dict[str, Any]:
             f"expected={expected_semantic} observed={shared_identity['semantic_sha256']}"
         )
     lineages = [
-        validate_lineage_runtime_repo(
-            resolve_path(spec["workspace"]), str(config["source_head"])
-        )
+        validate_lineage_runtime_repo(resolve_path(spec["workspace"]), str(config["source_head"]))
         for spec in [*config["branch_lineages"], config["root_lineage"]]
     ]
     return {
@@ -1628,9 +1622,7 @@ def _next_incomplete_fusion_packet(config: Mapping[str, Any]) -> Path | None:
     fusion_state = read_json_object(fusion_state_path) if fusion_state_path.is_file() else {}
     wave_number = int(fusion_state.get("waves_completed", 0)) + 1
     packet_dir = (
-        resolve_path(root_spec["workspace"])
-        / "S_CONTROL_INPUTS"
-        / f"wave-{wave_number:06d}"
+        resolve_path(root_spec["workspace"]) / "S_CONTROL_INPUTS" / f"wave-{wave_number:06d}"
     )
     if packet_dir.is_dir() and not (packet_dir / "PACKET_MANIFEST.json").is_file():
         return packet_dir
@@ -1675,7 +1667,9 @@ def quarantine_incomplete_fusion_packet(
     if isinstance(pending, dict) and resolve_path(pending.get("packet_dir", "")) == packet_dir:
         raise PerpetualRuntimeError(f"INCOMPLETE_PACKET_IS_PENDING_TRANSACTION: {packet_dir}")
     if fusion_state.get("last_packet") and resolve_path(fusion_state["last_packet"]) == packet_dir:
-        raise PerpetualRuntimeError(f"INCOMPLETE_PACKET_ALREADY_RECORDED_AS_COMMITTED: {packet_dir}")
+        raise PerpetualRuntimeError(
+            f"INCOMPLETE_PACKET_ALREADY_RECORDED_AS_COMMITTED: {packet_dir}"
+        )
     inventory = _directory_inventory(packet_dir)
     quarantine_root = resolve_path(root_spec["workspace"]) / "S_CONTROL_QUARANTINE"
     quarantine_root.mkdir(parents=True, exist_ok=True)
@@ -2073,10 +2067,7 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
     if not config_path.is_file():
         raise PerpetualRuntimeError(f"RUN_CONFIG_MISSING: {config_path}")
     recovery_id = (
-        "recovery-"
-        + dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        + "-"
-        + uuid.uuid4().hex[:8]
+        "recovery-" + dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f") + "-" + uuid.uuid4().hex[:8]
     )
     recovery_dir = run_dir / "recovery" / recovery_id
     receipt_path = recovery_dir / "receipt.json"
@@ -2139,8 +2130,7 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
                     incomplete = _next_incomplete_fusion_packet(config)
                     if incomplete is not None:
                         raise PerpetualRuntimeError(
-                            "INCOMPLETE_FUSION_PACKET_REQUIRES_REPAIRED_RELEASE: "
-                            f"{incomplete}"
+                            f"INCOMPLETE_FUSION_PACKET_REQUIRES_REPAIRED_RELEASE: {incomplete}"
                         )
             release_path = resolve_path(config["controller_release_path"])
             release_sha = str(config["controller_release_sha256"])

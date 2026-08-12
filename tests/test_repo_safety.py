@@ -267,11 +267,20 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "S 不亲自复制独立 Sol 的领域 cognition" in control_tower_text
     assert "fresh Main" in control_tower_text
     assert "S 不从运行结果自行取得改变认知拓扑的权限" in control_tower_text
-    assert "稳定的是 S 的 operational state machine，而不是 Sol 的 epistemic state space" in control_tower_text
+    assert (
+        "稳定的是 S 的 operational state machine，而不是 Sol 的 epistemic state space"
+        in control_tower_text
+    )
     assert "调度单位是 **world lineage**，不是完成 packet 的短 cell" in control_tower_text
     assert "不以 `cells/hour` 或 terminal 数量优化短任务吞吐" in control_tower_text
-    assert "历史 one-shot runner 的共享 `RESEARCH_RUN_STATE.json` lost-update 问题不能自动归因" in control_tower_text
-    assert "历史 `parallel_c_v1` expansion cell、账号槽 C 和当前 persistent lineage" in control_tower_text
+    assert (
+        "历史 one-shot runner 的共享 `RESEARCH_RUN_STATE.json` lost-update 问题不能自动归因"
+        in control_tower_text
+    )
+    assert (
+        "历史 `parallel_c_v1` expansion cell、账号槽 C 和当前 persistent lineage"
+        in control_tower_text
+    )
     assert "scripts/xinao_perpetual_world_compute.py" in control_tower_text
     assert "恢复本身不会隐式 wake" in control_tower_text
     assert "--adopt-current-release" in control_tower_text
@@ -290,12 +299,10 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     generic_entry = (REPO_ROOT / "scripts" / "xinao_perpetual_world_compute.py").read_text(
         encoding="utf-8"
     )
-    legacy_entry = (REPO_ROOT / "scripts" / "xinao_perpetual_c.py").read_text(
+    legacy_entry = (REPO_ROOT / "scripts" / "xinao_perpetual_c.py").read_text(encoding="utf-8")
+    legacy_controller = (REPO_ROOT / "services" / "xinao_perpetual_c" / "controller.py").read_text(
         encoding="utf-8"
     )
-    legacy_controller = (
-        REPO_ROOT / "services" / "xinao_perpetual_c" / "controller.py"
-    ).read_text(encoding="utf-8")
     assert "services.xinao_perpetual_world_compute.controller import main" in generic_entry
     assert "services.xinao_perpetual_world_compute.controller import main" in legacy_entry
     assert "Compatibility import" in legacy_controller
@@ -1420,7 +1427,10 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "'--max-concurrency', $Concurrency" in runner
     assert "[int]$MaxErrorRetries = 1" in runner
     assert "'--filter-errors-only', $previousResult" in runner
-    assert "@('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity')" in runner
+    assert (
+        "@('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity')"
+        in runner
+    )
     assert "$productiveFilters += @('--filter-pattern', $CasePattern)" in runner
     assert "-Concurrency 1" in runner
     assert "FailedFrom belongs to a different behavior suite" in runner

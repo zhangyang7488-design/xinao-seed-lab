@@ -50,7 +50,9 @@ def test_parent_continuity_surface_cases_cover_changed_relations() -> None:
     for case in cases:
         for key in array_vars & case["vars"].keys():
             value = case["vars"][key]
-            assert isinstance(value, str), f"{case['vars']['case_id']}:{key} expands Promptfoo cases"
+            assert isinstance(value, str), (
+                f"{case['vars']['case_id']}:{key} expands Promptfoo cases"
+            )
             assert isinstance(json.loads(value), list)
 
 
@@ -78,9 +80,7 @@ def test_parent_continuity_surface_consumer_is_fresh_read_only_natural_text() ->
 
 def test_parent_continuity_surface_is_registered_as_live_consumer() -> None:
     catalog = json.loads(
-        (REPO_ROOT / "evals" / "behavior_regression" / "catalog.json").read_text(
-            encoding="utf-8"
-        )
+        (REPO_ROOT / "evals" / "behavior_regression" / "catalog.json").read_text(encoding="utf-8")
     )
     suite = next(
         item for item in catalog["suites"] if item["id"] == "parent_continuity_user_surface"

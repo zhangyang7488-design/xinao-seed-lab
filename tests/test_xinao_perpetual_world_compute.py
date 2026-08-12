@@ -248,22 +248,28 @@ def test_runtime_root_falls_back_to_one_legacy_pointer_without_making_it_the_pro
     generic_root = tmp_path / "perpetual_world_compute"
     legacy_root = tmp_path / "perpetual_c"
     dedicated_a_root = tmp_path / "perpetual_a"
-    assert select_runtime_root(
-        None,
-        require_current=False,
-        default_root=generic_root,
-        legacy_root=legacy_root,
-        dedicated_a_root=dedicated_a_root,
-    ) == generic_root
+    assert (
+        select_runtime_root(
+            None,
+            require_current=False,
+            default_root=generic_root,
+            legacy_root=legacy_root,
+            dedicated_a_root=dedicated_a_root,
+        )
+        == generic_root
+    )
     legacy_root.mkdir()
     (legacy_root / "current.json").write_text("{}", encoding="utf-8")
-    assert select_runtime_root(
-        None,
-        require_current=True,
-        default_root=generic_root,
-        legacy_root=legacy_root,
-        dedicated_a_root=dedicated_a_root,
-    ) == legacy_root
+    assert (
+        select_runtime_root(
+            None,
+            require_current=True,
+            default_root=generic_root,
+            legacy_root=legacy_root,
+            dedicated_a_root=dedicated_a_root,
+        )
+        == legacy_root
+    )
     generic_root.mkdir()
     (generic_root / "current.json").write_text("{}", encoding="utf-8")
     with pytest.raises(PerpetualRuntimeError, match="MULTIPLE_CURRENT_RUNTIME_POINTERS"):
@@ -285,13 +291,16 @@ def test_runtime_root_discovers_dedicated_a_and_fails_closed_with_live_c(
     dedicated_a_root.mkdir()
     (dedicated_a_root / "current.json").write_text("{}", encoding="utf-8")
 
-    assert select_runtime_root(
-        None,
-        require_current=True,
-        default_root=generic_root,
-        legacy_root=legacy_c_root,
-        dedicated_a_root=dedicated_a_root,
-    ) == dedicated_a_root
+    assert (
+        select_runtime_root(
+            None,
+            require_current=True,
+            default_root=generic_root,
+            legacy_root=legacy_c_root,
+            dedicated_a_root=dedicated_a_root,
+        )
+        == dedicated_a_root
+    )
 
     legacy_c_root.mkdir()
     (legacy_c_root / "current.json").write_text("{}", encoding="utf-8")
@@ -652,7 +661,9 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
         "services.xinao_perpetual_world_compute.controller",
         fromlist=["validate_recovery_identity"],
     )
-    monkeypatch.setattr(controller_module, "validate_recovery_identity", lambda _config: {"ok": True})
+    monkeypatch.setattr(
+        controller_module, "validate_recovery_identity", lambda _config: {"ok": True}
+    )
     monkeypatch.setattr(controller_module, "find_live_runtime_processes", lambda *_args: {})
     fake_process = SimpleNamespace(pid=4321, poll=lambda: None)
     monkeypatch.setattr(
@@ -663,7 +674,12 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     monkeypatch.setattr(
         controller_module,
         "_wait_for_controller_startup",
-        lambda **_kwargs: {"schema": "controller", "run_id": "run-1", "pid": 4321, "status": "RUNNING"},
+        lambda **_kwargs: {
+            "schema": "controller",
+            "run_id": "run-1",
+            "pid": 4321,
+            "status": "RUNNING",
+        },
     )
 
     result = recover_runtime(
@@ -683,9 +699,10 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     assert updated["root_lineage"] == config["root_lineage"]
     assert updated["controller_release_path"] != str(old_release)
     assert Path(updated["controller_release_path"]).is_file()
-    assert sha256_file(Path(updated["controller_release_path"])) == updated[
-        "controller_release_sha256"
-    ]
+    assert (
+        sha256_file(Path(updated["controller_release_path"]))
+        == updated["controller_release_sha256"]
+    )
     assert old_release.read_text(encoding="utf-8") == "# old frozen release\n"
     assert updated["recovery_generation"] == 1
     assert updated["controller_release_history"][0]["path"] == str(old_release)
@@ -747,9 +764,7 @@ def test_stop_runtime_fails_closed_when_controller_or_child_survives(
                 "account_slot": "C",
                 "run_id": "run-1",
                 "run_dir": str(run_dir),
-                "branch_lineages": [
-                    {"lineage_id": "world-01", "role": "independent_world"}
-                ],
+                "branch_lineages": [{"lineage_id": "world-01", "role": "independent_world"}],
                 "root_lineage": {"lineage_id": "root-main", "role": "late_fusion_root"},
             }
         ),
@@ -783,9 +798,7 @@ def test_generic_a_wake_receipt_uses_account_neutral_schema(tmp_path: Path) -> N
                 "account_slot": "A",
                 "run_id": "run-a",
                 "run_dir": str(run_dir),
-                "branch_lineages": [
-                    {"lineage_id": "world-01", "role": "independent_world"}
-                ],
+                "branch_lineages": [{"lineage_id": "world-01", "role": "independent_world"}],
                 "root_lineage": {"lineage_id": "root-main", "role": "late_fusion_root"},
             }
         ),
@@ -796,9 +809,7 @@ def test_generic_a_wake_receipt_uses_account_neutral_schema(tmp_path: Path) -> N
         SimpleNamespace(runtime_root=runtime_root, lineage_id="world-01", reason="new reality")
     )
 
-    wake_payload = json.loads(
-        (run_dir / "wake" / "world-01.json").read_text(encoding="utf-8")
-    )
+    wake_payload = json.loads((run_dir / "wake" / "world-01.json").read_text(encoding="utf-8"))
     assert wake_payload["schema"] == WAKE_SCHEMA
     assert wake_payload["account_slot"] == "A"
     assert "cleanroom-c" not in wake_payload["schema"]
