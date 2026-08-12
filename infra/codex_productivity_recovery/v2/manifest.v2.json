@@ -13,7 +13,7 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "7b46f0a28466d9443d81f6faead102a1af2f1ed5548a317263d0cb5796bdab79",
+  "archive_sha256": "b184d06eb549aab8874f511441f25b571686c1dc448f48c73d67bdeace8bc453",
   "entry_count": 119,
   "entries": [
     {
@@ -636,8 +636,8 @@
       "archive_path": "repository/scripts/Protect-SContextFabricState.ps1",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Protect-SContextFabricState.ps1",
       "role": "context_fabric_acl_installer",
-      "size": 3855,
-      "sha256": "40923d1327cb39078a3308906cd7a446acc923fe917604ae6b6959c8c45eb706"
+      "size": 4004,
+      "sha256": "84fd5fb9e867774ef867aa282922c01593f610f3c4bc4cae8e15fb61bd5b62ad"
     },
     {
       "archive_path": "repository/scripts/codex_situation_context_hook.py",

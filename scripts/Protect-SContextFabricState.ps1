@@ -49,6 +49,9 @@ $readback = Get-Acl -LiteralPath $resolved
 $allowRules = @(
     $readback.Access | Where-Object AccessControlType -eq 'Allow'
 )
+$denyRules = @(
+    $readback.Access | Where-Object AccessControlType -eq 'Deny'
+)
 $normalizedAllowRules = @(
     $allowRules | ForEach-Object {
         [pscustomobject]@{
@@ -81,6 +84,7 @@ foreach ($expectedSid in $expectedValues) {
 }
 $compliant = (
     $readback.AreAccessRulesProtected -and
+    $denyRules.Count -eq 0 -and
     $unexpected.Count -eq 0 -and
     $missing.Count -eq 0 -and
     $missingFullControl.Count -eq 0
@@ -99,6 +103,7 @@ $compliant = (
             Sort-Object -Unique
     )
     unexpected_allow_count = $unexpected.Count
+    deny_count = $denyRules.Count
     missing_expected_count = $missing.Count
     missing_full_control_count = $missingFullControl.Count
     compliant = $compliant

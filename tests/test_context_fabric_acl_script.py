@@ -35,3 +35,5 @@ def test_acl_script_source_is_bounded_and_apply_is_explicit() -> None:
     assert "S-1-5-32-544" in text
     assert "missing_full_control_count" in text
     assert "($_.Rights -band $fullControl) -eq $fullControl" in text
+    assert "deny_count = $denyRules.Count" in text
+    assert "$denyRules.Count -eq 0" in text
