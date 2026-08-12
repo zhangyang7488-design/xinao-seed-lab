@@ -7,7 +7,7 @@
   "implementation": "lib/_tsc.js",
   "file_count": 103,
   "total_bytes": 9358814,
-  "tree_sha256": "20ff332f92d1607c73de2dd7b7022850db135d013e54252a7b13134bffa78aae",
+  "tree_sha256": "171c72bb56f30524049579d7933462ca718dce12bda5b20782e1799fc9829533",
   "files": [
     {
       "path": "lib/lib.d.ts",
@@ -522,7 +522,7 @@
     {
       "path": "package.json",
       "bytes": 3620,
-      "sha256": "822ef7ca6452205657b6288b066481ecf508bfbf43455d715cf7d3ec457561e6"
+      "sha256": "41fde8ab363721de5823d51d8e80bca5ff844344046681cc568b1ad59efb001e"
     }
   ]
 }

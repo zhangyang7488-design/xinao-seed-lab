@@ -230,7 +230,7 @@ function Get-VerifiedTypeScriptCompilerFixture {
     $root = Get-CanonicalDirectory -Path $FixtureRoot -Label 'high-capacity TypeScript compiler fixture root'
     $manifestFile = Get-RequiredFile -Path $ManifestPath -Label 'high-capacity TypeScript compiler fixture manifest'
     $manifestSha = (Get-FileHash -LiteralPath $manifestFile -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($manifestSha -cne '0c7d1b6dbc0e275efab1ab5bc8a6e58ede001a7297772a8d499f238b5aeb43e1') {
+    if ($manifestSha -cne '74dfd2696a0a5d2ab22d0b32eeea5bb6af86f4736c1a6580b914fa03e10cbe6f') {
         throw "PI_HIGH_CAPACITY_REPLAY_TYPESCRIPT_COMPILER_MANIFEST_DRIFT: $manifestSha"
     }
     $manifest = [IO.File]::ReadAllText($manifestFile,[Text.Encoding]::UTF8) | ConvertFrom-Json
