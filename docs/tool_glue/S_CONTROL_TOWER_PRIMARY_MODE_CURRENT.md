@@ -172,6 +172,15 @@ branch terminal、一次 fusion、漂亮报告或局部 null 都不自动关闭�
 
 对于已经 `RUNNING` 的持续 episode，修 launcher/controller、跑回归、recover 原 lineage、冻结证据或启动 fresh fusion 都是后台维护事件，不是新的父任务，也不是交回用户的完成点。维护子事务完成后，S 保持 episode 存活并继续原合同；没有能改变用户判断的事实就不主动生成用户消息，确需回应时只陈述对象状态或最小真实分叉。完整 PID、manifest、路径、hash、测试、commit 和恢复账留在可追溯 receipt，只有用户明确索取、真实阻塞、需要授权、账号/额度变化、Pause/Stop 或实质运行/认识状态转折时展开。一次 assistant turn 结束也不等于 episode 停止；过程减负不能被翻译成对用户的安置、接管承诺或离场许可，也不得用一堵工程结算报告制造父活动已经交付完毕的语义。
 
+### 9. 两种默认持续性
+
+当前人话与 live contract 已经任命 S 守护新仓库持续研究时，存在两条不能互相压缩的连续关系：
+
+1. **S guardian continuity** 是工程/effect 责任。它维持进程、身份、账号槽、隔离、quota/故障、恢复、provenance、写域、fusion 与消费者可用态；默认跨 assistant turn、局部报告、一次恢复和一次 fusion 继续，直到明确 Pause/Stop/停机点、具名职责移交或真实授权与安全边界改变它。
+2. **world cognition continuity** 是新仓库 world-owning Sol 的认识与 world 生命周期。它默认长期存续，但某条 lineage 可以从自己的完整 world 如实给出 `WAIT/BLOCKED/NO_POSITIVE_FRONTIER/PAUSE`；S 不用内容 steering 强迫它制造下一单位认识。
+
+这两条可以同时为真而处于不同状态：所有 Sol 暂时 `WAIT` 时，S 仍守护身份、证据、容量、恢复和新的合法唤醒条件；S 守护仍在时，也不意味着 Sol 必须持续占用算力。branch terminal、root-main `WAIT`、局部无正收益前沿或用户可见 turn 结束，都不能在两条关系之间伪造停机含义。
+
 ## 2026-08-12 现场实例留下的行为事实
 
 本模式不是只从文本推演。当天 S 窗口在一个隔离的 CodexA one-shot 研究实验中实际承担了以下职责：
@@ -212,6 +221,10 @@ STOP                        -> 停止当前 episode
 “C 并发研究” = operation: perpetual world compute, account_slot: C
 ```
 
+并发宽度是 live admission 结果，不是某个 runner 的常数。任何 `branch_width=4`、默认值或 CLI 上限只证明该 episode/版本允许的拓扑；它不证明本机硬件、账号额度或独立认识收益的成熟上限。S 以 A/C 各自的可用额度与限流信号、真实同时 turn 健康、CPU/RAM/磁盘与 shared-body 干扰、写域/会话隔离、有效独立 lineage 数和 late-fusion fan-in 成本逐级爬坡；没有这些 readback 时不能把“4 组”写成最大并发。
+
+当前 controller 版本在一个 episode 内冻结一个 `account_slot`，也不支持 live re-width。因此当 A 与 C 都有正收益容量时，安全入口是各自显式 runtime root、独立 run id、clones、sessions、root-main、fusion packets 与 provenance；先用小宽度 canary，确认另一 episode 不退化后再扩。不得修改现役 C 的 frozen slot、复用其 worktree/session，或把 A 候选直接写进 C 的 fusion 根。这个多-root 约束是当前工程实现事实，不是 A/C 两种研究模式。
+
 历史 one-shot 的 A/B/C/D 只属于 `experiment_arm` 归档，优先写作 `NATURAL / WORLD_SYNTHESIS / PROBE_CONTROL / FULL_AGENCY`。历史 `parallel_c_v1` expansion cell、账号槽 C 和当前 persistent lineage 是三个不同身份；任何一个都不能借单字母 C 取得另一个的运行语义。
 
 持续计算的调度单位是 **world lineage**，不是完成 packet 的短 cell。turn、session、process 和 cell 只是可替换 carrier；局部结果或一次 turn final 不自动杀死仍有 `CONTINUE` 前沿的 lineage。S 观察的是有效存活 lineage、纵向 Reality Return、容量与故障，不以 `cells/hour` 或 terminal 数量优化短任务吞吐。真正停驻/闭合的 lineage 是否释放容量、以及是否出生新 lineage，由当前合同和 live capacity 决定，不由一个历史 runner 的 refill 规则永久决定。
@@ -221,16 +234,17 @@ STOP                        -> 停止当前 episode
 只有当前人话与 live contract 已经任命持续 control-tower episode 时，才可用账号中立的仓库入口建立新 run；`--account-slot` 是必填选择：
 
 ```powershell
-uv run python scripts/xinao_perpetual_world_compute.py start --account-slot <A|C>
-uv run python scripts/xinao_perpetual_world_compute.py status
-uv run python scripts/xinao_perpetual_world_compute.py recover --expected-account-slot <A|C> --reason <inspected-failure>
-uv run python scripts/xinao_perpetual_world_compute.py wake --lineage-id <lineage-id> --reason <reason>
-uv run python scripts/xinao_perpetual_world_compute.py stop --reason <reason>
+$worldRuntimeRoot = 'D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_<a-or-c>'
+uv run python scripts/xinao_perpetual_world_compute.py start --account-slot <A|C> --runtime-root $worldRuntimeRoot
+uv run python scripts/xinao_perpetual_world_compute.py status --runtime-root $worldRuntimeRoot
+uv run python scripts/xinao_perpetual_world_compute.py recover --runtime-root $worldRuntimeRoot --expected-account-slot <A|C> --reason <inspected-failure>
+uv run python scripts/xinao_perpetual_world_compute.py wake --runtime-root $worldRuntimeRoot --lineage-id <lineage-id> --reason <reason>
+uv run python scripts/xinao_perpetual_world_compute.py stop --runtime-root $worldRuntimeRoot --reason <reason>
 ```
 
-`status` 是只读 readback；`recover` 只恢复 exact current run；`wake` 会重新打开已停驻 lineage；`stop` 会请求当前 episode 停止。恢复从 `run_config.json` 读取冻结 account slot；当当前人话具名 A/C 时，`--expected-account-slot` 必须与之相符，否则 fail closed。恢复本身不会隐式 wake 一个由 branch 自己置为 `WAIT/BLOCKED/NO_POSITIVE_FRONTIER/PAUSE` 的 lineage。
+`status` 是只读 readback；`recover` 只恢复 exact current run；`wake` 会重新打开已停驻 lineage；`stop` 会请求当前 episode 停止。恢复从 `run_config.json` 读取冻结 account slot；当当前人话具名 A/C 时，`--expected-account-slot` 必须与之相符，否则 fail closed。恢复本身不会隐式 wake 一个由 branch 自己置为 `WAIT/BLOCKED/NO_POSITIVE_FRONTIER/PAUSE` 的 lineage。只有一个 current pointer 时账号中立入口可以兼容推断 root；A/C 同时存在后，所有运维命令必须显式给出各自 `--runtime-root`，不能让裸命令猜目标。
 
-新 run 的默认指针根是 `D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute`。2026-08-12 已存在的 C run 仍保留在 legacy 物理 locator `...\xinao_perpetual_c`；账号中立入口在只有一个 current pointer 时会读取它，但该路径和旧 v1 schema 只是兼容格式，不再定义 controller 身份。不得为改名移动或重写原 turn receipts、branch worktrees 和冻结证据。
+新 run 的默认指针根是 `D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute`。2026-08-12 已存在的 C run 仍保留在 legacy 物理 locator `...\xinao_perpetual_c`；2026-08-13 为不改变该 episode 而加入的 A canary 使用独立 locator `...\xinao_perpetual_a`。账号中立入口只在恰有一个 current pointer 时可以推断它；两者同时存在后必须从各自 `current.json` 读取 run id 并显式带 root。路径、旧 v1 schema 和 canary 初始宽度都只是当前恢复事实，不定义 controller 身份或成熟容量上限。不得为改名移动或重写原 turn receipts、branch worktrees 和冻结证据。
 
 每次运行的 `run_config.json`、版本化 controller releases、controller/lineage state、turn receipts、recovery receipts 和 late-fusion packets 才是该 episode 的冻结身份与恢复材料。仓库源码更新不会热替换正在运行的 frozen release，也不会仅凭文件存在自动续跑。
 

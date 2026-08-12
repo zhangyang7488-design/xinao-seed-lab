@@ -39,6 +39,12 @@ def test_parent_continuity_surface_cases_cover_changed_relations() -> None:
     assert by_id["SURFACE_START_AFTER_UNDERSTANDING"]["expected_mode"] == "action_transfer"
     assert by_id["SURFACE_CORRECTION_RETURNS_TO_PARENT"]["expected_mode"] == "action_transfer"
     assert by_id["SURFACE_DISJOINT_SIBLING_CONTINUES"]["expected_mode"] == "action_transfer"
+    heartbeat_parent = by_id["SURFACE_CONTINUOUS_HEARTBEAT_SILENT"]["parent_activity"]
+    assert "perpetual world-compute runtime" in heartbeat_parent
+    assert "each world-owning Sol lineage controls its own cognition" in heartbeat_parent
+    correction = by_id["SURFACE_CORRECTION_RETURNS_TO_PARENT"]
+    assert "four configured C branches" in correction["current_event"]
+    assert "A 有额度" in correction["current_human_act"]
 
     array_vars = {"subject_terms", "required_any", "required_all", "forbidden_extra"}
     for case in cases:

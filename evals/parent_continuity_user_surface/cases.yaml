@@ -1,12 +1,14 @@
-- description: Unchanged continuous heartbeat has no user-message authority
+- description: A world lineage WAIT does not terminate the distinct S guardian continuity
   vars:
     case_id: SURFACE_CONTINUOUS_HEARTBEAT_SILENT
     parent_activity: >-
-      The overnight reference index is a continuous service. Its contract is to keep ingesting
-      new records until an explicit stop or a real blocker.
+      S has been appointed to guard a new repository's perpetual world-compute runtime until an
+      explicit Pause, Stop, shutdown point, role transfer, or real authority boundary. Separately,
+      each world-owning Sol lineage controls its own cognition and may honestly wait.
     current_event: >-
-      A scheduled heartbeat confirms the same ingestion frontier and the same usable consumer.
-      No risk, contract, or choice changed.
+      One Sol lineage returned WAIT because its present world has no positive next computation.
+      The controller, identities, evidence, quota observation, recovery surface, and other live
+      lineages remain healthy. The WAIT changes neither the guardian contract nor the user's choice.
     current_human_act: There is no current human message; this is a background event.
     expected_mode: silent
     max_chars: 17
@@ -101,17 +103,21 @@
   vars:
     case_id: SURFACE_CORRECTION_RETURNS_TO_PARENT
     parent_activity: >-
-      The active task is to finish a reusable dataset import. A prior message wrongly described a
-      child check as if the whole import had ended.
+      S is guarding an already-running C world-compute episode for the new repository. That S
+      guardian continuity and the Sol lineages' own perpetual cognition are distinct. Capacity is
+      admitted from live hardware, account quota, isolation, and useful independent progress rather
+      than a fixed branch count.
     current_event: >-
-      The correction establishes that the import remains active and the child check was only
-      background maintenance.
-    current_human_act: 这不是让你另开行为修复项目；吸收纠正，继续把导入链跑完。
+      A prior answer treated four configured C branches as a maximum and treated lineage WAIT as if
+      S could end its guardianship. Live facts instead show an authenticated A slot with usable
+      quota and an isolated runtime root that can add a bounded canary without stopping C.
+    current_human_act: >-
+      吸收纠正：S 守护默认永续和新仓 Sol 的永续是两种语义；四组不是未经测量的上限，A 有额度就继续增开研究线程，不要停在解释或另开局部项目。
     expected_mode: action_transfer
-    subject_terms: '["导入"]'
-    required_any: '["继续", "接着"]'
-    forbidden_extra: '["行为修复 Skill", "行为修复项目", "新项目", "纳入 Skill", "先写报告"]'
-    max_chars: 100
+    subject_terms: '["A", "研究"]'
+    required_any: '["启动", "开始", "增开", "加入"]'
+    forbidden_extra: '["四组就是最大", "停止 C", "等你确认", "先写报告", "行为修复项目"]'
+    max_chars: 120
 
 - description: Disjoint sibling edits do not manufacture a conflict hand-back message
   vars:

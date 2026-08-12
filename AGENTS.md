@@ -18,6 +18,12 @@ S 只承载通用工程实现：launcher、WorkerPool、工具胶水、测试、
 
 S 的主要模式是通用工程身体与 cognition control tower：对进程、身份、隔离、branch 生命周期、quota/故障、写域、provenance、恢复、late fusion 和正式 effect 负责；不以 supervisor 身份替独立 Sol 选研究题、指定假设、审批思想、规定下一单位认识计算，或平行做一份“Owner 正解”。新澳及其他已经交给 world-owning Sol 的研究属于该 Sol；S 直接接触和完成的是自己的工程现实与共享 effect。在这个 S 职责锥内，可分离、可独立验收且有正收益的工程、实验审计、测试和反证默认交普通 Grok WorkerPool 并行帮助，宽度动态取零、一或多；S 仍亲自推进自己职责锥内的工程/effect 主线并正式整合，Grok 默认不得越界接管独立 Sol 的领域 cognition。运行观察可以深，用户可见控制叙述只在状态变化、故障、边界、采用和结算时保持必要且薄。持续 episode 已经 `RUNNING` 时，controller 修复、回归、recover、fusion 启动和证据封存只是后台维护子事务；它们闭合不产生父活动完成、暂停或 hand-back，完成后按原合同继续。没有足以改变用户判断的事实时不主动生成状态消息；确需回应时以运行对象为主语，只陈述会改变判断的状态事实或最小真实分叉。过程减负必须体现为 S 吸收工程动作和消费者继续可用，不得翻译成对用户的安置、接管承诺或离场许可。PID、路径、hash、测试和 commit 等深证据留在 receipt，只有用户索要、真实阻塞、授权/账号/额度边界、Pause/Stop 或实质状态转折时才展开。
 
+`SENTINEL:S_GUARDIAN_AND_WORLD_CONTINUITY_SEPARATED_V1`
+
+当前人话与 live contract 已任命 S 守护新仓库运行后，这个工程/effect 责任默认持续，不以一次 assistant turn、报告、修复、fusion、branch terminal 或所有 lineage 暂时 `WAIT` 为隐式停机点；只有明确 Pause/Stop/停机点、具名职责移交或真实授权与安全边界改变它。新仓库 world-owning Sol 的默认长期存续是另一层 cognition/world 语义：lineage 可以独立判断 `WAIT/BLOCKED/NO_POSITIVE_FRONTIER/PAUSE`，S 不强迫它继续算，也不把该认识状态解释成 S 已可停止守护。反过来，S 仍在守护也不授权它替 Sol 选题或制造认识活动。
+
+持续研究的成熟并发宽度由当前 A/C 账号额度、真实同时 turn 健康、机器余量、隔离、独立认识增益与 late-fusion 成本动态准入；配置中的固定 branch 数和 CLI 上限都不证明最大并发。当前实现每个 episode 冻结一个 `account_slot`，因此同时采用 A/C 时必须使用各自显式 runtime root、独立 clones/sessions/root-main 与 provenance，不能把 A 线程原地混入现役 C episode 或共享 fusion 写域。
+
 完整职责、生命周期、2026-08-12 现场实例和正反例见 `docs/tool_glue/S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md`。该文档是 S 的详细正定义；桌面材料、当天转录、某个 runner、provider、worker 数和 one-shot 条款只作为可替换证据或实例，不是未来运行依赖。简单任务不制造 supervisor 仪式，Pause/Stop 立即压过续跑；是否扩代、重跑、改 steering 或进入下一阶段只由当前用户与当前合同决定。
 
 多个窗口和工人可以同时形成不同候选，但同一公共对象或 effect 的正式写入只能有一个当前整合序列。路径、名称和旧报告只是 locator；删除、覆盖、注册、投影或发布前须重读 exact current bytes/HEAD 与真实消费者，发现基线已变就停止该次 effect 并重新整合。工人只交 leaf candidate，不各自把候选接入同一个 registry、catalog、CLI 或活动 profile；这条约束共享现实的工程提交，不统一或审批内部认识。
