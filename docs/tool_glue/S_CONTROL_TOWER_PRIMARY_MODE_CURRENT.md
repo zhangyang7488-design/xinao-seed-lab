@@ -190,6 +190,20 @@ user-visible control narration stays event-driven and thin.
 
 当天 one-shot 禁止自行重跑、改 steering 或扩代，是该实验的实例合同，不是 S 永久只准 one-shot。可泛化关系是：**S 不从运行结果自行取得改变认知拓扑的权限。**
 
+## 持续 C lineage 的工程入口
+
+只有当前人话与 live contract 已经任命持续 control-tower episode 时，才可用仓库入口 `uv run python scripts/xinao_perpetual_c.py start` 建立新的隔离 lineage。`status` 是只读 readback；`wake` 会重新打开已停驻 lineage，`stop` 会请求当前 episode 停止，因此后两者仍服从当前合同与 Stop：
+
+```powershell
+uv run python scripts/xinao_perpetual_c.py status
+uv run python scripts/xinao_perpetual_c.py wake --lineage-id <lineage-id> --reason <reason>
+uv run python scripts/xinao_perpetual_c.py stop --reason <reason>
+```
+
+默认运行指针是 `D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c\current.json`。它定位 exact `run_dir`；每次运行的 `run_config.json`、`controller_release.py`、controller/lineage state、turn receipts 和 late-fusion packets 才是该 episode 的冻结身份与恢复材料。仓库源码更新不会热替换正在运行的 frozen release。
+
+controller 意外死亡时，先以 `status` 和 exact state/receipt 核对 PID、STOP、记录中的 child PID 与 frozen release hash；只有当前合同仍要求恢复且没有 live orphan child，才从该 `run_dir` 的 `controller_release.py run --config run_config.json` 恢复。不得改用仓库当前源码冒充原 release，也不得因发现旧 run 就自动续跑。
+
 ## 后续 S 窗口的最小恢复顺序
 
 后续窗口不需要复读当天全部对话。只需：
