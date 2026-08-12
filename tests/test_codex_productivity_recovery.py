@@ -74,6 +74,10 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         "main_home_is_canonical_shared_runtime_source": True,
         "account_b_credential_home_links_to_shared_runtime": True,
         "account_b_is_not_a_configuration_or_recovery_source": True,
+        "desktop_s_and_b_are_one_s_body_with_two_account_slots": True,
+        "desktop_a_and_c_are_one_separate_cleanroom_body_with_two_account_slots": True,
+        "s_b_and_a_c_bodies_must_not_cross": True,
+        "cleanroom_body_is_external_to_this_s_recovery_payload": True,
         "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": True,
         "legacy_v1_is_separate_history_not_a_build_input": True,
         "grok_worker_pool_live_manifest_is_the_runtime_truth": True,
@@ -90,7 +94,9 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     assert "main-home/native-collaboration.config.toml" in names
     assert "launchers/Open-Codex-S-SharedRuntime.ps1" in names
     assert "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md" in names
-    assert "contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md" in names
+    assert "contracts/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md" in names
+    assert "contracts/CODEX_GROK_WORKER_POOL_OPERATOR.md" in names
+    assert "contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md" not in names
     assert "launchers/Invoke-Codex-GrokWorkerPool.ps1" in names
     assert "launchers/Invoke-GrokWorkerOAuthRecovery.ps1" in names
     assert "runtime/grok-worker-pool/runtime-manifest.v1.json" in names
@@ -184,15 +190,20 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         assert set(archive.namelist()) == names
         agents_text = archive.read("main-home/AGENTS.md").decode("utf-8")
         assert "SENTINEL:LOCAL_DOCKER_EXCEPTION_ONLY_V1" in agents_text
-        assert "SENTINEL:OWNER_DIRECT_GROK_DEFAULT_DUAL_TRACK_V1" in agents_text
-        assert "不得把“用户明确同意启用 Grok”叙述成合法性来源" in agents_text
+        assert "SENTINEL:ROLE_SEPARATED_CONTROL_TOWER_V1" in agents_text
+        assert "已经被任命为 world-owning Sol 的 branch 自己面对领域现实" in agents_text
+        assert "SENTINEL:OWNER_DIRECT_GROK_DEFAULT_DUAL_TRACK_V1" not in agents_text
         amplify_text = archive.read("main-home/skills/amplify-supervisor-worker/SKILL.md").decode(
             "utf-8"
         )
-        assert "chain-internal technical route" in amplify_text
-        assert "make worker reports the exclusive path to reality" in amplify_text
-        operator_text = archive.read("contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md").decode("utf-8")
+        assert "Operate S as a cognition control tower" in amplify_text
+        assert "Use fresh late fusion without manufacturing consensus" in amplify_text
+        assert "advances the inseparable main line" not in amplify_text
+        operator_text = archive.read("contracts/CODEX_GROK_WORKER_POOL_OPERATOR.md").decode("utf-8")
         assert "daemon 未启动是正常状态" in operator_text
+        assert "普通 Grok 是可分离正收益劳动的默认" in operator_text
+        assert "world-owning Sol 的研究不因该入口存在" in operator_text
+        assert "默认 cognition 路线" in operator_text
         launcher_text = archive.read("launchers/Invoke-Codex-GrokWorkerPool.ps1").decode("utf-8")
         assert "New-CodexGrokTemporaryWorktree" in launcher_text
         worker_text = archive.read(

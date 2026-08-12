@@ -14,8 +14,8 @@ The active profiles are:
 
 - `capability`: one fresh Codex app-server capability canary;
 - `smoke`: one parent-frame admission case plus the capability canary;
-- `intent`: sixty-five generic fresh parent-frame, source-aware utterance-relation, environment-runtime attribution and repair, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition,
-  mature-owner, owner-worker dual-track, and cold-native standing exception cases;
+- `intent`: sixty-seven generic fresh parent-frame, source-aware utterance-relation, environment-runtime attribution and repair, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition,
+  mature-owner, role-separated S control-tower, and cold-native standing exception cases;
 - `core`: intent admission, capability, proactive mature-first, frozen recall,
   thin localization, and deterministic static checks;
 - `deep`: core plus current read-only public-repository recall;

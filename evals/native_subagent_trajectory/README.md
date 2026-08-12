@@ -10,7 +10,7 @@ delegation rule loaded from `CODEX_HOME`.
 
 The disposable fixture makes the observable roles different:
 
-- the parent Owner must directly read `owner_anchor.txt`;
+- the parent holds only this fixture's engineering/effect Owner seat and must directly read `owner_anchor.txt`;
 - one bounded native child thread reads the separable worker input and returns
   a terminal candidate;
 - after the explicit completed terminal, the parent adopts its value into
@@ -51,8 +51,9 @@ positive consumer in Codex 0.146.0 either.
 Current status is deliberately **fail-closed**: this profile is a diagnostic
 capability regression, not a native multi-agent runtime pass. A positive claim
 requires a fresh trace containing the actual spawn identity, a completed child
-terminal for that same identity, and the Owner's later nonce-bearing consumer
-call. The synthetic complete-lifecycle test checks the scorer contract only; it
+terminal for that same identity, and the current effect Owner's later nonce-bearing
+consumer call. This fixture does not grant the parent a parallel domain-cognition
+role. The synthetic complete-lifecycle test checks the scorer contract only; it
 does not substitute for such a trace.
 
 Run only this fresh case with:

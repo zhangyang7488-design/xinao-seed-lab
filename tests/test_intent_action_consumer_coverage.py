@@ -13,7 +13,7 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
 
     assert "SENTINEL:CODEX_INTENT_ACTION_BASELINE_V1" in baseline
     assert "manager Skill" in baseline
-    assert "Ordinary low-risk continuous execution" in baseline
+    assert "Ordinary low-risk chain-internal execution" in baseline
     assert "full first-principles activity recovery" in baseline
     assert "Productivity is not a new parent goal" in baseline
     assert "Current increment and bounded re-entry" in baseline
@@ -77,7 +77,7 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
     assert "recovery v1 frozen as history" in serialized
     assert "claiming universal intent-to-action closure" in serialized
     assert "blind migration" in serialized
-    assert "user-side technical Owner" in serialized
+    assert "role-separated cognition and technical effect ownership" in serialized
     assert "validation is exact readback rather than task generation" in serialized
     assert "architecture_migration_preserves_capability_lineage" in serialized
     assert "semantic_scope_fidelity_and_parent_completion_identity" in serialized
@@ -86,7 +86,7 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
     assert "productive_action_value_and_meaningful_transparency" in serialized
     assert "productive_action_trajectory" in serialized
     assert "classification reversal" in serialized
-    assert "repair-agent-behavior 2.5.1" in serialized
+    assert "repair-agent-behavior 2.6.0" in serialized
     assert "applicable repository adoption" in serialized
     assert "retired science routing remains retired" in serialized
     assert "all 124 historical context cases" in serialized
@@ -99,7 +99,8 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
     assert "explicit_human_scope_reduction" in fidelity["legitimate_narrowing"]
     assert "cannot_replace_parent_completion_identity" in fidelity["child_rule"]
     closure = model["bounded_decision_closure_assurance"]
-    assert "before_the_owner_locks_the_first_candidate" in closure["independence_timing"]
+    assert "designated_cognition_subject" in closure["independence_timing"]
+    assert "S_effect_owner_does_not_form_the_candidate" in closure["independence_timing"]
     assert "minimal_delta" in closure["prompt_independence_contract"]
     assert (
         "directed_red_team_not_independent_problem_formation"

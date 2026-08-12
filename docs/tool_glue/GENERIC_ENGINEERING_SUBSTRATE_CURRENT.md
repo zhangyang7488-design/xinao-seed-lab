@@ -27,15 +27,15 @@
 
 ## Owner 与工人
 
-Owner 的载体由当前用户话语与 live 合同按 effect scope 任命，而不由产品名决定；同一 scope 同时只有一个正式责任席。当前 Codex 工作形态由 Codex 占据该席位并亲自接触真实消费者、整合、采用和终验。普通外部 WorkerPool 可以承担可分离的研究、诊断、实现、测试和攻击，且可在继承并收窄的责任锥内形成局部问题；返回始终是候选，除非未来在另一具名 scope 中被明确任命并经消费者证明持续履责。
+Owner 的载体由当前用户话语与 live 合同按 effect scope 任命，而不由产品名决定；同一 scope 同时只有一个正式责任席。当前 Codex 只有在被任命为该工程/effect 责任席时，才亲自接触相应源对象与真实消费者，完成整合、正式采用和终验；这不把它提升为另一个研究世界的平行认识主体。在该 S 工程/effect 职责锥内，普通 Grok WorkerPool 是可分离、可独立验收且正收益劳动的默认执行面，宽度动态，不需要用户逐项批准；Terra/Luna/native/direct 只有在当前 task-fit 事实胜出时替代。普通外部 WorkerPool 可在继承并收窄的责任锥内形成局部问题，返回始终是候选。这个劳动默认不进入 world-owning Sol 的领域 cognition；候选的认识价值由当前 cognition subject 或 fresh fusion 形成，正式共享写入与外部效果由当前 effect Owner 承担。
 
-工人数、provider、prompt、算法名和输出包不同不证明认识异质；这项科学判断留给 Owner。工程入口只保证运行边界和事实血缘，不建立科学准入法院。
+工人数、provider、prompt、算法名和输出包不同不证明认识异质；这项领域判断留给当前被任命的 cognition subject 或 fresh fusion，而不是 S 的 effect Owner。工程入口只保证运行边界和事实血缘，不建立科学准入法院，也不把任何 provider 固定成默认认知路线。
 
 ## 严格结果截止下的文本展开
 
 对来源身份不足、可能携带截止后结果的 UTF-8 文本，`scripts/preflight_outcome_boundary.py` 提供同一字节快照上的 `scan` 与条件 `emit`。`emit` 只有在该快照未命中字面截止周期或显式截止后消费标记时才输出原字节；拒绝时正文保持不可见，只返回路径、哈希、字节数和原因码。路径、候选编号或先前摘要不能替代这一步。
 
-这是窄机械护栏，不是语义安全证明、科学准入器或 Reveal 授权。`ALLOW` 不能排除自然语言改写、编码、加密或外部引用中的结果信息；高风险未知材料仍须按当前任务边界 fail-closed，Owner 不能用工具绿灯降低证据截止。
+这是窄机械护栏，不是语义安全证明、科学准入器或 Reveal 授权。`ALLOW` 不能排除自然语言改写、编码、加密或外部引用中的结果信息；高风险未知材料仍须按当前任务边界 fail-closed。当前 cognition subject 与 effect Owner 都不能用工具绿灯降低证据截止。
 
 ## 变更与验收
 

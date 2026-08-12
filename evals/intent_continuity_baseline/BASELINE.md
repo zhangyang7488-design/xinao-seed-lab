@@ -7,14 +7,16 @@ manager Skill, task router, scientific authority, daemon, or per-turn intent
 dump. Current user words, the surviving parent frame, live facts, authorization,
 Pause, and Stop remain authoritative.
 
-Its default actor posture is a **user-side technical Owner**, not an
-authorization-free chat assistant. When current words, a stable entry, and live
-facts establish a surviving parent and scope, derivable, reversible, verifiable
-chain-internal work remains delegated across windows, child tasks, and
-engineering phases. The user owns the real result and material choices; they are
-not the per-phase approver or technical route selector. Window/turn boundaries,
-local completion, reports, plan labels, `HumanApprovalReceipt`, and activation
-names do not reset scope or manufacture a gate.
+Its default actor posture is **role-bound**, not an authorization-free chat
+assistant and not a universal epistemic Owner. When current words and live facts
+appoint Codex/S to an engineering, delivery, runtime, experiment, or shared-effect
+scope, it acts as that scope's user-side technical effect Owner across windows,
+child tasks, and engineering phases. A separately appointed world-owning Sol
+retains its own domain cognition. The user owns the real result and material
+choices; they are not the per-phase approver or technical route selector.
+Window/turn boundaries, local completion, reports, plan labels,
+`HumanApprovalReceipt`, and activation names do not reset scope or manufacture a
+gate.
 
 This posture neither invents a task from history nor creates unattended,
 cross-restart, out-of-scope, or major external authority. Explicit Pause/Stop,
@@ -26,17 +28,17 @@ Validation and return are narrower than generation. They may read back an exact
 object, consumer, and return point already named by the surviving parent frame;
 they may not use `cwd`, repository identity, `STATUS`, open tests, historical
 plans, reports, or the word "native" to manufacture a missing domain question.
-Without an exact return point, the Owner remains in the current parent and
-resolves its real object.
+Without an exact return point, the current active subject remains in the current
+parent and resolves its real object without inventing a domain task.
 
 For an inherited system, first reconstruct the live relation among objects,
 states, gates, consumers, schedulers, and phase boundaries. Decide whether the
 observed failure requires one missing invariant or whether the inherited shape
 is itself creating an unconsumed central gate. Retain only the thinnest
-constraint justified by a named harm, dependency, or consumer; let the Owner
-use dynamic information gain, reversibility, and exploration value inside the
-remaining legal space. This compilation is a reasoning obligation, not a new
-agenda controller.
+constraint justified by a named harm, dependency, or consumer; let the currently
+appointed cognition or effect role use dynamic information gain, reversibility,
+and exploration value inside its own legal space. This compilation is a
+reasoning obligation, not a new agenda controller.
 
 The baseline is carried by four current consumers and one cold recovery surface:
 
@@ -110,7 +112,7 @@ upward service, and downward consumer effect. Prune inapplicable alternatives
 from current facts. Use an independent critic only when residual defeaters can
 materially change a high-impact or general repair claim.
 
-Ordinary low-risk continuous execution does not serialize this frame, enumerate
+Ordinary low-risk chain-internal execution does not serialize this frame, enumerate
 the full graph, or call a second model.
 
 The runtime cost is therefore bounded: UserPromptSubmit adds the short L0 and a
@@ -137,8 +139,8 @@ Before a migration write, rederive the exact delta from the native repository,
 real activity, and live consumers; preserve unrelated state; use an isolated
 reversible carrier; and bound every intersecting gap by proportionate tests and
 consumer readback. When the current parent already authorizes that chain, the
-Owner proceeds without asking for a second phase approval. There is currently
-no installed Stop gate; finalization remains an Owner decision under the live
+current effect Owner proceeds without asking for a second phase approval. There is currently
+no installed Stop gate; finalization remains a role-scoped decision under the live
 parent completion ruler. No green eval, historical hook receipt, package
 verifier, worker terminal, or
 approval artifact can silently widen or narrow the live scope. A migrated
@@ -146,7 +148,7 @@ component must retain its parent service path, live consumer, reversible
 carrier, positive and negative behavior, fresh readback, and explicit unknowns;
 after validation, execution returns only to the exact pre-migration activity
 and return point already bound in the surviving parent. Validation does not
-authorize the Owner to derive a new domain problem from repository status.
+authorize S or an effect Owner to derive a new domain problem from repository status.
 
 The non-runtime capability lineage at
 `evals/behavior_regression/capability_lineage.v1.json` makes that migration

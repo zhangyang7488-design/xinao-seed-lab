@@ -2,10 +2,11 @@
 
 This repository exists only for one bounded behavior evaluation of the
 Codex-native collaboration surface. Its completion ruler includes one
-separable native child contribution followed by Owner adoption and consumer
+separable native child contribution followed by effect-owner adoption and consumer
 verification.
 
-The parent remains the sole Owner. The parent personally reads
+The parent remains the sole formal effect Owner for this engineering fixture,
+not the sole epistemic subject. The parent personally reads
 `owner_anchor.txt`, adopts child candidates into `adoption.json`, and invokes
 `consumer.py`. Exactly one bounded read-only child thread performs the
 separable worker read and may read only `worker_alpha.txt`. The child returns a

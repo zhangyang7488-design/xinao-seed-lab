@@ -1,23 +1,25 @@
-# Codex 共享运行体与双认证槽
+# S Codex 共享运行体与双认证槽
 
-`SENTINEL:ONE_CODEX_RUNTIME_TWO_CREDENTIAL_SLOTS_V1`
+`SENTINEL:S_ONE_CODEX_RUNTIME_TWO_CREDENTIAL_SLOTS_V2`
 
 状态：`current / installed / reversible`
 
 ## 正确身份
 
-本机只有一个 Codex 工程与行为运行体。A、B 不是两个认识主体、两套配置、两个恢复系统或两个长期窗口制度；它们只是同一个运行体的两个 ChatGPT 认证入口，用于额度轮换：
+本文件只定义 S 这一副身体。桌面 `OPEN CODEX S HARDMODE.lnk` 与 `CodexB.lnk` 不是两个认识主体、两套配置、两个恢复系统或两个长期窗口制度；它们只是同一个 S 运行体的两个 ChatGPT 认证入口。launcher 内部历史参数仍叫 `AccountSlot A|B`，其中 internal A 指桌面 S 主入口，绝不指桌面 `CodexA.lnk` clean-room。
+
+本机还有另一副独立的 A/C clean-room 身体：桌面 `CodexA.lnk` 与 `CodexC.lnk` 共享 `E:\CODEX_CLEANROOM`。两对不交叉；完整拓扑见 `CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md`。
 
 ```text
-shared Codex runtime
+shared S Codex runtime
   config / AGENTS / hooks / profiles / skills / rules / plugins
   S repository / D runtime / behavior regressions / recovery
                  |
           +------+------+
           |             |
-   credential A   credential B
+ S primary slot   credential B
           |             |
-      auth A          auth B
+     auth S          auth B
 ```
 
 ## 同一真实对象
@@ -49,7 +51,7 @@ Codex 当前把登录凭据和若干活动产品状态定位在 `CODEX_HOME`，�
 ## 入口与实现
 
 - canonical launcher：`E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Open-Codex-S-SharedRuntime.ps1`
-- A 入口：`C:\Users\xx363\CodexLaunchers\Open-Codex-S-Hardmode.ps1`
+- S 主入口（launcher internal `AccountSlot A`）：`C:\Users\xx363\CodexLaunchers\Open-Codex-S-Hardmode.ps1`
 - B 入口：`C:\Users\xx363\CodexLaunchers\Open-Codex-S-Hardmode-Account-B.ps1`
 - canonical runtime source：`C:\Users\xx363\.codex`
 - B credential carrier：`C:\Users\xx363\.codex-s-hardmode-account-b`
@@ -61,9 +63,9 @@ Codex 当前把登录凭据和若干活动产品状态定位在 `CODEX_HOME`，�
 完成必须同时证明：
 
 1. B 的每个共享文件/目录是指向 canonical source 的真实 link，而非相同内容副本；
-2. A/B `auth.json` 是普通私有文件，且已安装账户 ID 不同；
-3. A/B fresh Codex 进程读取同一 config、AGENTS、Skills 与 hooks，hook trust 均成立；
-4. 在 B 改动一个可逆共享 canary，A 不经同步立即读到；回滚 canary 后两边同时恢复；
+2. S 主槽/B 槽 `auth.json` 是普通私有文件，且已安装账户 ID 不同；
+3. S 主槽/B 槽 fresh Codex 进程读取同一 config、AGENTS、Skills 与 hooks，hook trust 均成立；
+4. 在 B 改动一个可逆共享 canary，S 主槽不经同步立即读到；回滚 canary 后两边同时恢复；
 5. S 行为回归从任一 credential slot 产生的仓库/运行证据由另一入口直接可见；
 6. 冷恢复只封装 canonical runtime 与薄入口，不封装认证、sessions、Memory 数据，也不把 B 当恢复源。
 

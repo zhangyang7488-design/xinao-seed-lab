@@ -211,9 +211,7 @@ def test_declared_invocation_never_overrides_observed_or_promotes_model_text(
             "provider": "candidate-provider",
             "sandbox_mode": "read-only",
             "write_capability": False,
-            "model_output": {
-                "observed": {"sandbox_mode": "unbounded", "cwd": str(claimed)}
-            },
+            "model_output": {"observed": {"sandbox_mode": "unbounded", "cwd": str(claimed)}},
         }
     )
     payload = observation.to_dict()
@@ -271,9 +269,10 @@ def test_environment_file_and_declared_secrets_are_never_emitted(
     assert declared["invocation"] == {"provider": "candidate-provider"}
     assert "observed.environment.CODEX_THREAD_ID" in _unknown_fields(payload)
     config_row = _candidate(payload, codex_home / "config.toml")
-    assert config_row["sha256"] == hashlib.sha256(
-        (codex_home / "config.toml").read_bytes()
-    ).hexdigest()
+    assert (
+        config_row["sha256"]
+        == hashlib.sha256((codex_home / "config.toml").read_bytes()).hexdigest()
+    )
 
 
 def test_facts_hash_excludes_capture_time_but_detects_file_hash_drift(
@@ -301,9 +300,10 @@ def test_facts_hash_excludes_capture_time_but_detects_file_hash_drift(
     agents.write_bytes(b"other fact\n")
     drifted = collect_runtime_observation()
     assert drifted.facts_sha256 != first.facts_sha256
-    assert _candidate(drifted.to_dict(), agents)["sha256"] == hashlib.sha256(
-        b"other fact\n"
-    ).hexdigest()
+    assert (
+        _candidate(drifted.to_dict(), agents)["sha256"]
+        == hashlib.sha256(b"other fact\n").hexdigest()
+    )
 
     digest_body = {
         "schema_version": RUNTIME_OBSERVATION_VERSION,
@@ -413,12 +413,10 @@ def test_git_root_head_branch_worktree_common_dir_and_dirty_are_observed(
     assert isinstance(differently_dirty_observed, dict)
     differently_dirty_git = differently_dirty_observed["git"]
     assert isinstance(differently_dirty_git, dict)
-    assert differently_dirty_git["porcelain_status_sha256"] == dirty_git[
-        "porcelain_status_sha256"
-    ]
-    assert differently_dirty_git["dirty_fingerprint_sha256"] != dirty_git[
-        "dirty_fingerprint_sha256"
-    ]
+    assert differently_dirty_git["porcelain_status_sha256"] == dirty_git["porcelain_status_sha256"]
+    assert (
+        differently_dirty_git["dirty_fingerprint_sha256"] != dirty_git["dirty_fingerprint_sha256"]
+    )
     assert differently_dirty["facts_sha256"] != dirty["facts_sha256"]
 
 

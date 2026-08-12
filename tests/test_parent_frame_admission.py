@@ -34,7 +34,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_NO_VALUE_BRANCH_IS_SKIPPED_PARENT_CONTINUES",
         "REG_FAILED_ROUTE_RETRIES_ALTERNATIVE_BEFORE_ABANDON",
         "REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER",
-        "REG_WORKER_RETURN_REQUIRES_OWNER_ADOPTION",
+        "REG_WORKER_RETURN_REQUIRES_ROLE_SCOPED_ADOPTION",
         "REG_LOCAL_BLOCKER_ISOLATED_PARENT_CONTINUES",
         "REG_COMPACT_RESUMES_EXACT_PARENT_WITHOUT_RESTATEMENT",
         "REG_REAL_ACTIVITY_DEFINES_FINITE_FOUNDATION_AND_RETURN",
@@ -45,11 +45,11 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_MIGRATION_VALIDATION_RETURNS_TO_NATIVE_ACTIVITY",
         "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK",
         "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION",
-        "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
-        "REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN",
-        "REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY",
-        "REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR",
-        "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
+        "REG_S_CONTROL_TOWER_PRESERVES_WORLD_OWNING_BRANCHES",
+        "REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER",
+        "REG_S_SUPERVISOR_DOES_NOT_DUPLICATE_SOL_DOMAIN_COGNITION",
+        "REG_S_CONTROL_TOWER_ONE_SHOT_REJECTS_AUTO_EXPANSION",
+        "REG_FRESH_FUSION_REJECTS_S_SUPERVISOR_GOLD",
         "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
         "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
         "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
@@ -77,7 +77,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL",
         "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
         "REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION",
-        "REG_SCOPED_OWNER_APPOINTMENT_SUPERSEDES_PRODUCT_BINDING",
+        "REG_WORLD_OWNING_SOL_APPOINTMENT_SUPERSEDES_CODEX_DOMAIN_OWNER",
         "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
         "REG_CORRECTION_UPDATES_PARENT_NOT_NEW_LOCAL_TASK",
         "REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD",
@@ -236,14 +236,17 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     scoped_owner = next(
         case
         for case in cases
-        if case["vars"]["case_id"] == "REG_SCOPED_OWNER_APPOINTMENT_SUPERSEDES_PRODUCT_BINDING"
+        if case["vars"]["case_id"]
+        == "REG_WORLD_OWNING_SOL_APPOINTMENT_SUPERSEDES_CODEX_DOMAIN_OWNER"
     )["vars"]
     assert scoped_owner["expected_frame_relation"] == "correction_to_existing_parent"
     assert scoped_owner["expected_task_switch"] is False
-    assert scoped_owner["expected_surface_role"] == "semantic_scope_correction"
-    assert scoped_owner["expected_blocked_promotion"] == ("product_identity_to_owner_appointment")
+    assert scoped_owner["expected_surface_role"] == "admitted_world_owner_with_s_runtime_supervisor"
+    assert scoped_owner["expected_blocked_promotion"] == (
+        "effect_owner_to_parallel_epistemic_owner"
+    )
     assert set(json.loads(scoped_owner["allowed_blocked_promotions"])) == {
-        "product_identity_to_owner_appointment",
+        "effect_owner_to_parallel_epistemic_owner",
         "stale_object_to_current_object",
     }
 
@@ -256,12 +259,13 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         if "expected_turn_disposition" in case["vars"]
     }
     new_transition_cases = {
+        "REG_WORLD_OWNING_SOL_APPOINTMENT_SUPERSEDES_CODEX_DOMAIN_OWNER",
         "REG_BOUNDED_EXTERNAL_WAIT_PRESERVES_PARENT",
         "REG_AVAILABLE_ACTION_REJECTS_PREMATURE_DEFER",
         "REG_NO_VALUE_BRANCH_IS_SKIPPED_PARENT_CONTINUES",
         "REG_FAILED_ROUTE_RETRIES_ALTERNATIVE_BEFORE_ABANDON",
         "REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER",
-        "REG_WORKER_RETURN_REQUIRES_OWNER_ADOPTION",
+        "REG_WORKER_RETURN_REQUIRES_ROLE_SCOPED_ADOPTION",
         "REG_LOCAL_BLOCKER_ISOLATED_PARENT_CONTINUES",
         "REG_COMPACT_RESUMES_EXACT_PARENT_WITHOUT_RESTATEMENT",
         "REG_REAL_ACTIVITY_DEFINES_FINITE_FOUNDATION_AND_RETURN",
@@ -271,10 +275,11 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_MIGRATION_VALIDATION_RETURNS_TO_NATIVE_ACTIVITY",
         "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK",
         "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION",
-        "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
-        "REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN",
-        "REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY",
-        "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
+        "REG_S_CONTROL_TOWER_PRESERVES_WORLD_OWNING_BRANCHES",
+        "REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER",
+        "REG_S_SUPERVISOR_DOES_NOT_DUPLICATE_SOL_DOMAIN_COGNITION",
+        "REG_S_CONTROL_TOWER_ONE_SHOT_REJECTS_AUTO_EXPANSION",
+        "REG_FRESH_FUSION_REJECTS_S_SUPERVISOR_GOLD",
         "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
         "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
         "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
@@ -329,11 +334,6 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     process_visibility_terminal_cases = {
         "REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS",
     }
-    # Monopoly rejection is decision-closure only: the model may omit the
-    # turn-finalization object when the increment is framed as continuous work.
-    dual_track_closure_only = {
-        "REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR",
-    }
     assert (
         set(terminal_cases)
         == {
@@ -349,9 +349,6 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         | process_visibility_terminal_cases
         | environment_terminal_cases
     )
-    # Keep monopoly out of the terminal-object set while still counting it as
-    # a dual-track control case in the broader suite inventory.
-    assert dual_track_closure_only.isdisjoint(set(terminal_cases))
     assert terminal_cases["REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER"] == {
         **terminal_cases["REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER"],
         "expected_parent_status": "active",
@@ -390,6 +387,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     )
     for case_id in new_transition_cases - {
         "REG_BOUNDED_EXTERNAL_WAIT_PRESERVES_PARENT",
+        "REG_S_CONTROL_TOWER_ONE_SHOT_REJECTS_AUTO_EXPANSION",
         "REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER",
     }:
         assert terminal_cases[case_id]["expected_turn_disposition"] == ("continue_existing_parent")
@@ -501,7 +499,6 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "REG_REVERSIBLE_MACHINE_WORK_REJECTS_UNCONSUMED_FORMALITY",
         }
         | new_transition_cases
-        | dual_track_closure_only
         | behavior_delivery_terminal_cases
         | credential_case_ids
         | process_visibility_case_ids
@@ -672,17 +669,18 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         == "no_action_for_branch"
     )
     assert (
-        closure_cases["REG_WORKER_RETURN_REQUIRES_OWNER_ADOPTION"][
+        closure_cases["REG_WORKER_RETURN_REQUIRES_ROLE_SCOPED_ADOPTION"][
             "expected_selected_control_action"
         ]
-        == "owner_verify_candidate"
+        == "role_scoped_verify_candidate"
     )
-    dual_track_cases = {
-        "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
-        "REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN",
-        "REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY",
-        "REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR",
-        "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
+    role_separated_cases = {
+        "REG_S_CONTROL_TOWER_PRESERVES_WORLD_OWNING_BRANCHES",
+        "REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER",
+        "REG_S_SUPERVISOR_DOES_NOT_DUPLICATE_SOL_DOMAIN_COGNITION",
+        "REG_S_CONTROL_TOWER_ONE_SHOT_REJECTS_AUTO_EXPANSION",
+        "REG_FRESH_FUSION_REJECTS_S_SUPERVISOR_GOLD",
+        "REG_WORLD_OWNING_SOL_APPOINTMENT_SUPERSEDES_CODEX_DOMAIN_OWNER",
         "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
     }
     native_routing_cases = {
@@ -690,51 +688,85 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
         "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
     }
-    assert dual_track_cases <= set(closure_cases)
+    assert role_separated_cases <= set(closure_cases)
     assert native_routing_cases <= set(closure_cases)
     assert (
-        closure_cases["REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME"][
+        closure_cases["REG_S_CONTROL_TOWER_PRESERVES_WORLD_OWNING_BRANCHES"][
             "expected_selected_control_action"
         ]
-        == "dispatch_parallel_and_owner_consume"
+        == "supervise_parallel_and_integrate_by_role"
     )
     assert (
-        closure_cases["REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN"]["expected_blocked_promotion"]
+        closure_cases["REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER"][
+            "expected_blocked_promotion"
+        ]
         == "internal_worker_routing_to_user_authorization"
     )
     assert (
-        closure_cases["REG_ORDINARY_GROK_DEFAULT_IS_NOT_USER_OPT_IN"][
+        closure_cases["REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER"][
+            "expected_selected_control_action"
+        ]
+        == "dispatch_ordinary_grok_and_integrate"
+    )
+    assert (
+        closure_cases["REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER"][
+            "expected_next_action"
+        ]
+        == "dispatch_ordinary_grok_candidates_and_integrate"
+    )
+    assert (
+        closure_cases["REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER"][
+            "expected_surface_role"
+        ]
+        == "s_engineering_with_ordinary_grok_candidates"
+    )
+    assert (
+        closure_cases["REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER"][
             "expected_user_input_required"
         ]
         is False
     )
     assert (
-        closure_cases["REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY"][
+        closure_cases["REG_S_SUPERVISOR_DOES_NOT_DUPLICATE_SOL_DOMAIN_COGNITION"][
             "expected_blocked_promotion"
         ]
-        == "worker_report_to_owner_reality_contact"
+        == "effect_owner_to_parallel_epistemic_owner"
     )
     assert (
-        closure_cases["REG_WORKERS_CANNOT_MEDIATE_OWNER_CONTACT_WITH_SOURCE_REALITY"][
+        closure_cases["REG_S_SUPERVISOR_DOES_NOT_DUPLICATE_SOL_DOMAIN_COGNITION"][
             "expected_selected_control_action"
         ]
-        == "dispatch_parallel_and_owner_consume"
+        == "supervise_parallel_and_integrate_by_role"
     )
     assert (
-        closure_cases["REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR"]["expected_blocked_promotion"]
-        == "separable_labor_to_owner_monopoly"
-    )
-    assert (
-        closure_cases["REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT"][
-            "expected_selected_control_action"
-        ]
-        == "owner_verify_candidate"
-    )
-    assert (
-        closure_cases["REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT"][
+        closure_cases["REG_S_CONTROL_TOWER_ONE_SHOT_REJECTS_AUTO_EXPANSION"][
             "expected_blocked_promotion"
         ]
-        == "worker_judgment_to_owner_rubber_stamp"
+        == "interesting_terminal_to_self_authorized_topology_change"
+    )
+    assert (
+        closure_cases["REG_S_CONTROL_TOWER_ONE_SHOT_REJECTS_AUTO_EXPANSION"][
+            "expected_selected_control_action"
+        ]
+        == "wait_for_condition"
+    )
+    one_shot = closure_cases["REG_S_CONTROL_TOWER_ONE_SHOT_REJECTS_AUTO_EXPANSION"]
+    assert len(json.loads(one_shot["allowed_frame_routes"])) == 4
+    assert {
+        route["selected_control_action"] for route in json.loads(one_shot["allowed_control_routes"])
+    } == {"wait_for_condition", "supervise_parallel_and_integrate_by_role"}
+    assert {
+        turn["turn_disposition"] for turn in json.loads(one_shot["allowed_turn_finalizations"])
+    } == {"wait_bounded", "continue_existing_parent"}
+    assert (
+        closure_cases["REG_FRESH_FUSION_REJECTS_S_SUPERVISOR_GOLD"][
+            "expected_selected_control_action"
+        ]
+        == "launch_fresh_fusion"
+    )
+    assert (
+        closure_cases["REG_FRESH_FUSION_REJECTS_S_SUPERVISOR_GOLD"]["expected_blocked_promotion"]
+        == "branch_agreement_to_supervisor_gold"
     )
     assert (
         closure_cases["REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL"][
@@ -761,7 +793,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
             "expected_selected_control_action"
         ]
-        == "dispatch_parallel_and_owner_consume"
+        == "supervise_parallel_and_integrate_by_role"
     )
     assert (
         closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
@@ -830,9 +862,9 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "selected_control_action": "execute_child_then_resume_parent",
         },
         {
-            "next_action": "dispatch_parallel_separable_packages_with_owner_consume",
-            "decision_family": "owner_worker_dual_track",
-            "selected_control_action": "dispatch_parallel_and_owner_consume",
+            "next_action": "supervise_parallel_packages_and_integrate_by_role",
+            "decision_family": "role_separated_supervision",
+            "selected_control_action": "supervise_parallel_and_integrate_by_role",
         },
     ]
     assert json.loads(
@@ -890,7 +922,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "material_content_to_parent_task"
     )
     # Semantic width only: no fixed minimum worker count and no fake runtime claim.
-    for case_id in dual_track_cases | native_routing_cases:
+    for case_id in role_separated_cases | native_routing_cases:
         blob = json.dumps(closure_cases[case_id], ensure_ascii=False).lower()
         assert "min_worker" not in blob
         assert "minimum_worker" not in blob
@@ -1000,13 +1032,18 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     ]
 
     prompt = (suite_root / "prompt.txt").read_text(encoding="utf-8")
-    assert "dual tracks" in prompt
-    assert "no worker-specific opt-in sentence" in prompt
-    assert "personally contact and understand source reality" in prompt
-    assert "exclusive" in prompt and "Worker mediation" in prompt
-    assert "standing exception" in prompt
+    assert "Bind cognition ownership separately" in prompt
+    assert "world-owning Sol directly forms" in prompt
+    assert "universal rule" in prompt and "domain main line" in prompt
+    assert "ordinary Grok is the standing first labor route" in prompt
+    assert "role-scoped S labor default" in prompt
+    assert "cannot inject Grok" in prompt
+    assert "next_action=dispatch_ordinary_grok_candidates_and_integrate" in prompt
+    assert "automatic Stage 2" in prompt
+    assert "task-scoped native subagent" in prompt
+    assert "advance the inseparable main line" not in prompt
     assert "multi_agent=false" in prompt
-    assert "positive-value width" in prompt
+    assert "native admission remains dynamic" in prompt
     assert "Do not claim" in prompt and "runtime pass" in prompt
     assert "decode source and conversational act" in prompt
     assert "Outer `role=user` identifies the transport" in prompt

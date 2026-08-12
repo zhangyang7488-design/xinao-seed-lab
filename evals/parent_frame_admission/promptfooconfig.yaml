@@ -87,7 +87,7 @@ providers:
               - partial_blocker_frame
               - resumed_parent_frame
               - real_activity_return_frame
-              - owner_worker_dual_track_frame
+              - role_separated_supervision_frame
               - tightly_coupled_serial_frame
               - cold_native_standing_exception_frame
               - dynamic_positive_value_width_frame
@@ -118,9 +118,11 @@ providers:
               - isolate_blocker_and_continue
               - resume_exact_return_point
               - return_to_real_activity_from_sufficient_foundation
-              - execute_reversible_owner_work_without_unconsumed_formality
-              - dispatch_parallel_separable_packages_with_owner_consume
-              - execute_serial_owner_work_without_forced_parallel
+              - execute_reversible_effect_owner_work_without_unconsumed_formality
+              - supervise_parallel_packages_and_integrate_by_role
+              - dispatch_ordinary_grok_candidates_and_integrate
+              - launch_fresh_fusion_then_verify_effect
+              - execute_serial_effect_owner_work_without_forced_parallel
               - admit_task_scoped_native_subagent_then_restore_persistent_off
               - choose_dynamic_positive_value_width_not_max_fanout
               - complete_bounded_child_then_resume_parent
@@ -185,12 +187,14 @@ providers:
                   - localized_blocker
                   - continuity_return_pointer
                   - real_activity_and_sufficient_foundation
-                  - reversible_owner_work_with_safety_theater
-                  - separable_complete_packages_ready
-                  - owner_monopoly_of_separable_labor
+                  - reversible_effect_owner_work_with_safety_theater
+                  - fresh_world_owning_branches_ready
+                  - fixed_one_shot_with_interesting_terminal
                   - worker_judgment_owner_rubber_stamp
-                  - ordinary_grok_default_misframed_as_user_opt_in
-                  - worker_exclusive_mediation_of_source_reality
+                  - s_engineering_with_separable_candidate_audits
+                  - s_engineering_with_ordinary_grok_candidates
+                  - admitted_world_owner_with_s_runtime_supervisor
+                  - world_branch_terminals_ready_for_fresh_fusion
                   - tightly_coupled_single_beat_task
                   - native_collaboration_or_unavailable_native_evidence
                   - ordinary_separable_repo_work
@@ -223,11 +227,10 @@ providers:
                   - turn_boundary_to_parent_erasure
                   - inherited_system_or_future_capability_to_parent_result
                   - unconsumed_formality_to_user_gate
-                  - dual_track_to_owner_or_worker_pole
-                  - separable_labor_to_owner_monopoly
-                  - worker_judgment_to_owner_rubber_stamp
+                  - effect_owner_to_parallel_epistemic_owner
+                  - interesting_terminal_to_self_authorized_topology_change
                   - internal_worker_routing_to_user_authorization
-                  - worker_report_to_owner_reality_contact
+                  - branch_agreement_to_supervisor_gold
                   - tight_coupling_to_forced_parallel
                   - native_exception_to_persistent_multi_agent_or_owner_surrender
                   - ordinary_separable_work_to_native_exception
@@ -302,7 +305,7 @@ providers:
             required:
               - intent_bound_before_engineering
               - unstated_prerequisites_derived
-              - owner_technical_decision
+              - effect_owner_technical_decision
               - user_choice_required
               - real_consumer_bound
               - recovery_and_verification_included
@@ -311,7 +314,7 @@ providers:
             properties:
               intent_bound_before_engineering: { type: boolean, const: true }
               unstated_prerequisites_derived: { type: boolean, const: true }
-              owner_technical_decision: { type: boolean, const: true }
+              effect_owner_technical_decision: { type: boolean, const: true }
               user_choice_required: { type: boolean, const: false }
               real_consumer_bound: { type: boolean, const: true }
               recovery_and_verification_included: { type: boolean, const: true }
@@ -452,7 +455,8 @@ providers:
                   - worker_return_or_refill
                   - blocker_or_continue
                   - resume_or_reframe
-                  - owner_worker_dual_track
+                  - role_separated_supervision
+                  - role_separated_engineering_labor
                   - utterance_relation_and_return
                   - behavior_delivery_or_partial
               selected_control_action:
@@ -467,10 +471,12 @@ providers:
                   - no_action_for_branch
                   - retry_alternative_route
                   - yield_exact_blocker
-                  - owner_verify_candidate
+                  - role_scoped_verify_candidate
                   - continue_unblocked_route
                   - resume_exact_return_point
-                  - dispatch_parallel_and_owner_consume
+                  - supervise_parallel_and_integrate_by_role
+                  - dispatch_ordinary_grok_and_integrate
+                  - launch_fresh_fusion
                   - execute_serial_now
                   - admit_task_scoped_native_subagent
                   - choose_dynamic_positive_value_width
@@ -499,15 +505,21 @@ providers:
                     - retry_alternative_route
                     - yield_exact_blocker
                     - abandon_parent
-                    - owner_verify_candidate
+                    - role_scoped_verify_candidate
                     - refill_worker
-                    - accept_worker_as_parent_complete
+                    - promote_worker_terminal_to_parent_complete
                     - continue_unblocked_route
                     - resume_exact_return_point
                     - ask_user_to_restate
                     - start_new_parent
-                    - dispatch_parallel_and_owner_consume
-                    - owner_do_all_separable_work
+                    - supervise_parallel_and_integrate_by_role
+                    - dispatch_ordinary_grok_and_integrate
+                    - direct_serial_only
+                    - s_duplicate_branch_cognition
+                    - s_avoid_engineering_reality
+                    - auto_expand_generation
+                    - launch_fresh_fusion
+                    - s_vote_and_prewrite_gold
                     - force_parallel_dispatch
                     - execute_serial_now
                     - admit_task_scoped_native_subagent

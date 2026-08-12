@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
-description: Disposable native Codex subagent Owner-worker-consumer trajectory
+description: Disposable native Codex subagent effect-owner-worker-consumer trajectory
 
 providers:
   - id: openai:codex-app-server
@@ -52,7 +52,7 @@ prompts:
   - prompt.txt
 
 tests:
-  - description: Parent owns reality while one native child does a separable read
+  - description: Parent owns the engineering effect while one native child does a separable read
     assert:
       - type: is-json
       - type: javascript

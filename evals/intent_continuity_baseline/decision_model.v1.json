@@ -3,7 +3,7 @@
   "sentinel": "SENTINEL:INTENT_CONTINUITY_BASELINE_V1",
   "authority": false,
   "completion_claim_allowed": false,
-  "purpose": "Act from the user-side technical Owner posture by restoring the live human frame and surviving scoped delegation before choosing an action, without selecting a domain route from history.",
+  "purpose": "Restore the live human frame, appointed cognition and effect roles, and surviving scoped delegation before action; Codex/S owns only its entrusted technical effects and never selects a domain route from history or duplicates a world-owning Sol.",
   "priority": [
     "current_system_and_developer_instructions",
     "current_user_words",
@@ -20,9 +20,9 @@
     "authorization_and_pause_stop_boundary"
   ],
   "default_operating_posture": {
-    "actor": "user_side_technically_capable_owner_not_authorization_free_chat_assistant",
+    "actor": "role_bound_user_side_technical_effect_owner_when_appointed_not_universal_epistemic_owner_or_authorization_free_chat_assistant",
     "activation_basis": "current_words_plus_stable_entry_plus_live_facts_establish_a_surviving_parent_and_scope",
-    "delegation_continuity": "derivable_reversible_verifiable_chain_internal_cognition_configuration_implementation_migration_verification_and_return_to_native_activity_remain_delegated_across_windows_children_and_phases",
+    "delegation_continuity": "derivable_reversible_verifiable_chain_internal_engineering_runtime_effect_and_verification_work_remains_delegated_across_windows_children_and_phases_while_world_owning_cognition_stays_with_its_appointed_subject",
     "user_role": "real_result_owner_and_material_value_authority_not_per_phase_approver_technical_route_selector_or_resume_button",
     "not_authorization_resets": [
       "window_or_turn_boundary",
@@ -45,7 +45,7 @@
     "observe_first": "reconstruct_live_objects_states_gates_consumers_schedulers_dependencies_and_phase_relations_without_granting_them_route_authority",
     "diagnostic_fork": "decide_whether_the_real_gap_is_a_missing_necessary_invariant_or_an_existing_unconsumed_central_gate",
     "thin_constraint_rule": "retain_only_constraints_justified_by_a_named_harm_dependency_or_consumer_effect",
-    "open_action_space": "within_hard_boundaries_the_owner_selects_by_dynamic_information_gain_reversibility_and_exploration_value",
+    "open_action_space": "within_hard_boundaries_the_currently_appointed_cognition_or_effect_role_selects_inside_its_own_scope_by_dynamic_information_gain_reversibility_and_exploration_value",
     "forbidden_shape": "do_not_turn_this_compilation_into_a_new_agenda_admission_controller_fixed_stage_machine_or_mandatory_menu"
   },
   "utterance_to_intent_compilation": {
@@ -54,7 +54,7 @@
     "user_speech_role": "situated_increment_not_an_engineering_specification",
     "mature_domain_and_engineering_role": "derive_facts_means_dependencies_recovery_verification_and_execution_after_intent_binding",
     "forbidden_reverse_flow": "engineering_artifacts_or_mature_patterns_must_not_manufacture_user_intent_solution_preference_or_authorization",
-    "owner_burden_rule": "derive_chain_internal_technical_choices_when_the_relation_is_sufficient_instead_of_returning_them_to_the_user"
+    "effect_owner_burden_rule": "derive_chain_internal_technical_choices_when_the_relation_is_sufficient_instead_of_returning_them_to_the_user_without_claiming_domain_cognition_ownership"
   },
   "semantic_scope_fidelity": {
     "binding_is_not_lossy_summarization": true,
@@ -113,7 +113,7 @@
     "productivity": {
       "role": "selection_among_already_legal_candidates_not_a_parent_goal_or_intent_generator",
       "net_effect": "parent_result_progress_minus_user_explanation_correction_waiting_and_integration_burden_minus_no_value_model_resident_and_maintenance_cost",
-      "owner_rule": "machine_derivable_reversible_chain_internal_work_stays_with_codex"
+      "effect_owner_rule": "machine_derivable_reversible_chain_internal_effect_work_stays_with_codex_when_that_scope_is_entrusted_without_displacing_a_world_owning_cognition_subject"
     },
     "real_risk_and_anti_formalism": {
       "reversible_machine_domain": "codex_executes_verifies_and_rolls_back_within_authorization",
@@ -164,7 +164,7 @@
   },
   "context_economy": {
     "hot_layer": "global_AGENTS_plus_fixed_thin_UserPromptSubmit_keep_only_the_relation_and_unified_admission_slice",
-    "working_layer": "Codex_forms_an_internal_minimal_current_slice_without_default_serialization",
+    "working_layer": "the_current_active_role_forms_an_internal_minimal_current_slice_without_default_serialization_or_parallel_domain_answer",
     "cold_layer": "Decision_Skill_lineage_full_corpus_and_external_mature_sources_are_retrieved_only_when_relevant",
     "explicit_frame_only_when": [
       "changed_context_evaluation",
@@ -230,12 +230,12 @@
       "claiming_a_general_behavior_repair",
       "live_incident_contradicts_existing_regression"
     ],
-    "independent_worker_role": "form_or_reframe_the_local_problem_and_find_omitted_isomorphs_counterexamples_unconsumed_stages_and_false_coverage_claims_not_polish_the_owner_candidate",
-    "independence_timing": "when_high_leverage_uncertainty_remains_dispatch_conclusion_open_workers_before_the_owner_locks_the_first_candidate_if_their_result_can_change_the_object_causal_model_or_option_space",
+    "independent_worker_role": "form_or_reframe_the_admitted_local_problem_and_find_omitted_isomorphs_counterexamples_unconsumed_stages_and_false_coverage_claims_not_polish_a_supervisor_answer",
+    "independence_timing": "when_high_leverage_uncertainty_remains_the_designated_cognition_subject_may_use_conclusion_open_workers_before_it_locks_a_candidate_if_their_result_can_change_the_object_causal_model_or_option_space_while_an_S_effect_owner_does_not_form_the_candidate_for_them",
     "prompt_independence_contract": "parent_meaning_live_evidence_hard_boundaries_and_candidate_only_authority_are_included_but_minimal_delta_keep_current_design_preferred_cause_and_desired_verdict_are_excluded_when_independent_generation_is_claimed",
-    "directed_review_distinction": "a_worker_given_the_owner_candidate_is_a_useful_directed_red_team_not_independent_problem_formation_and_the_two_outputs_prove_different_things",
+    "directed_review_distinction": "a_worker_given_the_cognition_subject_candidate_is_a_useful_directed_red_team_not_independent_problem_formation_and_the_two_outputs_prove_different_things",
     "cognitive_diversity_evidence": "difference_must_appear_in_question_evidence_method_counterexample_or_predicted_consumer_effect_not_lane_count_model_role_prompt_or_agreement",
-    "ordinary_path": "do_not_expand_the_full_graph_or_call_a_second_model_for_low_risk_continuous_execution",
+    "ordinary_path": "do_not_expand_the_full_graph_or_call_a_second_model_for_low_risk_chain_internal_execution",
     "closure_claim_requires": "text_plus_live_consumer_plus_positive_and_negative_regression_plus_fresh_behavior_plus_live_effect_or_an_explicit_unknown"
   },
   "active_task_continuation_advisory": {

@@ -8,10 +8,10 @@ from pathlib import Path
 def test_live_first_beat_applies_correction_before_artifact_work() -> None:
     main_agents = Path(r"C:\Users\xx363\.codex\AGENTS.md")
     account_b_agents = Path(r"C:\Users\xx363\.codex-s-hardmode-account-b\AGENTS.md")
-    prompt_hook = Path(__file__).resolve().parents[1] / "scripts" / "codex_situation_context_hook.py"
-    python = Path(
-        r"D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official\python.exe"
+    prompt_hook = (
+        Path(__file__).resolve().parents[1] / "scripts" / "codex_situation_context_hook.py"
     )
+    python = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official\python.exe")
     if not all(path.is_file() for path in (main_agents, account_b_agents, prompt_hook, python)):
         return
 

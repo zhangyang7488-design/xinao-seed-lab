@@ -235,6 +235,7 @@ def test_agent_runtime_cannot_commit_the_worktree() -> None:
 def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
     contract = REPO_ROOT / "docs" / "tool_glue" / "GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md"
+    control_tower = REPO_ROOT / "docs" / "tool_glue" / "S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md"
     retired_projection = REPO_ROOT / "docs" / "tool_glue" / "SOFTWARE_TOOL_GLUE_CURRENT.md"
     assert "docs/tool_glue/GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md" in agreement
     assert "SENTINEL:S_IS_ENGINEERING_SUBSTRATE_V2" in agreement
@@ -247,6 +248,18 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "uv run ..." in agreement
     assert "不能上卷成仓库或应用缺失" in agreement
     assert "真实消费者 fresh readback 验收" in agreement
+    assert "SENTINEL:S_CONTROL_TOWER_COGNITIVE_INDEPENDENCE_V1" in agreement
+    assert "docs/tool_glue/S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md" in agreement
+    assert "不以 supervisor 身份替独立 Sol 选研究题" in agreement
+    assert "用户可见控制叙述只在状态变化、故障、边界、采用和结算时" in agreement
+    control_tower_text = control_tower.read_text(encoding="utf-8")
+    assert "S 对工程与实验效果负责到底" in control_tower_text
+    assert "默认用普通 Grok 放大自身职责锥内的可分离劳动" in control_tower_text
+    assert "对独立 Sol 的认识自由保持克制" in control_tower_text
+    assert "S 不亲自复制独立 Sol 的领域 cognition" in control_tower_text
+    assert "fresh Main" in control_tower_text
+    assert "S 不从运行结果自行取得改变认知拓扑的权限" in control_tower_text
+    assert "Codex personally advances the domain main line" not in control_tower_text
     contract_text = contract.read_text(encoding="utf-8")
     assert "SENTINEL:GENERIC_ENGINEERING_SUBSTRATE_CURRENT_V1" in contract_text
     assert "不定义任何科学父意图" in contract_text
@@ -571,9 +584,12 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     global_agents_text = global_agents.read_text(encoding="utf-8")
     assert "SENTINEL:LOCAL_DOCKER_EXCEPTION_ONLY_V1" in global_agents_text
     assert "默认禁止启动或采用 Docker、Docker Compose 或 Docker 容器" in global_agents_text
-    assert "SENTINEL:OWNER_DIRECT_GROK_DEFAULT_DUAL_TRACK_V1" in global_agents_text
-    assert "普通 Grok 派工是链内技术路由" in global_agents_text
-    assert "Codex 不得派完就等待或只转述报告" in global_agents_text
+    assert "SENTINEL:ROLE_SEPARATED_CONTROL_TOWER_V1" in global_agents_text
+    assert "已经被任命为 world-owning Sol 的 branch 自己面对领域现实" in global_agents_text
+    assert "S 不再平行形成一份“Owner 正解”" in global_agents_text
+    assert "用户可见控制叙述只在状态变化、故障、边界、采用和结算时" in global_agents_text
+    assert "SENTINEL:OWNER_DIRECT_GROK_DEFAULT_DUAL_TRACK_V1" not in global_agents_text
+    assert "Codex 亲自下场接触源现实、形成认识并推进不可分的主线" not in global_agents_text
 
     docker_without_opt_in = subprocess.run(
         [
@@ -893,8 +909,12 @@ def test_shared_worker_skills_preserve_preclosure_independence_when_installed() 
     dispatch = paths["dispatch"].read_text(encoding="utf-8")
     repair = paths["repair"].read_text(encoding="utf-8")
     amplify_words = " ".join(amplify.split())
-    assert "Owner locks the first candidate" in amplify
-    assert "directed red-team review rather than independent problem formation" in amplify_words
+    assert "world-owning cognition branch owns how its internal world forms" in amplify_words
+    assert "select a branch's research question, hypothesis, representation" in amplify_words
+    assert "run a parallel domain-cognition lane" in amplify_words
+    assert "Use fresh late fusion without manufacturing consensus" in amplify
+    assert "Codex personally reads and invokes the truth-bearing source reality" not in amplify
+    assert "advances the inseparable main line" not in amplify
     assert "Independence is also a timing and prompt-provenance claim" in dispatch
     assert "recommend rollback/removal/no-action" in dispatch
     assert "高杠杆候选是否由 Owner 先行封闭" in repair
@@ -960,7 +980,9 @@ def test_memory_server_is_isolated_from_retired_or_hosted_backends() -> None:
 
 def test_project_agreement_keeps_capabilities_available_but_activation_adaptive() -> None:
     text = _project_agreement_contract_text()
-    assert "普通外部 WorkerPool 可以承担可分离的研究、诊断、实现、测试和攻击" in text
+    assert "普通 Grok WorkerPool 是可分离、可独立验收且正收益劳动的默认执行面" in text
+    assert "Terra/Luna/native/direct 只有在当前 task-fit 事实胜出时替代" in text
+    assert "普通外部 WorkerPool 可在继承并收窄的责任锥内形成局部问题" in text
     assert "工人数、provider、prompt、算法名和输出包不同不证明认识异质" in text
     assert "工人只在授权对象与写域内产生候选" in text
 
@@ -1619,6 +1641,7 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     )
     launcher_path = Path(r"C:\Users\xx363\CodexLaunchers\Open-Codex-S-Hardmode-Account-B.ps1")
     contract_path = Path(r"C:\Users\xx363\CodexLaunchers\CODEX_PRODUCTIVITY_PROFILE.md")
+    worker_operator_path = Path(r"C:\Users\xx363\CodexLaunchers\CODEX_GROK_WORKER_POOL_OPERATOR.md")
     shared_launcher_path = REPO_ROOT / "scripts" / "Open-Codex-S-SharedRuntime.ps1"
     account_contract_path = (
         REPO_ROOT / "docs" / "tool_glue" / "CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md"
@@ -1630,6 +1653,7 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
         account_b_cold_profile_path,
         launcher_path,
         contract_path,
+        worker_operator_path,
         shared_launcher_path,
         account_contract_path,
     )
@@ -1784,11 +1808,12 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     assert "Owner 是具名 effect scope 内的责任席" in main_agents
     assert "窗口、compact、局部结果和阶段报告不会自动清空" in main_agents
     assert "Pi 是单独且仍在快速演化的官方产品" in main_agents
-    assert "S 只承载通用工程能力，不产生科学课题" in main_agents
+    assert "S 只承载通用工程能力与按需 control-tower 职责，不产生科学课题" in main_agents
+    assert "SENTINEL:ROLE_SEPARATED_CONTROL_TOWER_V1" in main_agents
     assert "SENTINEL:DECLARED_RUNTIME_BEFORE_ENVIRONMENT_REPAIR_V1" in main_agents
-    assert "SENTINEL:ONE_LOGICAL_CODEX_RUNTIME_TWO_CREDENTIALS_V1" in main_agents
-    assert "两个 ChatGPT credential slot" in main_agents
-    assert "不做复制同步、双向投影、哈希追平或从 B 反推主源" in main_agents
+    assert "SENTINEL:TWO_CODEX_BODIES_PAIRED_CREDENTIAL_SLOTS_V1" in main_agents
+    assert "本机有两副互不交叉的 Codex 身体" in main_agents
+    assert "不得把 C 接回 S/B，也不得把 B 接入 A/C" in main_agents
     assert "临时解释器、PATH 裸壳或临时 probe 的失败" in main_agents
     assert "不能上卷成仓库、应用或整台机器缺失" in main_agents
     assert "声明依赖与锁定来源、安装或恢复载体" in main_agents
@@ -1813,9 +1838,18 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     ):
         assert recovery_state in contract
     assert "能力发现、调用、回读和回冷是四个不同状态" in contract
+    assert "普通 Grok 是可分离正收益劳动的默认入口" in contract
+    assert "这个默认不进入 world-owning Sol 的 cognition" in contract
+    assert "public Grok available / S-cone default; plugin cold" in contract
+
+    worker_operator = worker_operator_path.read_text(encoding="utf-8-sig")
+    assert "按需能力入口" in worker_operator
+    assert "默认 cognition 路线" in worker_operator
+    assert "world-owning Sol" in worker_operator
+    assert not Path(r"C:\Users\xx363\CodexLaunchers\CODEX_GROK_WORKER_POOL_DEFAULT.md").exists()
 
     account_contract = account_contract_path.read_text(encoding="utf-8-sig")
-    assert "SENTINEL:ONE_CODEX_RUNTIME_TWO_CREDENTIAL_SLOTS_V1" in account_contract
+    assert "SENTINEL:S_ONE_CODEX_RUNTIME_TWO_CREDENTIAL_SLOTS_V2" in account_contract
     assert "不做复制、双向同步、哈希追平或反向恢复" in account_contract
     assert "不得为了“看起来更统一”硬链接活动 SQLite/WAL" in account_contract
 

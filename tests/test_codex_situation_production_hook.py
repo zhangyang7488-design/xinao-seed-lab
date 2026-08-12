@@ -158,9 +158,7 @@ def test_runtime_failure_preserves_l0_and_never_blocks(
         raise RuntimeError("probe failed")
 
     monkeypatch.setattr(hook_module, "collect_runtime_observation", fail)
-    output = handle_hook_event(
-        {"hook_event_name": "UserPromptSubmit", "prompt": "continue"}
-    )
+    output = handle_hook_event({"hook_event_name": "UserPromptSubmit", "prompt": "continue"})
     assert output == {
         "continue": True,
         "hookSpecificOutput": {

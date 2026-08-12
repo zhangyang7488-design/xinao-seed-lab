@@ -42,9 +42,7 @@ L0_CONTEXT = "\n".join(
     )
 )
 
-_SESSION_ID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-)
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 _MAX_CHECKPOINT_CONTEXT_CHARS = 4_500
 _MAX_RUNTIME_CONTEXT_CHARS = 5_500
 _MAX_HOOK_CONTEXT_CHARS = 10_000
@@ -83,9 +81,10 @@ def session_store_path(
     normalized = _session_id(session_id)
     root = Path(store_root).resolve()
     sessions_candidate = root / "sessions"
-    if sessions_candidate.is_symlink() or getattr(
-        sessions_candidate, "is_junction", lambda: False
-    )():
+    if (
+        sessions_candidate.is_symlink()
+        or getattr(sessions_candidate, "is_junction", lambda: False)()
+    ):
         raise SituationHookError("current situation sessions root cannot be a link")
     sessions = sessions_candidate.resolve()
     candidate = sessions / normalized
@@ -169,9 +168,7 @@ def compact_runtime_observation(event: Mapping[str, object]) -> dict[str, object
 
     unknown_rows = result.get("unknown")
     bounded_unknown: list[dict[str, object]] = []
-    if isinstance(unknown_rows, Sequence) and not isinstance(
-        unknown_rows, (str, bytes, bytearray)
-    ):
+    if isinstance(unknown_rows, Sequence) and not isinstance(unknown_rows, (str, bytes, bytearray)):
         for row in unknown_rows[:16]:
             if not isinstance(row, Mapping):
                 continue
@@ -266,14 +263,10 @@ def compact_checkpoint(snapshot: Mapping[str, object]) -> dict[str, object]:
         "current": {
             "activity": {
                 "mode": current["activity"]["mode"],
-                "description": _text(
-                    current["activity"]["description"], limit=_MAX_FIELD_CHARS
-                ),
+                "description": _text(current["activity"]["description"], limit=_MAX_FIELD_CHARS),
             },
             "object": {
-                "description": _text(
-                    current["object"]["description"], limit=_MAX_FIELD_CHARS
-                )
+                "description": _text(current["object"]["description"], limit=_MAX_FIELD_CHARS)
             },
             "human_relation": {
                 "description": _text(

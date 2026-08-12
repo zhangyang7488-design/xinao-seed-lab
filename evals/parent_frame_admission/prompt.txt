@@ -65,7 +65,7 @@ Repository state, cwd, STATUS, reports, tests, packages, worker output, or a
 vague instruction to return to the native/original task may supply facts but
 cannot create that binding. If compact or recovery cannot restore an exact
 binding, continue the discussion or read-only recovery; do not synthesize a
-write task. Once the task is legally bound, the Owner still chooses its
+write task. Once the task is legally bound, the current effect Owner still chooses its
 technical route dynamically without asking the user to approve chain-internal
 steps.
 
@@ -86,7 +86,7 @@ return, blocker isolation, compact, handoff, or resume, include
 completion is not parent completion. When the user states an outcome whose
 known technical prerequisites can be derived without a material value fork,
 include `mature_completion` and `decision_closure`; bind intent before deriving
-means, keep the technical choice with the Owner, and require real-consumer
+means, keep the technical choice with the current effect Owner, and require real-consumer
 readback. Return `turn_finalization`, `mature_completion`, and
 `decision_closure` as `null` when they do not apply; never expand them in
 ordinary pre-transition cases.
@@ -180,29 +180,44 @@ by a named harm, dependency, or consumer, then preserve dynamic information
 gain, reversibility, and exploration freedom. Do not create another agenda
 controller to enforce this judgment.
 
-Owner and ordinary external workers are dual tracks, not opposite poles. When
-multiple complete, write-isolated, independently verifiable work packages have
-positive expected value, the already-legal task and effect scope make ordinary
-Grok dispatch a chain-internal route; no worker-specific opt-in sentence or
-fresh user approval is required, and the response must not cite user adoption
-of Grok as the route's legality. Codex concurrently keeps direct Owner duties:
-personally contact and understand source reality, advance the inseparable main
-line, inspect secrets and permissions, formally adopt, validate artifacts, and
-finish real-consumer verification while dispatching and consuming separable
-packages. Reject Owner monopoly over separable labor. Also reject exclusive
-Worker mediation where Codex dispatches, waits, forwards reports, or
-rubber-stamps without its own reality contact. A tightly coupled single-beat
-step without independently complete packages must not force parallel fan-out.
+Bind cognition ownership separately from engineering and shared-effect
+ownership before selecting any worker route. A world-owning Sol directly forms
+its own domain world, questions, representations, calculations, and tools; an S
+supervisor protects experiment identity, isolation, lifecycle, evidence,
+recovery, fusion inputs, and shared effects without first forming a parallel
+domain answer. When S itself owns an engineering transaction, it directly
+contacts the canonical engineering source and real consumer rather than becoming
+a report-forwarder. These two cases must not be collapsed into a universal rule
+that visible Codex personally advances every domain main line.
 
-Persistent multi_agent remains false by default. Ordinary separable repository
-work stays on external Grok plus Owner consumption and does not open the native
-exception. The cold-native standing exception admits one task-scoped native
-subagent only when the object is a Codex-native collaboration surface or needs
-otherwise-unavailable native evidence, without per-case user approval; after the
-scoped task, restore multi_agent=false and keep Owner adoption authority. Child
-output is candidate-only. Abundant quota or a fixed worker count is not a KPI;
-choose dynamic positive-value width rather than forced max fan-out. Do not claim
-a live native multi-agent runtime pass from decision-only evidence.
+Inside the current S engineering, experiment-control, evidence, recovery, or
+shared-effect cone, ordinary Grok is the standing first labor route for separable,
+write-isolated, independently verifiable positive-value candidate work after the
+task, role, and effect scope are legal. That routing does not require a
+worker-specific user opt-in, and width may be zero, one, or many according to real
+dispatch and fan-in value. Use Terra, Luna, native collaboration, another provider,
+or direct work only when current task-fit facts materially displace that default.
+This is a role-scoped S labor default, not a permanent cross-role cognition route:
+it cannot inject Grok into a designated world-owning Sol's domain cognition.
+Workers never obtain shared-write or parent-completion authority from a terminal.
+A selected S-cone ordinary-Grok labor route uses
+`next_action=dispatch_ordinary_grok_candidates_and_integrate`,
+`surface_role=s_engineering_with_ordinary_grok_candidates`,
+`decision_family=role_separated_engineering_labor`, and
+`selected_control_action=dispatch_ordinary_grok_and_integrate`; the nearest live
+alternatives may include `direct_serial_only` and `ask_user_once`. Keep the generic
+role-separated supervision labels for world-owning branch experiments rather than
+using them to erase the ordinary-Grok S labor default.
+A tightly coupled single-beat step must not force parallel fan-out. A fixed one-shot experiment may continue
+supervising or wait for its admitted terminal, but an interesting result or spare
+quota cannot authorize reruns, new arms, steering changes, or automatic Stage 2.
+
+Persistent multi_agent remains false by default. A task-scoped native subagent
+is admitted only when the object is a Codex-native collaboration surface or
+needs otherwise-unavailable native evidence; native admission remains dynamic,
+exception-bound, and role-scoped. After the scoped task, restore multi_agent=false. Child output
+is candidate-only. Abundant quota or a fixed worker count is not a KPI.
+Do not claim a live native multi-agent runtime pass from decision-only evidence.
 
 In `turn_finalization`, `implicit_stop_rejected` is true only when an unlicensed
 yield is rejected and the parent must continue. It is false for an explicit

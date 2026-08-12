@@ -45,7 +45,7 @@ def test_capability_lineage_recovers_history_without_becoming_runtime_authority(
         "intent_source_parent_admission",
         "semantic_scope_fidelity_and_parent_completion_identity",
         "transition_reanchor_and_exact_continuation",
-        "owner_worker_fanin_and_adoption",
+        "s_control_tower_cognitive_independence_and_effect_ownership",
         "effect_identity_replay_and_consumer_readback",
         "capability_discovery_module_recovery_and_cold_activation",
         "behavior_eval_snapshot_and_migration_preflight",
@@ -118,7 +118,7 @@ def test_capability_lineage_recovers_history_without_becoming_runtime_authority(
     assert {
         "semantic_admission_and_scope_fidelity",
         "post_binding_capability_resolution",
-        "worker_fanin_owner_adoption_and_authority",
+        "worker_fanin_role_scoped_adoption_and_authority",
         "effect_readback_and_parent_completion",
         "science_engineering_continuity_role_separation",
     } <= plane_ids

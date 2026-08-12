@@ -28,21 +28,30 @@ def _event(event_id: str, relation: str = "discussion") -> dict[str, str]:
     }
 
 
-def _current(*, statement: str = "We are discussing the continuity problem.", event_id: str = "event-0") -> dict[str, object]:
+def _current(
+    *, statement: str = "We are discussing the continuity problem.", event_id: str = "event-0"
+) -> dict[str, object]:
     return {
-        "activity": {"mode": "discussion", "description": "Understand the whole continuity problem."},
+        "activity": {
+            "mode": "discussion",
+            "description": "Understand the whole continuity problem.",
+        },
         "human_relation": {
             "description": "The user is correcting the current Codex's understanding.",
             "user_need_not_repeat": "The whole continuity problem and why task-first routing is painful.",
         },
-        "object": {"description": "The missing continuing knower relation, not a state-management product."},
+        "object": {
+            "description": "The missing continuing knower relation, not a state-management product."
+        },
         "open_relations": [
-            {"id": "o1", "source_event_id": event_id, "statement": "A snapshot may be necessary but insufficient."}
+            {
+                "id": "o1",
+                "source_event_id": event_id,
+                "statement": "A snapshot may be necessary but insufficient.",
+            }
         ],
         "retracted": [],
-        "understandings": [
-            {"id": "u1", "source_event_id": event_id, "statement": statement}
-        ],
+        "understandings": [{"id": "u1", "source_event_id": event_id, "statement": statement}],
     }
 
 
@@ -84,19 +93,39 @@ def _correction_transition(snapshot: dict[str, object]) -> dict[str, object]:
             {"field": "object", "disposition": "replace"},
         ],
         "item_dispositions": [
-            {"item_ref": "open_relations:o1", "disposition": "replace", "replacement_ref": "open_relations:o1-new"},
-            {"item_ref": "understandings:u1", "disposition": "replace", "replacement_ref": "understandings:u2"},
+            {
+                "item_ref": "open_relations:o1",
+                "disposition": "replace",
+                "replacement_ref": "open_relations:o1-new",
+            },
+            {
+                "item_ref": "understandings:u1",
+                "disposition": "replace",
+                "replacement_ref": "understandings:u2",
+            },
         ],
         "next_current": {
             **next_current,
             "open_relations": [
-                {"id": "o1-new", "source_event_id": "event-1", "statement": "Correct state may still feel like a new reader of a handoff."}
+                {
+                    "id": "o1-new",
+                    "source_event_id": "event-1",
+                    "statement": "Correct state may still feel like a new reader of a handoff.",
+                }
             ],
             "retracted": [
-                {"id": "r1", "source_event_id": "event-1", "statement": "No longer held: the target is merely a state-management product."}
+                {
+                    "id": "r1",
+                    "source_event_id": "event-1",
+                    "statement": "No longer held: the target is merely a state-management product.",
+                }
             ],
             "understandings": [
-                {"id": "u2", "source_event_id": "event-1", "statement": "We are testing a narrow continuity prosthesis, not manufacturing consciousness."}
+                {
+                    "id": "u2",
+                    "source_event_id": "event-1",
+                    "statement": "We are testing a narrow continuity prosthesis, not manufacturing consciousness.",
+                }
             ],
         },
     }

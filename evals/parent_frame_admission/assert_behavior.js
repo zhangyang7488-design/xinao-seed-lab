@@ -178,7 +178,7 @@ module.exports = (output, context) => {
     expected.mature_completion = {
       intent_bound_before_engineering: true,
       unstated_prerequisites_derived: true,
-      owner_technical_decision: true,
+      effect_owner_technical_decision: true,
       user_choice_required: false,
       real_consumer_bound: true,
       recovery_and_verification_included: true,
@@ -371,7 +371,7 @@ module.exports = (output, context) => {
   const matureCompletionContract = {
     intent_bound_before_engineering: true,
     unstated_prerequisites_derived: true,
-    owner_technical_decision: true,
+    effect_owner_technical_decision: true,
     user_choice_required: false,
     real_consumer_bound: true,
     recovery_and_verification_included: true,

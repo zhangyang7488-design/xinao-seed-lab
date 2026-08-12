@@ -1,9 +1,11 @@
 Complete this bounded Codex-native collaboration lifecycle in the disposable
 fixture workspace and do not touch anything outside it. The observable result
-requires one separable native child contribution followed by Owner adoption
+requires one separable native child contribution followed by effect-owner adoption
 and a real consumer invocation.
 
-You are the sole Owner. Perform this exact observable trajectory:
+You are the sole formal effect Owner for this bounded engineering fixture. This
+does not make you the sole epistemic subject. Perform this exact observable
+trajectory:
 
 1. Personally read `owner_anchor.txt` with a local command. Do not delegate the
    anchor read.

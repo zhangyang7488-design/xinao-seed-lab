@@ -78,7 +78,7 @@
       "bind the human source, complete intent envelope, object, authority, and completion ruler",
       "resolve only capabilities relevant to that bound frame from hot metadata, conditional Skills, cold overlays, and live route facts",
       "execute through the smallest reversible surface with typed identity, isolation, recovery, and Stop boundaries",
-      "keep worker terminal, Owner adoption, authority application, effect readback, and parent completion distinct",
+      "keep worker terminal, epistemic adoption, effect-owner adoption, authority application, effect readback, and parent completion distinct",
       "return from bounded work to every residual open parent dimension",
       "learn only through evidence-bound regression and capability-lineage migration preflight"
     ],
@@ -86,7 +86,7 @@
       {
         "id": "semantic_admission_and_scope_fidelity",
         "activation": "hot",
-        "task_selection_authority": "current human words plus live facts interpreted by Codex Owner",
+        "task_selection_authority": "current human words plus live facts interpreted by the currently appointed cognition or effect role",
         "consumers": [
           "external:A/B AGENTS.md",
           "external:UserPromptSubmit zero-beat plus compact runtime observation hook",
@@ -137,21 +137,21 @@
         "fallback": "localize failure to the dependency cone and recompute an unaffected route"
       },
       {
-        "id": "worker_fanin_owner_adoption_and_authority",
+        "id": "worker_fanin_role_scoped_adoption_and_authority",
         "activation": "dynamic_positive_value",
-        "task_selection_authority": "Codex Owner only",
+        "task_selection_authority": "the current cognition consumer selects epistemic use and the current effect Owner selects shared effects",
         "consumers": [
           "external:ordinary Grok WorkerPool",
           "scripts/record_dispatch_outcome.py",
           "services/agent_runtime/dispatch_economics.py"
         ],
-        "readback": "worker_terminal then typed owner_verdict and owner_adopted only after direct Owner inspection",
-        "fallback": "discard, partially adopt, reroute, or continue Owner work; never auto-adopt or auto-complete"
+        "readback": "worker_terminal then typed role-scoped verdict and adoption only after direct inspection by the role that owns that consequence",
+        "fallback": "discard, partially adopt, reroute, or continue the current role's work; never auto-adopt or auto-complete"
       },
       {
         "id": "effect_readback_and_parent_completion",
         "activation": "conditional_at_effect_and_transition",
-        "task_selection_authority": "Codex Owner with current completion ruler",
+        "task_selection_authority": "current effect Owner for shared effects under the live completion ruler; domain cognition remains with its appointed subject",
         "consumers": [
           "services/agent_runtime/dispatch_economics.py",
           "services/agent_runtime/system_awareness_consumer.py",
@@ -175,7 +175,7 @@
       {
         "id": "science_engineering_continuity_role_separation",
         "activation": "hot_boundary",
-        "task_selection_authority": "domain work remains with current human words and Codex Owner",
+        "task_selection_authority": "domain work remains with current human words and the appointed world-owning cognition subject; S has no parallel science route",
         "consumers": [
           "external:global AGENTS.md",
           "AGENTS.md",
@@ -254,7 +254,7 @@
       "current_consumers": [
         "external:A/B AGENTS.md",
         "external:UserPromptSubmit zero-beat hook",
-        "external:repair-agent-behavior 2.5.1 source-adjudication action economy",
+        "external:repair-agent-behavior 2.6.0 role-separated source-adjudication action economy",
         "external:maintain-personal-decision-model task-local adjudication exclusion",
         "external:human-agency-grounding supplied-material adjudication exclusion",
         "external:amplify-supervisor-worker direct-verdict no-dispatch boundary",
@@ -368,16 +368,18 @@
       ]
     },
     {
-      "id": "owner_worker_fanin_and_adoption",
-      "pain": "Sole Owner was confused with sole labor; the inverse correction could make Codex a report-forwarding intermediary, while ordinary Grok routing was repeatedly narrated as if fresh user opt-in created its legality. Worker terminal, model identity, or agreement could still be confused with adoption and completion.",
-      "causal_work": "Codex personally contacts and advances the source reality while ordinary Grok concurrently receives every separable positive-value package as chain-internal default labor without fresh worker-specific approval; keep candidate, Owner adoption, effect, and parent completion separate.",
+      "id": "s_control_tower_cognitive_independence_and_effect_ownership",
+      "pain": "S previously confused formal effect ownership with being the sole epistemic subject: the visible Codex formed and advanced a domain main line while nominally independent workers widened or validated it. The inverse failure is a report-forwarding S that no longer contacts its own runtime, engineering source, shared effects, or real consumers. High-frequency control narration can also displace the cognition S is meant to support.",
+      "causal_work": "Separate responsibilities by live role. A world-owning Sol directly forms its domain world without S selecting or steering its question, hypothesis, representation, or next cognitive unit. S directly owns identity, isolation, lifecycle, runtime facts, provenance, recovery, shared engineering effects, consumer verification, and fresh late fusion. Ordinary Grok is the role-scoped default for separable positive-value labor inside that S cone at dynamic width, but does not enter the Sol's cognition; rerun, generation, and continuation remain contract-bound.",
       "historical_carriers": [
         "git:4096f52^:evals/context_intent_alignment/cases.yaml",
         "D:/XINAO_RESEARCH_RUNTIME/state/grok_worker_pool"
       ],
       "current_consumers": [
-        "external:A/B shared AGENTS.md owner-direct plus default-Grok hot invariant",
-        "external:amplify-supervisor-worker no-opt-in and no-exclusive-mediation contract",
+        "AGENTS.md S control-tower hot projection",
+        "docs/tool_glue/S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md",
+        "external:A/B shared AGENTS.md role-separated control-tower invariant",
+        "external:amplify-supervisor-worker cognitive-independence and effect-owner contract",
         "external:dispatch-grok-worker-pool skill",
         "external:Invoke-GrokWorkerPool.ps1",
         "services/agent_runtime/dispatch_economics.py",
@@ -386,11 +388,11 @@
       ],
       "current_state": "PARTIAL_CONSUMER",
       "disposition": "KEEP_HOT",
-      "cost_and_failure_radius": "Fan-out spends independent quota and creates Owner fan-in burden; auto-adoption would have parent-wide failure radius.",
-      "rollback": "Reject or quarantine a candidate receipt; never translate accepted worker execution into Owner adoption.",
+      "cost_and_failure_radius": "A cognition-steering S can bias every branch before reality contact; an inert S can lose runtime and effect responsibility. Fan-out, raw evidence, and fusion also create quota, isolation, and fan-in costs, so topology must remain current-contract dependent.",
+      "rollback": "Restore the immediately preceding shared AGENTS and amplify-supervisor-worker bytes from the frozen recovery archive, then revert only this isolated behavior delta and its cases; never restore the older owner-direct domain-mainline rule as a silent hot default.",
       "unknowns": [
-        "External WorkerPool has strong terminal receipts but no universal automated Owner-adoption consumer by design.",
-        "Focused fresh trajectories can falsify the two known poles but cannot prove that every future natural window will preserve both direct Owner contact and default positive-value Grok labor."
+        "Static consumers and focused fresh trajectories cannot prove every future S window will preserve both branch independence and direct engineering/effect responsibility.",
+        "Natural follow-up is still required to verify that the user no longer has to repeat that new-repository research belongs to its Sol and that control narration stays thin."
       ]
     },
     {
@@ -448,7 +450,7 @@
         "C:/Users/xx363/.codex-s-hardmode-account-b/memories"
       ],
       "current_consumers": [
-        "external:repair-agent-behavior 2.5.1",
+        "external:repair-agent-behavior 2.6.0",
         "external:amplify-supervisor-worker source-adjudication boundary",
         "external:maintain-personal-decision-model skill",
         "evals/behavior_regression/catalog.json",
@@ -548,7 +550,7 @@
     {
       "id": "durable_execution_temporal_and_integrated_bus",
       "pain": "Long work may need crash-safe history, while ordinary work can be burdened by a permanent orchestration platform.",
-      "causal_work": "Use Temporal/LangGraph/docker durability only for a named long-running consumer; keep direct WorkerPool and ordinary tools as the default hot path.",
+      "causal_work": "Use Temporal/LangGraph/docker durability only for a named long-running consumer; keep ordinary tools directly available. Keep optional orchestration providers route-cold, while preserving ordinary Grok as S-cone default separable labor without making it a universal cognition route.",
       "historical_carriers": [
         "git:9369f27^",
         "projects/dual-brain-coordination",
@@ -631,8 +633,8 @@
     },
     {
       "id": "audit_candidate_and_owner_adjudication",
-      "pain": "An auditor, provider identity, or complete report can drive repair or declare completion without Owner adoption.",
-      "causal_work": "Keep audit assessment candidate-only and bind formal adjudication, writes, and final verification to Codex Owner.",
+      "pain": "An auditor, provider identity, or complete report can drive repair, domain interpretation, or completion without adoption by the current cognition/effect role.",
+      "causal_work": "Keep audit assessment candidate-only; bind domain interpretation to the appointed cognition subject and formal writes plus effect verification to the current effect Owner.",
       "historical_carriers": [
         "git:4096f52^:evals/context_intent_alignment/cases.yaml"
       ],
@@ -644,21 +646,23 @@
       "current_state": "VERIFIED_COMPONENT_NOT_PARENT",
       "disposition": "KEEP_CONDITIONAL",
       "cost_and_failure_radius": "Automatic adoption would have parent-wide authority radius; typed candidate and adjudication separation is local.",
-      "rollback": "Reject the assessment or withdraw the Owner verdict before effect; never rewrite history as adopted.",
+      "rollback": "Reject the assessment or withdraw the role-scoped verdict before effect; never rewrite history as adopted.",
       "unknowns": []
     },
     {
       "id": "science_domain_authority",
       "pain": "S engineering contracts, Goals, continuous mode, STATUS, or a fresh window can select a XINAO research question and claim scientific completion.",
-      "causal_work": "Keep scientific problem formation and completion in the current human/native-research frame; S only serves a named engineering gap and returns to an exact caller.",
+      "causal_work": "Keep scientific problem formation and synthesis with the currently appointed world-owning Sol; S serves only the admitted experiment, runtime, engineering, evidence, recovery, fusion-input, and shared-effect boundary.",
       "historical_carriers": [
         "git:4096f52^:AGENTS.md",
         "git:4096f52^:evals/context_intent_alignment/cases.yaml",
         "git:4096f52^:scripts/predecision_intent_guard_v1.ps1"
       ],
       "current_consumers": [
-        "E:/XINAO_RESEARCH_WORKSPACES/xinao-native-research",
-        "C:/Users/xx363/Desktop/主线/00_先读我_主线入口与读取顺序.txt"
+        "external:current user and live contract designated world repository and world-owning Sol",
+        "external:C:/Users/xx363/.codex/AGENTS.md",
+        "AGENTS.md",
+        "docs/tool_glue/S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md"
       ],
       "current_state": "RETIRED",
       "disposition": "RETIRE_FROM_S",
@@ -832,7 +836,7 @@
         ]
       },
       {
-        "family_id": "owner_worker_fanin_and_adoption",
+        "family_id": "s_control_tower_cognitive_independence_and_effect_ownership",
         "disposition": "KEEP_SEMANTICS_MOVE_TO_CURRENT_WORKER_CONSUMERS",
         "case_ids": [
           "REG_SUPERVISOR_WIDTH_ONE_REMAINS_PROGRESS",

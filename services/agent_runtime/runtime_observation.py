@@ -407,12 +407,7 @@ def _bounded_dirty_fingerprint(
     if sum(len(raw) for raw in outputs) > _MAX_DIRTY_PATH_BYTES:
         return None, "git_dirty_fingerprint_path_budget_exceeded"
 
-    path_rows = {
-        path_raw
-        for raw in outputs[1:]
-        for path_raw in raw.split(b"\0")
-        if path_raw
-    }
+    path_rows = {path_raw for raw in outputs[1:] for path_raw in raw.split(b"\0") if path_raw}
     if len(path_rows) > _MAX_DIRTY_FINGERPRINT_FILES:
         return None, "git_dirty_fingerprint_file_budget_exceeded"
 
@@ -506,9 +501,7 @@ def _git_snapshot(cwd: Path) -> tuple[dict[str, object] | None, list[dict[str, o
         "--untracked-files=normal",
     )
     dirty = bool(status_raw) if status_code == 0 else None
-    porcelain_status_sha256 = (
-        hashlib.sha256(status_raw).hexdigest() if status_code == 0 else None
-    )
+    porcelain_status_sha256 = hashlib.sha256(status_raw).hexdigest() if status_code == 0 else None
     porcelain_status_bytes = len(status_raw) if status_code == 0 else None
     if dirty is None:
         unknown.append({"field": "observed.git.dirty", "reason": "git_probe_failed"})
@@ -670,9 +663,9 @@ def _file_identity(
     state_after, lexical_after = lstat_state()
     binding_stable = state_before == state_after and resolved_before == resolved_after
     if lexical_before is not None and lexical_after is not None:
-        binding_stable = binding_stable and _stat_fingerprint(
-            lexical_before
-        ) == _stat_fingerprint(lexical_after)
+        binding_stable = binding_stable and _stat_fingerprint(lexical_before) == _stat_fingerprint(
+            lexical_after
+        )
     elif lexical_before is not None or lexical_after is not None:
         binding_stable = False
 
@@ -699,14 +692,12 @@ def _file_identity(
     resolved_final = _resolved_text(path)
     state_final, lexical_final = lstat_state()
     binding_stable = (
-        binding_stable
-        and state_after == state_final
-        and resolved_after == resolved_final
+        binding_stable and state_after == state_final and resolved_after == resolved_final
     )
     if lexical_after is not None and lexical_final is not None:
-        binding_stable = binding_stable and _stat_fingerprint(
-            lexical_after
-        ) == _stat_fingerprint(lexical_final)
+        binding_stable = binding_stable and _stat_fingerprint(lexical_after) == _stat_fingerprint(
+            lexical_final
+        )
     elif lexical_after is not None or lexical_final is not None:
         binding_stable = False
     if not binding_stable:
@@ -748,9 +739,7 @@ def _file_identity(
             }
         )
     sha256, byte_count = (
-        (content_identity[0], content_identity[1])
-        if content_identity is not None
-        else (None, None)
+        (content_identity[0], content_identity[1]) if content_identity is not None else (None, None)
     )
     return {
         **dict(candidate),

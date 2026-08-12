@@ -40,9 +40,7 @@ EVENT_RELATIONS = frozenset(
         "topic_shift",
     }
 )
-ACTIVITY_MODES = frozenset(
-    {"construction", "discussion", "investigation", "mixed", "waiting"}
-)
+ACTIVITY_MODES = frozenset({"construction", "discussion", "investigation", "mixed", "waiting"})
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -76,9 +74,7 @@ def canonical_json_bytes(value: object) -> bytes:
 def artifact_json_bytes(value: object) -> bytes:
     """Return stable human-readable bytes for a checkpoint or cold receipt."""
 
-    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
-        "utf-8"
-    )
+    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 @contextmanager
@@ -196,7 +192,10 @@ def _activity(value: object) -> dict[str, str]:
     mode = _text(activity["mode"], "current.activity.mode")
     if mode not in ACTIVITY_MODES:
         raise CurrentSituationError(f"unsupported current.activity.mode: {mode}")
-    return {"description": _text(activity["description"], "current.activity.description"), "mode": mode}
+    return {
+        "description": _text(activity["description"], "current.activity.description"),
+        "mode": mode,
+    }
 
 
 def _object(value: object) -> dict[str, str]:
@@ -225,9 +224,7 @@ def _items(value: object, collection: str) -> list[dict[str, str]]:
     if not isinstance(value, list):
         raise CurrentSituationError(f"current.{collection} must be an array")
     if len(value) > _MAX_CURRENT_ITEMS:
-        raise CurrentSituationError(
-            f"current.{collection} exceeds {_MAX_CURRENT_ITEMS} items"
-        )
+        raise CurrentSituationError(f"current.{collection} exceeds {_MAX_CURRENT_ITEMS} items")
     normalized: list[dict[str, str]] = []
     previous_id = ""
     for index, raw in enumerate(value):
@@ -248,9 +245,7 @@ def _items(value: object, collection: str) -> list[dict[str, str]]:
                     item["source_event_id"],
                     f"current.{collection}[{index}].source_event_id",
                 ),
-                "statement": _text(
-                    item["statement"], f"current.{collection}[{index}].statement"
-                ),
+                "statement": _text(item["statement"], f"current.{collection}[{index}].statement"),
             }
         )
     return normalized
@@ -313,7 +308,15 @@ def validate_snapshot(value: object) -> dict[str, Any]:
     snapshot = _mapping(value, "current_situation")
     _exact_keys(
         snapshot,
-        {"current", "generation", "last_event_ref", "lineage_id", "projection_sha256", "provisional", "schema_version"},
+        {
+            "current",
+            "generation",
+            "last_event_ref",
+            "lineage_id",
+            "projection_sha256",
+            "provisional",
+            "schema_version",
+        },
         "current_situation",
     )
     if snapshot["schema_version"] != CURRENT_SITUATION_VERSION:
@@ -349,9 +352,7 @@ def _field_dispositions(value: object) -> dict[str, str]:
         row = _mapping(raw, f"field_dispositions[{index}]")
         _exact_keys(row, {"disposition", "field"}, f"field_dispositions[{index}]")
         field = _text(row["field"], f"field_dispositions[{index}].field")
-        disposition = _text(
-            row["disposition"], f"field_dispositions[{index}].disposition"
-        )
+        disposition = _text(row["disposition"], f"field_dispositions[{index}].disposition")
         if field not in _CURRENT_FIELDS or field in result:
             raise CurrentSituationError(f"invalid or duplicate field disposition: {field}")
         if disposition not in {"preserve", "replace"}:
@@ -373,9 +374,7 @@ def _item_dispositions(value: object) -> dict[str, dict[str, str]]:
             expected.add("replacement_ref")
         _exact_keys(row, expected, f"item_dispositions[{index}]")
         item_ref = _text(row["item_ref"], f"item_dispositions[{index}].item_ref")
-        disposition = _text(
-            row["disposition"], f"item_dispositions[{index}].disposition"
-        )
+        disposition = _text(row["disposition"], f"item_dispositions[{index}].disposition")
         if item_ref in result or disposition not in {"preserve", "replace", "retract"}:
             raise CurrentSituationError(f"invalid or duplicate item disposition: {item_ref}")
         normalized = {"item_ref": item_ref, "disposition": disposition}
@@ -411,9 +410,7 @@ def validate_transition(value: object, *, current_snapshot: Mapping[str, object]
         raise CurrentSituationError(f"unsupported transition materiality: {materiality}")
     if transition["expected_generation"] != current_snapshot["generation"]:
         raise CurrentSituationConflict("transition expected_generation is stale")
-    expected_hash = _digest(
-        transition["expected_projection_sha256"], "expected_projection_sha256"
-    )
+    expected_hash = _digest(transition["expected_projection_sha256"], "expected_projection_sha256")
     if expected_hash != current_snapshot["projection_sha256"]:
         raise CurrentSituationConflict("transition expected_projection_sha256 is stale")
     event_ref = _event_ref(transition["event_ref"])
@@ -468,7 +465,9 @@ def validate_transition(value: object, *, current_snapshot: Mapping[str, object]
 
     for item_ref, item in next_items.items():
         if item_ref not in old_items and item["source_event_id"] != event_ref["event_id"]:
-            raise CurrentSituationError(f"new current item is not sourced to this event: {item_ref}")
+            raise CurrentSituationError(
+                f"new current item is not sourced to this event: {item_ref}"
+            )
     if not changed and old_current == next_current:
         raise CurrentSituationError("MATERIAL_REVISION did not change the current projection")
 
@@ -489,7 +488,9 @@ def validate_transition(value: object, *, current_snapshot: Mapping[str, object]
 
 def _atomic_write(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
     temp_path = Path(temp_name)
     try:
         with os.fdopen(descriptor, "wb") as handle:
@@ -570,9 +571,7 @@ def retire_store(store_root: Path, *, reason: str) -> dict[str, Any]:
         }
         receipt["receipt_sha256"] = _sha256(receipt)
         receipt_path = (
-            root
-            / "cold_retirements"
-            / f"{before['generation']:08d}-{retired_at_ns}.json"
+            root / "cold_retirements" / f"{before['generation']:08d}-{retired_at_ns}.json"
         )
         _atomic_write(receipt_path, artifact_json_bytes(receipt))
         _atomic_write(
@@ -633,7 +632,9 @@ def apply_transition(store_root: Path, transition: Mapping[str, object]) -> dict
         }
         receipt["receipt_sha256"] = _sha256(receipt)
         event_id = normalized_transition["event_ref"]["event_id"]
-        receipt_path = root / "cold_revisions" / f"{next_snapshot['generation']:08d}-{event_id}.json"
+        receipt_path = (
+            root / "cold_revisions" / f"{next_snapshot['generation']:08d}-{event_id}.json"
+        )
         _atomic_write(receipt_path, artifact_json_bytes(receipt))
         _atomic_write(current_path, artifact_json_bytes(next_snapshot))
         return {

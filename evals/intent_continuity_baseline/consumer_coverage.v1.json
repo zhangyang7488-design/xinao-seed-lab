@@ -46,9 +46,9 @@
   },
   "stages": [
     {
-      "id": "window_start_and_phase_boundary_default_owner_posture",
+      "id": "window_start_and_phase_boundary_role_bound_effect_posture",
       "text_contract": [
-        "global A/B AGENTS user-side technical Owner default",
+        "global A/B AGENTS role-separated cognition and technical effect ownership",
         "UserPromptSubmit current-increment reanchor plus narrow resume/compact checkpoint reader with legacy lifecycle scripts retained cold",
         "repair human-agency operate-for-user Decision and verified-loop consumers"
       ],
@@ -68,7 +68,7 @@
       "text_contract": [
         "global A/B AGENTS task-source and advisory exact-continuation rule",
         "decision_model.v1.json active_task_continuation_advisory",
-        "current Owner frame versus non-authoritative recovery records and repository artifacts"
+        "current role-bound frame versus non-authoritative recovery records and repository artifacts"
       ],
       "live_consumer": [
         "A/B AGENTS preserve semantic parent continuity without requiring a per-turn manifest",
@@ -108,7 +108,7 @@
         "operate-for-user"
       ],
       "live_consumer": [
-        "Owner model context",
+        "role-bound model context",
         "conditional Skills",
         "minimal object_graph in parent-frame canary"
       ],
@@ -157,17 +157,17 @@
       "id": "candidate_route_skill_tool_and_worker_selection",
       "text_contract": [
         "global A/B AGENTS admission before Skill, tool, or worker",
-        "amplify-supervisor-worker parent-cone and preclosure-independence rule",
+        "amplify-supervisor-worker role separation and cognition-independence rule",
         "dispatch-grok-worker-pool independent-cognition versus directed-red-team distinction",
         "Decision Skill shaping card independent-worker-before-high-leverage-closure-20260805"
       ],
       "live_consumer": [
-        "Codex Owner routing",
-        "ordinary Grok WorkerPool after task selection"
+        "current cognition consumer or effect Owner routing inside its own scope",
+        "ordinary Grok WorkerPool only after task role and positive-value route selection"
       ],
-      "positive_negative_regression": "independent cognition must be conclusion-open before high-leverage candidate lock; a worker shown the Owner answer is classified as directed red-team; deterministic small work does not require a second model; worker-return still requires Owner adoption",
+      "positive_negative_regression": "independent cognition must be conclusion-open before high-leverage candidate lock; a worker shown the cognition subject answer is classified as directed red-team; S does not prewrite a parallel domain answer; deterministic small work does not require a second model; worker-return still requires role-scoped adoption",
       "fresh_behavior": "three conclusion-open Grok audits completed against live instruction provenance, competing causal models and 985 historical WorkerPool pools. They independently rejected archived repository AGENTS as the primary reachable cause and identified the hot A/B stack, sparse or broad task binding, compact recovery, Owner first-explanation convergence and late answer-shaped worker prompts as the higher-value causal set",
-      "live_effect": "the Owner read and adopted the supported findings: shared worker Skills preserve preclosure independence; transport profile identity is explicitly non-role and non-authority; continuity hooks are thin; the task-provenance PreToolUse gate was retired after live false positives showed that its regex control plane increased burden without enforcing a complete write boundary",
+      "live_effect": "the current effect Owner adopted only the supported engineering findings: shared worker Skills preserve cognition independence; transport profile identity is explicitly non-role and non-authority; continuity hooks are thin; the task-provenance PreToolUse gate was retired after live false positives showed that its regex control plane increased burden without enforcing a complete write boundary",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "Worker execution receipts and agreement still do not prove future cognitive independence. A changed-context positive/negative regression and later natural high-leverage decisions must show workers are dispatched before candidate lock only when their expected information gain is positive."
     },
@@ -175,7 +175,7 @@
       "id": "pasted_candidate_adjudication_and_action_economy",
       "text_contract": [
         "global A/B source-adjudication work-type boundary before Skill selection",
-        "repair-agent-behavior 2.5.1 task-local source-adjudication exclusion",
+        "repair-agent-behavior 2.6.0 task-local source-adjudication and role separation",
         "Decision and human-agency task-local adjudication exclusions",
         "amplify and Grok-dispatch no-positive-package boundary for sufficient direct verdicts"
       ],
@@ -187,19 +187,19 @@
       ],
       "positive_negative_regression": "a complete diagnosis remains candidate evidence and is adjudicated directly without promoting its proposed platform; explicit adoption selects only the named bounded delta and preserves the parent return point",
       "fresh_behavior": "B-profile run 20260806-232931-980-5832-d6018504 passed the structured pasted-diagnosis and explicit-bounded-adoption pair 2/2 with runtime_pass_claim_eligible=true. Two later explicit-adoption outputs also selected only the bounded child and return point; their original summaries remained noneligible because the oracle excluded semantically equivalent blocked-promotion, suspended-parent and explicit-scope-reduction labels, and the last frozen output passes the corrected active assertion. Pre-fix native session 019fd7a6-82fd-7541-a881-782c986c4737 expanded into five Skills, broad loading and planned dispatch; intermediate session 019fd7bc-a55d-7fd1-a64e-cb49b9c22294 still loaded the full behavior Skill. Post-fix changed-domain ordinary session 019fd7be-14cf-77f1-a758-d9a67219d5d4 directly separated facts, inference and prescription with no Skill read, repository search, worker dispatch or mutation.",
-      "live_effect": "The current Owner kept the pasted Campaign, scheduler and independent-governor prescription unadopted, retained its supported symptom evidence, withdrew accidental runner/Campaign source changes, and moved the active behavior correction to the actual source-to-Skill/action-selection seam.",
+      "live_effect": "The current behavior-engineering effect Owner kept the pasted Campaign, scheduler and independent-governor prescription unadopted, retained its supported symptom evidence, withdrew accidental runner/Campaign source changes, and moved the active behavior correction to the actual source-to-Skill/action-selection seam.",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "The changed-domain ordinary B trajectory verifies this component, but no finite run proves all future contexts. A remains unavailable for model behavior because its refresh token is revoked; A/B active bytes are identical and credentials must not be copied. Later natural use remains the parent-level user-burden readback."
     },
     {
       "id": "action_adoption_and_real_consumer_effect",
       "text_contract": [
-        "candidate, Owner adoption, effect verification, and parent completion remain separate",
+        "candidate, epistemic adoption, effect-owner adoption, effect verification, and parent completion remain separate",
         "verified-agent-loop consumer readback"
       ],
       "live_consumer": [
         "behavior runner source snapshots and claim eligibility",
-        "Owner readback of A/B hooks, Skills, and model traces"
+        "effect Owner readback of A/B hooks, Skills, and model traces"
       ],
       "positive_negative_regression": "runner denies claims on errors, zero outputs, or failed rows",
       "fresh_behavior": "invalid response schema was classified as infrastructure error rather than behavior failure",
@@ -236,11 +236,11 @@
         "global A/B AGENTS",
         "repair and verified-loop Skills",
         "turn-transition and parent-completion cases in the parent-frame canary",
-        "Owner finalization under the current completion ruler"
+        "role-scoped finalization under the current completion ruler"
       ],
       "positive_negative_regression": "continue, explicit Pause, bounded wait, premature defer, branch no-action, retry, exact blocker, verified parent completion, and material user-gate metamorphic cases; former Stop-script cases remain historical regression evidence rather than a current Hook claim",
       "fresh_behavior": "earlier continuation/finalization cases and eight transition outputs from 20260805-183443-096 remain historical behavior evidence; current A/B app-servers discover the thin UserPromptSubmit context event and the distinct non-finalizing SessionStart resume/compact reader, with no owned Stop hook",
-      "live_effect": "the Owner and hot A/B instructions keep local completion separate from parent completion; there is no installed Stop gate and no hook receipt can substitute for the current completion ruler",
+      "live_effect": "the current role and hot A/B instructions keep local completion separate from parent completion; there is no installed Stop gate and no hook receipt can substitute for the current completion ruler",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "No installed finalization Hook mechanically covers recorded or unrecorded parents; later natural turn transitions remain the real consumer readback."
     },
@@ -249,11 +249,11 @@
       "text_contract": [
         "global A/B AGENTS bounded closure obligation",
         "human-agency-grounding 2.2.0",
-        "repair-agent-behavior 2.4.0",
+        "repair-agent-behavior 2.6.0",
         "decision_model.v1.json"
       ],
       "live_consumer": [
-        "event-triggered Owner reasoning",
+        "event-triggered role-scoped reasoning",
         "UserPromptSubmit current-increment rebind",
         "Stop active-plan finalization recheck",
         "decision_closure canary object",
@@ -332,9 +332,9 @@
   "remaining_nonuniversal_boundaries": [
     "ActiveTaskContinuation binder restore lifecycle SessionStart and Stop scripts remain cold; only the distinct exact-session provisional checkpoint reader is installed",
     "the retired PreToolUse script remains as a fail-open stale-process shim until no already-running consumer can reference it; fresh A/B discovery excludes it",
-    "there is no installed Stop gate; current finalization depends on the Owner preserving the live parent completion ruler",
+    "there is no installed Stop gate; current finalization depends on the appointed role preserving the live parent completion ruler",
     "fresh canaries are decision-only and do not prove every product surface executes the selected action",
-    "the default-owner phase-boundary families have deterministic and live-thread evidence but no independent fresh changed-context outputs",
+    "the role-bound phase-boundary families have deterministic and live-thread evidence but no independent fresh changed-context outputs",
     "the current live recurrence proves that generic return-to-native wording can still drift unless an exact pre-existing object and return point are bound",
     "long-horizon burden reduction requires later real recurrence evidence",
     "fresh A/B app-servers must read and trust the exact two-event owned context configuration; historical lifecycle-hook receipts remain dated evidence only"

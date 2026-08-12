@@ -77,8 +77,8 @@ GROK_OPERATOR_SOURCES = (
         "grok_worker_pool_oauth_recovery_entry",
     ),
     (
-        LAUNCHER_ROOT / "CODEX_GROK_WORKER_POOL_DEFAULT.md",
-        "contracts/CODEX_GROK_WORKER_POOL_DEFAULT.md",
+        LAUNCHER_ROOT / "CODEX_GROK_WORKER_POOL_OPERATOR.md",
+        "contracts/CODEX_GROK_WORKER_POOL_OPERATOR.md",
         "grok_worker_pool_operator_contract",
     ),
 )
@@ -103,6 +103,11 @@ SHARED_RUNTIME_SOURCES = (
         REPO_ROOT / "docs" / "tool_glue" / "CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
         "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
         "shared_runtime_credential_boundary",
+    ),
+    (
+        REPO_ROOT / "docs" / "tool_glue" / "CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
+        "contracts/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
+        "two_bodies_paired_credential_slots",
     ),
 )
 
@@ -391,6 +396,10 @@ def build(output_root: Path) -> dict[str, object]:
             "main_home_is_canonical_shared_runtime_source": True,
             "account_b_credential_home_links_to_shared_runtime": True,
             "account_b_is_not_a_configuration_or_recovery_source": True,
+            "desktop_s_and_b_are_one_s_body_with_two_account_slots": True,
+            "desktop_a_and_c_are_one_separate_cleanroom_body_with_two_account_slots": True,
+            "s_b_and_a_c_bodies_must_not_cross": True,
+            "cleanroom_body_is_external_to_this_s_recovery_payload": True,
             "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": True,
             "legacy_v1_is_separate_history_not_a_build_input": True,
             "grok_worker_pool_live_manifest_is_the_runtime_truth": True,
@@ -412,7 +421,10 @@ def build(output_root: Path) -> dict[str, object]:
             ),
         ],
         "science_boundary": {
-            "science_domain_authority_owner": "E:/XINAO_RESEARCH_WORKSPACES/xinao-native-research",
+            "science_domain_authority_holder": (
+                "the world repository and world-owning cognition subject designated by current "
+                "human words and the live contract"
+            ),
             "restore_into_s_or_global_generic_router": False,
             "retired_science_routing_remains_retired": True,
         },
@@ -420,7 +432,7 @@ def build(output_root: Path) -> dict[str, object]:
             "automatic_live_restore": False,
             "staged_restore_supported": True,
             "legacy_v1_must_not_be_refreshed_or_used_as_a_source": True,
-            "owner_must_verify_exact_targets_backup_and_live_consumers_before_apply": True,
+            "current_effect_owner_must_verify_exact_targets_backup_and_live_consumers_before_apply": True,
             "account_b_auth_and_sessions_must_never_be_copied_from_main": True,
             "required_post_apply_readback": [
                 "B shared file and directory links resolve to the canonical main runtime",
