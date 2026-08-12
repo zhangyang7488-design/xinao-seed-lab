@@ -44,6 +44,7 @@ LIFECYCLE_STATES = (
     "NO_POSITIVE_FRONTIER",
     "PAUSE",
 )
+PARKED_LIFECYCLE_STATES = tuple(state for state in LIFECYCLE_STATES if state != "CONTINUE")
 _LIFECYCLE_RE = re.compile(
     r"(?im)^\s*XINAO_LINEAGE_STATE\s*:\s*"
     r"(CONTINUE|WAIT|BLOCKED|NO_POSITIVE_FRONTIER|PAUSE)\s*$"
@@ -97,6 +98,33 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest().upper()
+
+
+_DYNAMIC_LINEAGE_PROJECT_RE = re.compile(
+    r"(?im)^\[projects\.'(?P<path>[^'\r\n]+)'\]\r?\n"
+    r'trust_level\s*=\s*"trusted"\r?\n(?:\r?\n)?(?=^\[|\Z)'
+)
+
+
+def cleanroom_config_identity(path: Path) -> dict[str, Any]:
+    raw = path.read_bytes()
+    text = raw.decode("utf-8-sig")
+    dynamic_paths: list[str] = []
+
+    def normalize_dynamic_project(match: re.Match[str]) -> str:
+        project_path = match.group("path")
+        normalized_path = project_path.replace("/", "\\").lower()
+        if not normalized_path.startswith("e:\\codex_cleanroom\\research-lineages\\"):
+            return match.group(0)
+        dynamic_paths.append(project_path)
+        return ""
+
+    semantic_text = _DYNAMIC_LINEAGE_PROJECT_RE.sub(normalize_dynamic_project, text)
+    return {
+        "raw_sha256": sha256_bytes(raw),
+        "semantic_sha256": sha256_bytes(semantic_text.encode("utf-8")),
+        "dynamic_lineage_project_paths": sorted(dynamic_paths, key=str.lower),
+    }
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -217,6 +245,53 @@ def validate_source_repo(repo: Path) -> dict[str, str]:
         "head": head,
         "branch": branch,
         "status_sha256": sha256_bytes((status + "\n").encode("utf-8")),
+    }
+
+
+def validate_pinned_source_commit(repo: Path, source_head: str) -> dict[str, str]:
+    """Verify that a frozen source commit remains available without pinning live HEAD."""
+
+    resolved = resolve_path(repo)
+    if not resolved.is_dir():
+        raise PerpetualRuntimeError(f"SOURCE_REPO_MISSING: {resolved}")
+    top = resolve_path(git_output(resolved, "rev-parse", "--show-toplevel"))
+    if top != resolved:
+        raise PerpetualRuntimeError(f"SOURCE_REPO_ROOT_MISMATCH: {resolved} != {top}")
+    git_output(resolved, "cat-file", "-e", f"{source_head}^{{commit}}")
+    return {
+        "root": str(resolved),
+        "current_head": git_output(resolved, "rev-parse", "HEAD"),
+        "source_head": source_head,
+    }
+
+
+def validate_lineage_runtime_repo(workspace: Path, source_head: str) -> dict[str, str]:
+    """Verify a candidate lineage still descends from its frozen, remote-free baseline."""
+
+    resolved = resolve_path(workspace)
+    if not resolved.is_dir():
+        raise PerpetualRuntimeError(f"LINEAGE_WORKSPACE_MISSING: {resolved}")
+    top = resolve_path(git_output(resolved, "rev-parse", "--show-toplevel"))
+    if top != resolved:
+        raise PerpetualRuntimeError(f"LINEAGE_REPO_ROOT_MISMATCH: {resolved} != {top}")
+    head = git_output(resolved, "rev-parse", "HEAD")
+    merge_base = git_output(resolved, "merge-base", source_head, head)
+    if merge_base.lower() != source_head.lower():
+        raise PerpetualRuntimeError(
+            f"LINEAGE_BASELINE_NOT_ANCESTOR: workspace={resolved} baseline={source_head} head={head}"
+        )
+    remotes = git_output(resolved, "remote")
+    if remotes:
+        raise PerpetualRuntimeError(f"LINEAGE_REMOTE_MUST_BE_EMPTY: {resolved}")
+    return {
+        "workspace": str(resolved),
+        "source_head": source_head,
+        "head": head,
+        "status_sha256": sha256_bytes(
+            (git_output(resolved, "status", "--porcelain=v1", "--untracked-files=all") + "\n").encode(
+                "utf-8"
+            )
+        ),
     }
 
 
@@ -586,16 +661,7 @@ class PerpetualController:
                 "SOURCE_HEAD_CHANGED_BEFORE_CONTROLLER_START: "
                 f"{self.config['source_head']} -> {source['head']}"
             )
-        if (
-            sha256_file(resolve_path(self.config["launcher_path"]))
-            != self.config["launcher_sha256"]
-        ):
-            raise PerpetualRuntimeError("CLEANROOM_LAUNCHER_BYTES_CHANGED")
-        if (
-            sha256_file(resolve_path(self.config["shared_config_path"]))
-            != self.config["shared_config_sha256"]
-        ):
-            raise PerpetualRuntimeError("CLEANROOM_SHARED_CONFIG_BYTES_CHANGED")
+        self.verify_control_body()
         for spec in [*self.branch_specs, self.root_spec]:
             workspace = resolve_path(spec["workspace"])
             if git_output(workspace, "rev-parse", "HEAD") != self.config["source_head"]:
@@ -604,6 +670,22 @@ class PerpetualController:
                 )
             if git_output(workspace, "remote"):
                 raise PerpetualRuntimeError(f"LINEAGE_REMOTE_MUST_BE_EMPTY: {spec['lineage_id']}")
+
+    def verify_control_body(self) -> None:
+        if (
+            sha256_file(resolve_path(self.config["launcher_path"]))
+            != self.config["launcher_sha256"]
+        ):
+            raise PerpetualRuntimeError("CLEANROOM_LAUNCHER_BYTES_CHANGED")
+        identity = cleanroom_config_identity(resolve_path(self.config["shared_config_path"]))
+        expected_semantic = self.config.get(
+            "shared_config_semantic_sha256", self.config["shared_config_sha256"]
+        )
+        if identity["semantic_sha256"] != expected_semantic:
+            raise PerpetualRuntimeError(
+                "CLEANROOM_SHARED_CONFIG_SEMANTICS_CHANGED: "
+                f"expected={expected_semantic} observed={identity['semantic_sha256']}"
+            )
 
     def _wake_path(self, lineage_id: str) -> Path:
         return self.wake_root / f"{lineage_id}.json"
@@ -849,6 +931,20 @@ class PerpetualController:
         prompt: str,
     ) -> dict[str, Any]:
         lineage_id = str(spec["lineage_id"])
+        try:
+            self.verify_control_body()
+        except PerpetualRuntimeError as exc:
+            self.publish_lineage_state(
+                lineage_id,
+                status="CONTROL_BODY_DRIFT_PAUSED",
+                active_pid=None,
+                last_error_class="CONTROL_BODY_DRIFT",
+                last_error=str(exc),
+            )
+            return {
+                "outcome": "FAILED",
+                "error_class": "CONTROL_BODY_DRIFT",
+            }
         state = self._lineage_states[lineage_id]
         turn_number = int(state.get("turns_completed", 0)) + 1
         turn_dir = self.lineage_dir(lineage_id) / "turns" / f"turn-{turn_number:06d}"
@@ -1205,6 +1301,7 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     shared_config = launcher.parent / "codex-home" / "config.toml"
     if not shared_config.is_file():
         raise PerpetualRuntimeError(f"CLEANROOM_SHARED_CONFIG_MISSING: {shared_config}")
+    shared_config_identity = cleanroom_config_identity(shared_config)
     ensure_no_active_controller(runtime_root)
     prepare_receipt = prepare_cleanroom(launcher, powershell)
     source = validate_source_repo(source_repo)
@@ -1258,7 +1355,11 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         "launcher_path": str(launcher),
         "launcher_sha256": sha256_file(launcher),
         "shared_config_path": str(shared_config.resolve(strict=False)),
-        "shared_config_sha256": sha256_file(shared_config),
+        "shared_config_sha256": shared_config_identity["raw_sha256"],
+        "shared_config_semantic_sha256": shared_config_identity["semantic_sha256"],
+        "shared_config_dynamic_lineage_projects": shared_config_identity[
+            "dynamic_lineage_project_paths"
+        ],
         "powershell_path": str(powershell),
         "account_slot": "C",
         "model": str(args.model),
