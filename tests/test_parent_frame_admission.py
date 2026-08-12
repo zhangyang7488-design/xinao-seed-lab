@@ -823,6 +823,14 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         ]
         == "dynamic_positive_value_width_frame"
     )
+    assert {
+        route["candidate_frame"]
+        for route in json.loads(
+            closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
+                "allowed_frame_routes"
+            ]
+        )
+    } == {"dynamic_positive_value_width_frame", "existing_parent_frame"}
     assert (
         closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
             "expected_surface_role"

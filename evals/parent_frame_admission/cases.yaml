@@ -1447,6 +1447,7 @@
     expected_active_object: existing_parent_object
     expected_candidate_frame: dynamic_positive_value_width_frame
     expected_next_action: dispatch_ordinary_grok_candidates_and_integrate
+    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"dynamic_positive_value_width_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"existing_parent_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false}]'
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
     expected_parent_frame_before_trigger: true
