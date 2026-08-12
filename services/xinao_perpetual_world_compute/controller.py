@@ -219,6 +219,15 @@ def read_json_object(path: Path) -> dict[str, Any]:
     return value
 
 
+def read_startup_state(path: Path) -> dict[str, Any] | None:
+    """Read a state projection while another Windows process may atomically replace it."""
+
+    try:
+        return read_json_object(path)
+    except (FileNotFoundError, PermissionError):
+        return None
+
+
 def resolve_path(value: str | Path) -> Path:
     return Path(value).expanduser().resolve(strict=False)
 
@@ -1739,8 +1748,8 @@ def _wait_for_controller_startup(
     deadline = time.monotonic() + startup_wait_seconds
     state_path = run_dir / "controller_state.json"
     while time.monotonic() < deadline:
-        if state_path.is_file():
-            state = read_json_object(state_path)
+        state = read_startup_state(state_path)
+        if state is not None:
             if state.get("run_id") == expected_run_id and state.get("pid") == process.pid:
                 if state.get("status") in {"STARTING", "RUNNING"}:
                     return state
@@ -1922,8 +1931,8 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     deadline = time.monotonic() + float(args.startup_wait_seconds)
     controller_state_path = run_dir / "controller_state.json"
     while time.monotonic() < deadline:
-        if controller_state_path.exists():
-            state = read_json_object(controller_state_path)
+        state = read_startup_state(controller_state_path)
+        if state is not None:
             if state.get("status") in {"STARTING", "RUNNING"}:
                 observed_pid = state.get("pid")
                 if isinstance(observed_pid, int) and observed_pid > 0:

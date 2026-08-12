@@ -31,6 +31,7 @@ from services.xinao_perpetual_world_compute.controller import (
     parse_event_line,
     parse_lifecycle_state,
     quarantine_incomplete_fusion_packet,
+    read_startup_state,
     recover_runtime,
     select_runtime_root,
     sha256_bytes,
@@ -41,6 +42,29 @@ from services.xinao_perpetual_world_compute.controller import (
     validate_recovery_account_slot,
     wake_runtime,
 )
+
+
+def test_read_startup_state_treats_windows_replace_access_denied_as_transient(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_path = tmp_path / "controller_state.json"
+    calls = 0
+    path_type = state_path.__class__
+    original_read_text = path_type.read_text
+
+    def flaky_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        nonlocal calls
+        if self == state_path:
+            calls += 1
+            if calls == 1:
+                raise PermissionError(13, "Permission denied", str(state_path))
+            return json.dumps({"run_id": "run-1", "status": "RUNNING"})
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(path_type, "read_text", flaky_read_text)
+
+    assert read_startup_state(state_path) is None
+    assert read_startup_state(state_path) == {"run_id": "run-1", "status": "RUNNING"}
 
 
 def make_test_controller(
