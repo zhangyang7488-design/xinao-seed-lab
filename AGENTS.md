@@ -8,6 +8,8 @@
 
 本机账号槽拓扑分成两对且不交叉：桌面 `OPEN CODEX S HARDMODE.lnk` 与 `CodexB.lnk` 共享 S 身体、只隔离账号状态；桌面 `CodexA.lnk` 与 `CodexC.lnk` 共享 `E:\CODEX_CLEANROOM` 身体和新仓库、也只隔离账号状态。C 不属于 S/B，B 不属于 A/C；精确载体见 `docs/tool_glue/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md`。
 
+在 clean-room 热运行语义中，`A 并发研究` / `C 并发研究` 只表示同一套持续 world-owning compute protocol 选择 `account_slot=A|C`；A/C 不定义研究模式、cognition、branch 拓扑或历史 experiment arm。历史 one-shot 的 A/B/C/D arm 标签只作归档身份，不能取得当前运行路由权。
+
 涉及本机代理、节点、`7897`、Vortex/TUN 或 ChatGPT 上传时，先读 `docs/local_machine/LOCAL_PROXY_NODE_CHATGPT_UPLOAD_KNOWLEDGE_20260811.md`，不要先全机搜索。
 
 S 只承载通用工程实现：launcher、WorkerPool、工具胶水、测试、发布与可复用组件。它不保存或选择人的父意图、科学课题、研究路线、认知生命周期或完成结论。当前工作确实需要 S 的工程能力时才修改这里；局部工程结果必须回到其真实消费者验证。

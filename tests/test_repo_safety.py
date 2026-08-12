@@ -252,6 +252,8 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "docs/tool_glue/S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md" in agreement
     assert "不以 supervisor 身份替独立 Sol 选研究题" in agreement
     assert "用户可见控制叙述只在状态变化、故障、边界、采用和结算时" in agreement
+    assert "同一套持续 world-owning compute protocol" in agreement
+    assert "A/C 不定义研究模式、cognition、branch 拓扑或历史 experiment arm" in agreement
     control_tower_text = control_tower.read_text(encoding="utf-8")
     assert "S 对工程与实验效果负责到底" in control_tower_text
     assert "默认用普通 Grok 放大自身职责锥内的可分离劳动" in control_tower_text
@@ -259,12 +261,35 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "S 不亲自复制独立 Sol 的领域 cognition" in control_tower_text
     assert "fresh Main" in control_tower_text
     assert "S 不从运行结果自行取得改变认知拓扑的权限" in control_tower_text
-    assert "不是模型 hidden state、固定 world 列表、永久宽度、固定拓扑" in control_tower_text
+    assert "稳定的是 S 的 operational state machine，而不是 Sol 的 epistemic state space" in control_tower_text
+    assert "调度单位是 **world lineage**，不是完成 packet 的短 cell" in control_tower_text
+    assert "不以 `cells/hour` 或 terminal 数量优化短任务吞吐" in control_tower_text
+    assert "历史 one-shot runner 的共享 `RESEARCH_RUN_STATE.json` lost-update 问题不能自动归因" in control_tower_text
+    assert "历史 `parallel_c_v1` expansion cell、账号槽 C 和当前 persistent lineage" in control_tower_text
+    assert "scripts/xinao_perpetual_world_compute.py" in control_tower_text
     assert "恢复本身不会隐式 wake" in control_tower_text
     assert "--adopt-current-release" in control_tower_text
     assert "恢复原 clones、原 sessions 和原 turn 序列" in control_tower_text
     assert "这些命令与字段是当前可演化工程接口，不是永久认知拓扑" in control_tower_text
     assert "Codex personally advances the domain main line" not in control_tower_text
+    topology_text = (
+        REPO_ROOT / "docs" / "tool_glue" / "CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md"
+    ).read_text(encoding="utf-8")
+    assert "同一 world-compute operation 加一个 `account_slot=A|C` 选择" in topology_text
+    assert "单字母 arm 不进入长期 runtime 热语义" in topology_text
+    generic_entry = (REPO_ROOT / "scripts" / "xinao_perpetual_world_compute.py").read_text(
+        encoding="utf-8"
+    )
+    legacy_entry = (REPO_ROOT / "scripts" / "xinao_perpetual_c.py").read_text(
+        encoding="utf-8"
+    )
+    legacy_controller = (
+        REPO_ROOT / "services" / "xinao_perpetual_c" / "controller.py"
+    ).read_text(encoding="utf-8")
+    assert "services.xinao_perpetual_world_compute.controller import main" in generic_entry
+    assert "services.xinao_perpetual_world_compute.controller import main" in legacy_entry
+    assert "Compatibility import" in legacy_controller
+    assert len(legacy_controller.splitlines()) < 10
     contract_text = contract.read_text(encoding="utf-8")
     assert "SENTINEL:GENERIC_ENGINEERING_SUBSTRATE_CURRENT_V1" in contract_text
     assert "不定义任何科学父意图" in contract_text

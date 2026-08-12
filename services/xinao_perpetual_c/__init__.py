@@ -1,17 +1,3 @@
-"""Durable control-tower runtime for clean-room C XINAO lineages."""
+"""Compatibility import for the former C-named runtime package."""
 
-from .controller import (
-    LIFECYCLE_STATES,
-    build_branch_initial_prompt,
-    build_continuation_prompt,
-    build_root_fusion_prompt,
-    parse_lifecycle_state,
-)
-
-__all__ = [
-    "LIFECYCLE_STATES",
-    "build_branch_initial_prompt",
-    "build_continuation_prompt",
-    "build_root_fusion_prompt",
-    "parse_lifecycle_state",
-]
+from services.xinao_perpetual_world_compute import *  # noqa: F403

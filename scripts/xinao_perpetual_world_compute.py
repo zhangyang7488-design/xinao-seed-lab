@@ -1,5 +1,3 @@
-"""Compatibility entry; the live implementation is account-neutral."""
-
 import sys
 from pathlib import Path
 

@@ -190,32 +190,60 @@ user-visible control narration stays event-driven and thin.
 
 当天 one-shot 禁止自行重跑、改 steering 或扩代，是该实验的实例合同，不是 S 永久只准 one-shot。可泛化关系是：**S 不从运行结果自行取得改变认知拓扑的权限。**
 
-## 持续 C lineage 的工程入口
+## 持续 world-compute 的工程入口
 
-只有当前人话与 live contract 已经任命持续 control-tower episode 时，才可用仓库入口 `uv run python scripts/xinao_perpetual_c.py start` 建立新的隔离 lineage。这里持久化的是可再次进入同一 lineage 的运行身份、session、深证据、完成 turn 与生命周期，不是模型 hidden state、固定 world 列表、永久宽度、固定拓扑或一条无条件“继续研究”命令。每个 run 的 branch 数、关系和生命周期是该 episode 的可替换实例；以后可以随当前合同与新证据演化，不能反写成 S 的认知状态机。
+这里必须稳定的是 S 的 operational state machine，而不是 Sol 的 epistemic state space：
 
-`status` 是只读 readback；`recover` 只恢复 exact current run；`wake` 会重新打开已停驻 lineage；`stop` 会请求当前 episode 停止。因此后三者仍服从当前合同与 Stop，恢复本身不会隐式 wake 一个由 branch 自己置为 `WAIT/BLOCKED/PAUSE` 的 lineage：
-
-```powershell
-uv run python scripts/xinao_perpetual_c.py status
-uv run python scripts/xinao_perpetual_c.py recover --reason <inspected-failure>
-uv run python scripts/xinao_perpetual_c.py wake --lineage-id <lineage-id> --reason <reason>
-uv run python scripts/xinao_perpetual_c.py stop --reason <reason>
+```text
+CONTINUE                    -> 同一 lineage / 同一 session 进入下一 turn
+WAIT | BLOCKED | PAUSE      -> 原地停驻；restart 不得隐式唤醒
+runtime/controller failure  -> 修工程身体后 recover exact run/session/evidence
+STOP                        -> 停止当前 episode
 ```
 
-默认运行指针是 `D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c\current.json`。它定位 exact `run_dir`；每次运行的 `run_config.json`、版本化 controller releases、controller/lineage state、turn receipts、recovery receipts 和 late-fusion packets 才是该 episode 的冻结身份与恢复材料。仓库源码更新不会热替换正在运行的 frozen release，也不会仅凭文件存在自动续跑。
+`NO_POSITIVE_FRONTIER` 同样停驻，是否以后重开取决于新现实与当前合同。这个状态机可以并且应该成为稳定工程身体；它只管理身份、运行和生命周期，不把研究方向、world 内容、固定 branch 数、固定波次或固定 fusion 周期写进 S。
 
-controller 意外死亡时，先以 `status` 和 exact state/receipt 核对 PID、STOP、记录中的 child PID、当前 release hash、completed-turn receipts 与未提交 fusion packet；只有当前合同仍要求恢复且没有 live orphan child，才运行 `recover`。默认恢复仍使用 config 指向的 exact frozen release。若根因已经证明 frozen release 本身有缺陷，并且仓库当前修复已由相称测试验证，S 才可显式运行：
+热语义只有一套 operation：持续并发 world-owning compute。`account_slot=A|C` 只选择本次由 clean-room 的哪个凭证/额度入口承载；它不选择 cognition、研究协议或 topology。因此：
+
+```text
+“A 并发研究” = operation: perpetual world compute, account_slot: A
+“C 并发研究” = operation: perpetual world compute, account_slot: C
+```
+
+历史 one-shot 的 A/B/C/D 只属于 `experiment_arm` 归档，优先写作 `NATURAL / WORLD_SYNTHESIS / PROBE_CONTROL / FULL_AGENCY`。历史 `parallel_c_v1` expansion cell、账号槽 C 和当前 persistent lineage 是三个不同身份；任何一个都不能借单字母 C 取得另一个的运行语义。
+
+持续计算的调度单位是 **world lineage**，不是完成 packet 的短 cell。turn、session、process 和 cell 只是可替换 carrier；局部结果或一次 turn final 不自动杀死仍有 `CONTINUE` 前沿的 lineage。S 观察的是有效存活 lineage、纵向 Reality Return、容量与故障，不以 `cells/hour` 或 terminal 数量优化短任务吞吐。真正停驻/闭合的 lineage 是否释放容量、以及是否出生新 lineage，由当前合同和 live capacity 决定，不由一个历史 runner 的 refill 规则永久决定。
+
+当前 persistent controller 的 branch process 只写自己的隔离 clone 与具名 attempt 目录；每个完成 turn 原子提交自己的 receipt，controller 才在进程内锁下投影 lineage/controller aggregate。历史 one-shot runner 的共享 `RESEARCH_RUN_STATE.json` lost-update 问题不能自动归因到这套 writer model，也不能因此把旧 expansion-cell reducer 当成当前修复规格；是否仍有竞态必须按 exact current code、receipt 和 writer ownership 诊断。
+
+只有当前人话与 live contract 已经任命持续 control-tower episode 时，才可用账号中立的仓库入口建立新 run；`--account-slot` 是必填选择：
 
 ```powershell
-uv run python scripts/xinao_perpetual_c.py recover `
+uv run python scripts/xinao_perpetual_world_compute.py start --account-slot <A|C>
+uv run python scripts/xinao_perpetual_world_compute.py status
+uv run python scripts/xinao_perpetual_world_compute.py recover --expected-account-slot <A|C> --reason <inspected-failure>
+uv run python scripts/xinao_perpetual_world_compute.py wake --lineage-id <lineage-id> --reason <reason>
+uv run python scripts/xinao_perpetual_world_compute.py stop --reason <reason>
+```
+
+`status` 是只读 readback；`recover` 只恢复 exact current run；`wake` 会重新打开已停驻 lineage；`stop` 会请求当前 episode 停止。恢复从 `run_config.json` 读取冻结 account slot；当当前人话具名 A/C 时，`--expected-account-slot` 必须与之相符，否则 fail closed。恢复本身不会隐式 wake 一个由 branch 自己置为 `WAIT/BLOCKED/NO_POSITIVE_FRONTIER/PAUSE` 的 lineage。
+
+新 run 的默认指针根是 `D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute`。2026-08-12 已存在的 C run 仍保留在 legacy 物理 locator `...\xinao_perpetual_c`；账号中立入口在只有一个 current pointer 时会读取它，但该路径和旧 v1 schema 只是兼容格式，不再定义 controller 身份。不得为改名移动或重写原 turn receipts、branch worktrees 和冻结证据。
+
+每次运行的 `run_config.json`、版本化 controller releases、controller/lineage state、turn receipts、recovery receipts 和 late-fusion packets 才是该 episode 的冻结身份与恢复材料。仓库源码更新不会热替换正在运行的 frozen release，也不会仅凭文件存在自动续跑。
+
+controller 意外死亡时，先以 `status` 和 exact state/receipt 核对 PID、STOP、记录中的 child PID、冻结 account slot、当前 release hash、completed-turn receipts 与未提交 fusion packet；只有当前合同仍要求恢复且没有 live orphan child，才运行 `recover`。默认恢复仍使用 config 指向的 exact frozen release。若根因已经证明 frozen release 本身有缺陷，并且仓库当前修复已由相称测试验证，S 才可显式运行：
+
+```powershell
+uv run python scripts/xinao_perpetual_world_compute.py recover `
+  --expected-account-slot <A|C> `
   --adopt-current-release `
   --reason <verified-controller-defect-and-fix>
 ```
 
-这个入口把当前修复封成同一 run 内的新版本 release，保留旧 release 与 config-before 快照，给 manifest 缺失的未提交 packet 建立非删除式 quarantine，并写 recovery receipt 后恢复原 clones、原 sessions 和原 turn 序列。它不能新建替代 run、覆盖 branch worktree、把 partial turn 冒充 completed turn，或因恢复而改变 branch 的认识内容与生命周期。若 packet 已被 pending/committed transaction 声明、STOP 已存在、controller/child 仍活着或身份不闭合，恢复必须 fail closed。
+这个入口把当前修复封成同一 run 内的新版本 release，保留旧 release 与 config-before 快照，给 manifest 缺失的未提交 packet 建立非删除式 quarantine，并写 recovery receipt 后恢复原 clones、原 sessions 和原 turn 序列。它不能新建替代 run、覆盖 branch worktree、把 partial turn 冒充 completed turn，或因恢复而改变 branch 的认识内容与生命周期。若 packet 已被 pending/committed transaction 声明、STOP 已存在、controller/child 仍活着、slot 不匹配或身份不闭合，恢复必须 fail closed。
 
-这些命令与字段是当前可演化工程接口，不是永久认知拓扑。后续窗口先重读当前人话、此文、live pointer/config/receipt 和当前实现；若工程身体后来升级，就在同一共享载体与消费者测试中更新接口，而不是让用户重新叙述“多个 world-owning Sol、S 只管 runtime、fresh root 重综合”这组父关系。
+这些命令与字段是当前可演化工程接口，不是永久认知拓扑。后续窗口先重读当前人话、此文、live pointer/config/receipt 和当前实现；若工程身体后来升级，就在同一共享载体与消费者测试中更新接口，而不是让用户重新叙述“多个 world-owning Sol、S 只管 runtime、fresh root 重综合、A/C 只是账号槽”这组父关系。
 
 ## 后续 S 窗口的最小恢复顺序
 

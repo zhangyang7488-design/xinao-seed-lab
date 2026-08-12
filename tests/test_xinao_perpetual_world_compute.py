@@ -8,7 +8,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from services.xinao_perpetual_c.controller import (
+from services.xinao_perpetual_world_compute.controller import (
+    LEGACY_PACKET_SCHEMA,
+    LEGACY_RUN_SCHEMA,
     PACKET_SCHEMA,
     PARKED_LIFECYCLE_STATES,
     RUN_SCHEMA,
@@ -19,6 +21,7 @@ from services.xinao_perpetual_c.controller import (
     build_codex_arguments,
     build_codex_command,
     build_continuation_prompt,
+    build_parser,
     build_root_fusion_prompt,
     cleanroom_config_identity,
     exclusive_lock,
@@ -26,15 +29,22 @@ from services.xinao_perpetual_c.controller import (
     parse_lifecycle_state,
     quarantine_incomplete_fusion_packet,
     recover_runtime,
+    select_runtime_root,
     sha256_bytes,
     sha256_file,
     stop_runtime,
+    validate_account_slot,
     validate_lineage_runtime_repo,
+    validate_recovery_account_slot,
 )
 
 
 def make_test_controller(
-    tmp_path: Path, *, run_id: str = "test-run", branch_count: int = 2
+    tmp_path: Path,
+    *,
+    run_id: str = "test-run",
+    branch_count: int = 2,
+    run_schema: str = RUN_SCHEMA,
 ) -> tuple[PerpetualController, list[dict[str, str]], Path]:
     run_dir = tmp_path / "run"
     root_workspace = tmp_path / "root-main"
@@ -51,7 +61,8 @@ def make_test_controller(
             }
         )
     config = {
-        "schema": RUN_SCHEMA,
+        "schema": run_schema,
+        "account_slot": "C",
         "run_id": run_id,
         "run_dir": str(run_dir),
         "source_head": "a" * 40,
@@ -84,7 +95,7 @@ def write_successful_attempt(
     (attempt_dir / "receipt.json").write_text(
         json.dumps(
             {
-                "schema": TURN_SCHEMA,
+                "schema": controller.schemas["turn"],
                 "run_id": controller.config["run_id"],
                 "lineage_id": lineage_id,
                 "turn_number": turn_number,
@@ -136,6 +147,8 @@ def test_prompts_preserve_world_ownership_and_effect_boundary() -> None:
     assert "上一 turn 的结束不关闭父对象" in continuation
     assert "不要按多数票" in root
     assert "S 不形成领域正解" in root
+    assert "C clean-room" not in branch
+    assert "account slot" not in branch.lower()
     for prompt in (branch, continuation, root):
         assert "XINAO_LINEAGE_STATE: CONTINUE" in prompt
 
@@ -175,8 +188,12 @@ def test_config_identity_excludes_only_generated_lineage_trust(tmp_path: Path) -
     ]
 
 
-def test_codex_command_pins_c_slot_workspace_model_and_resume(tmp_path: Path) -> None:
+@pytest.mark.parametrize("account_slot", ["A", "C"])
+def test_codex_command_pins_selected_slot_workspace_model_and_resume(
+    tmp_path: Path, account_slot: str
+) -> None:
     config = {
+        "account_slot": account_slot,
         "powershell_path": "powershell.exe",
         "launcher_path": "Open-Codex-Cleanroom.ps1",
         "model": "gpt-5.6-sol",
@@ -193,7 +210,7 @@ def test_codex_command_pins_c_slot_workspace_model_and_resume(tmp_path: Path) ->
         workspace=tmp_path / "world-01",
         arguments_path=arguments_path,
     )
-    assert command[command.index("-AccountSlot") + 1] == "C"
+    assert command[command.index("-AccountSlot") + 1] == account_slot
     assert command[command.index("-WorkDir") + 1] == str(tmp_path / "world-01")
     assert command[command.index("-CodexArgsFile") + 1] == str(arguments_path)
     assert codex_arguments[codex_arguments.index("-m") + 1] == "gpt-5.6-sol"
@@ -201,6 +218,88 @@ def test_codex_command_pins_c_slot_workspace_model_and_resume(tmp_path: Path) ->
     assert codex_arguments[codex_arguments.index("exec") + 1] == "resume"
     assert "11111111-1111-1111-1111-111111111111" in codex_arguments
     assert codex_arguments[-1] == "-"
+
+
+def test_account_slot_is_a_selector_not_a_controller_mode() -> None:
+    assert validate_account_slot("A") == "A"
+    assert validate_account_slot("c") == "C"
+    with pytest.raises(PerpetualRuntimeError, match="ACCOUNT_SLOT_MUST_BE_A_OR_C"):
+        validate_account_slot("B")
+
+    parser = build_parser()
+    assert parser.parse_args(["start", "--account-slot", "A"]).account_slot == "A"
+    assert parser.parse_args(["start", "--account-slot", "C"]).account_slot == "C"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["start"])
+
+    assert validate_recovery_account_slot({"account_slot": "A"}, expected="A") == "A"
+    assert validate_recovery_account_slot({"account_slot": "C"}, expected=None) == "C"
+    with pytest.raises(PerpetualRuntimeError, match="RECOVERY_ACCOUNT_SLOT_MISMATCH"):
+        validate_recovery_account_slot({"account_slot": "C"}, expected="A")
+
+
+def test_runtime_root_falls_back_to_one_legacy_pointer_without_making_it_the_protocol(
+    tmp_path: Path,
+) -> None:
+    generic_root = tmp_path / "perpetual_world_compute"
+    legacy_root = tmp_path / "perpetual_c"
+    assert select_runtime_root(
+        None,
+        require_current=False,
+        default_root=generic_root,
+        legacy_root=legacy_root,
+    ) == generic_root
+    legacy_root.mkdir()
+    (legacy_root / "current.json").write_text("{}", encoding="utf-8")
+    assert select_runtime_root(
+        None,
+        require_current=True,
+        default_root=generic_root,
+        legacy_root=legacy_root,
+    ) == legacy_root
+    generic_root.mkdir()
+    (generic_root / "current.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(PerpetualRuntimeError, match="MULTIPLE_CURRENT_RUNTIME_POINTERS"):
+        select_runtime_root(
+            None,
+            require_current=True,
+            default_root=generic_root,
+            legacy_root=legacy_root,
+        )
+
+
+def test_legacy_c_named_schema_is_compatibility_format_not_account_policy(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller, branches, _ = make_test_controller(
+        tmp_path,
+        branch_count=1,
+        run_schema=LEGACY_RUN_SCHEMA,
+    )
+    turn_dir = write_successful_attempt(
+        controller,
+        lineage_id="world-01",
+        turn_number=1,
+        payload=b"legacy candidate\nXINAO_LINEAGE_STATE: CONTINUE\n",
+    )
+    controller._lineage_states["world-01"].update(
+        {
+            "turns_completed": 1,
+            "last_turn_dir": str(turn_dir),
+            "last_completed_turn_dir": str(turn_dir),
+            "session_id": "legacy-session",
+        }
+    )
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller", fromlist=["git_output"]
+    )
+    monkeypatch.setattr(controller_module, "git_output", lambda *_args, **_kwargs: "a" * 40)
+    packet_dir, packet = controller.freeze_fusion_packet(
+        {"waves_completed": 0, "consumed_turns": {"world-01": 0}}
+    )
+    assert packet_dir.is_dir()
+    assert packet["manifest"]["schema"] == LEGACY_PACKET_SCHEMA
+    assert controller.config["account_slot"] == "C"
 
 
 def test_freeze_fusion_packet_uses_completed_receipts_and_is_idempotent(
@@ -230,7 +329,9 @@ def test_freeze_fusion_packet_uses_completed_receipts_and_is_idempotent(
                 "session_id": f"session-{index}",
             }
         )
-    controller_module = __import__("services.xinao_perpetual_c.controller", fromlist=["git_output"])
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller", fromlist=["git_output"]
+    )
     monkeypatch.setattr(controller_module, "git_output", lambda *_args, **_kwargs: "a" * 40)
     fusion_state = {
         "waves_completed": 0,
@@ -391,7 +492,7 @@ def test_recovery_rejects_live_recorded_children_and_clears_dead_ones(
     controller, _, _ = make_test_controller(tmp_path, branch_count=1)
     controller._lineage_states["world-01"]["active_pid"] = 12345
     controller_module = __import__(
-        "services.xinao_perpetual_c.controller", fromlist=["is_process_alive"]
+        "services.xinao_perpetual_world_compute.controller", fromlist=["is_process_alive"]
     )
     monkeypatch.setattr(controller_module, "is_process_alive", lambda pid: pid == 12345)
     with pytest.raises(PerpetualRuntimeError, match="ORPHAN_CHILDREN_ALIVE_BEFORE_RECOVERY"):
@@ -468,6 +569,7 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     old_release.write_text("# old frozen release\n", encoding="utf-8")
     config = {
         "schema": RUN_SCHEMA,
+        "account_slot": "C",
         "run_id": "run-1",
         "run_dir": str(run_dir),
         "source_repo": str(tmp_path / "source"),
@@ -508,7 +610,7 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     )
 
     controller_module = __import__(
-        "services.xinao_perpetual_c.controller",
+        "services.xinao_perpetual_world_compute.controller",
         fromlist=["validate_recovery_identity"],
     )
     monkeypatch.setattr(controller_module, "validate_recovery_identity", lambda _config: {"ok": True})
@@ -574,7 +676,7 @@ def test_stop_runtime_fails_closed_when_controller_or_child_survives(
         encoding="utf-8",
     )
     controller_module = __import__(
-        "services.xinao_perpetual_c.controller", fromlist=["is_process_alive"]
+        "services.xinao_perpetual_world_compute.controller", fromlist=["is_process_alive"]
     )
     monkeypatch.setattr(controller_module, "is_process_alive", lambda pid: pid in {111, 222})
     args = SimpleNamespace(runtime_root=runtime_root, reason="test", wait_seconds=0)
@@ -597,7 +699,8 @@ def test_execute_turn_streams_session_and_accepts_explicit_continue(
         "workspace": str(workspace),
     }
     config = {
-        "schema": "xinao.cleanroom-c.perpetual-run.v1",
+        "schema": LEGACY_RUN_SCHEMA,
+        "account_slot": "C",
         "run_id": "stream-test",
         "run_dir": str(run_dir),
         "source_head": "b" * 40,
@@ -635,7 +738,7 @@ def test_execute_turn_streams_session_and_accepts_explicit_continue(
         return [sys.executable, "-c", code, str(arguments_path)]
 
     controller_module = __import__(
-        "services.xinao_perpetual_c.controller", fromlist=["build_codex_command"]
+        "services.xinao_perpetual_world_compute.controller", fromlist=["build_codex_command"]
     )
     monkeypatch.setattr(controller_module, "build_codex_command", fake_command)
     result = controller.execute_turn(spec=branch, prompt="research")
