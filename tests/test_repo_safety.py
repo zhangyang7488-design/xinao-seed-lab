@@ -259,6 +259,11 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "S 不亲自复制独立 Sol 的领域 cognition" in control_tower_text
     assert "fresh Main" in control_tower_text
     assert "S 不从运行结果自行取得改变认知拓扑的权限" in control_tower_text
+    assert "不是模型 hidden state、固定 world 列表、永久宽度、固定拓扑" in control_tower_text
+    assert "恢复本身不会隐式 wake" in control_tower_text
+    assert "--adopt-current-release" in control_tower_text
+    assert "恢复原 clones、原 sessions 和原 turn 序列" in control_tower_text
+    assert "这些命令与字段是当前可演化工程接口，不是永久认知拓扑" in control_tower_text
     assert "Codex personally advances the domain main line" not in control_tower_text
     contract_text = contract.read_text(encoding="utf-8")
     assert "SENTINEL:GENERIC_ENGINEERING_SUBSTRATE_CURRENT_V1" in contract_text

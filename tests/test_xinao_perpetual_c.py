@@ -21,9 +21,13 @@ from services.xinao_perpetual_c.controller import (
     build_continuation_prompt,
     build_root_fusion_prompt,
     cleanroom_config_identity,
+    exclusive_lock,
     parse_event_line,
     parse_lifecycle_state,
+    quarantine_incomplete_fusion_packet,
+    recover_runtime,
     sha256_bytes,
+    sha256_file,
     stop_runtime,
     validate_lineage_runtime_repo,
 )
@@ -295,6 +299,68 @@ def test_root_wave_does_not_commit_stopped_continuation_and_wait_is_parked(
     assert fusion_state["pending_packet"] is None
 
 
+def test_recovery_preserves_persisted_branch_wait_without_starting_a_turn(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    state = controller._lineage_states["world-01"]
+    state.update(
+        {
+            "session_id": "session-world-01",
+            "turns_completed": 1,
+            "lifecycle_state": "WAIT",
+            "status": "PARKED_WAIT",
+        }
+    )
+    parked: list[tuple[str, str]] = []
+
+    def fake_wait(lineage_id: str, status: str) -> bool:
+        parked.append((lineage_id, status))
+        controller._shutdown.set()
+        return False
+
+    monkeypatch.setattr(controller, "_wait_parked", fake_wait)
+    monkeypatch.setattr(
+        controller,
+        "execute_turn",
+        lambda **_kwargs: pytest.fail("persisted WAIT must not start a new branch turn"),
+    )
+
+    controller.branch_loop(branches[0])
+    assert parked == [("world-01", "PARKED_WAIT")]
+
+
+def test_recovery_preserves_persisted_root_pause_without_loading_a_wave(
+    tmp_path: Path, monkeypatch
+) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    state = controller._lineage_states["root-main"]
+    state.update(
+        {
+            "session_id": "session-root-main",
+            "turns_completed": 1,
+            "lifecycle_state": "PAUSE",
+            "status": "PARKED_PAUSE",
+        }
+    )
+    parked: list[tuple[str, str]] = []
+
+    def fake_wait(lineage_id: str, status: str) -> bool:
+        parked.append((lineage_id, status))
+        controller._shutdown.set()
+        return False
+
+    monkeypatch.setattr(controller, "_wait_parked", fake_wait)
+    monkeypatch.setattr(
+        controller,
+        "_load_fusion_state",
+        lambda: pytest.fail("persisted PAUSE must not load or start another fusion wave"),
+    )
+
+    controller.fusion_loop()
+    assert parked == [("root-main", "PARKED_PAUSE")]
+
+
 def test_lineage_runtime_accepts_descendant_commits_but_rejects_remotes(
     tmp_path: Path,
 ) -> None:
@@ -336,6 +402,154 @@ def test_recovery_rejects_live_recorded_children_and_clears_dead_ones(
     assert controller._lineage_states["world-01"]["active_pid"] is None
     persisted = json.loads(controller.lineage_state_path("world-01").read_text(encoding="utf-8"))
     assert persisted["active_pid"] is None
+
+
+def test_quarantine_incomplete_fusion_packet_preserves_partial_directory(tmp_path: Path) -> None:
+    controller, _, root_workspace = make_test_controller(tmp_path, branch_count=1)
+    partial_packet = root_workspace / "S_CONTROL_INPUTS" / "wave-000001"
+    partial_packet.mkdir(parents=True)
+
+    receipt = quarantine_incomplete_fusion_packet(
+        controller.config,
+        recovery_id="recovery-000001-test",
+    )
+
+    assert receipt is not None
+    assert receipt["reason"] == "PACKET_MANIFEST_MISSING"
+    assert receipt["inventory"] == []
+    assert not partial_packet.exists()
+    quarantine_path = Path(receipt["quarantine_path"])
+    assert quarantine_path.is_dir()
+    assert quarantine_path.parent == root_workspace / "S_CONTROL_QUARANTINE"
+
+
+def test_quarantine_refuses_packet_claimed_by_pending_transaction(tmp_path: Path) -> None:
+    controller, _, root_workspace = make_test_controller(tmp_path, branch_count=1)
+    partial_packet = root_workspace / "S_CONTROL_INPUTS" / "wave-000001"
+    partial_packet.mkdir(parents=True)
+    fusion_state_path = controller.lineage_dir("root-main") / "fusion_state.json"
+    fusion_state_path.write_text(
+        json.dumps(
+            {
+                "waves_completed": 0,
+                "pending_packet": {"wave_number": 1, "packet_dir": str(partial_packet)},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PerpetualRuntimeError, match="INCOMPLETE_PACKET_IS_PENDING_TRANSACTION"):
+        quarantine_incomplete_fusion_packet(
+            controller.config,
+            recovery_id="recovery-000001-test",
+        )
+    assert partial_packet.is_dir()
+
+
+def test_exclusive_lock_preserves_body_oserror(tmp_path: Path) -> None:
+    with pytest.raises(OSError, match="body failure"):
+        with exclusive_lock(tmp_path / "controller.lock"):
+            raise OSError("body failure")
+
+
+def test_recover_adopts_repaired_release_without_replacing_lineages(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    run_dir = runtime_root / "runs" / "run-1"
+    run_dir.mkdir(parents=True)
+    branch_workspace = tmp_path / "world-01"
+    root_workspace = tmp_path / "root-main"
+    branch_workspace.mkdir()
+    root_workspace.mkdir()
+    partial_packet = root_workspace / "S_CONTROL_INPUTS" / "wave-000001"
+    partial_packet.mkdir(parents=True)
+    old_release = run_dir / "controller_release.py"
+    old_release.write_text("# old frozen release\n", encoding="utf-8")
+    config = {
+        "schema": RUN_SCHEMA,
+        "run_id": "run-1",
+        "run_dir": str(run_dir),
+        "source_repo": str(tmp_path / "source"),
+        "source_head": "a" * 40,
+        "launcher_path": str(tmp_path / "launcher.ps1"),
+        "launcher_sha256": "launcher-sha",
+        "shared_config_path": str(tmp_path / "config.toml"),
+        "shared_config_sha256": "config-sha",
+        "controller_release_path": str(old_release),
+        "controller_release_sha256": sha256_file(old_release),
+        "branch_lineages": [
+            {
+                "lineage_id": "world-01",
+                "role": "independent_world",
+                "workspace": str(branch_workspace),
+            }
+        ],
+        "root_lineage": {
+            "lineage_id": "root-main",
+            "role": "late_fusion_root",
+            "workspace": str(root_workspace),
+        },
+    }
+    config_path = run_dir / "run_config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    pointer = {
+        "schema": RUN_SCHEMA,
+        "run_id": "run-1",
+        "run_dir": str(run_dir),
+        "controller_pid": 111,
+        "started_at": "before",
+    }
+    runtime_root.mkdir(exist_ok=True)
+    (runtime_root / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+    (run_dir / "controller_state.json").write_text(
+        json.dumps({"schema": "controller", "run_id": "run-1", "pid": 111, "status": "FAILED"}),
+        encoding="utf-8",
+    )
+
+    controller_module = __import__(
+        "services.xinao_perpetual_c.controller",
+        fromlist=["validate_recovery_identity"],
+    )
+    monkeypatch.setattr(controller_module, "validate_recovery_identity", lambda _config: {"ok": True})
+    monkeypatch.setattr(controller_module, "find_live_runtime_processes", lambda *_args: {})
+    fake_process = SimpleNamespace(pid=4321, poll=lambda: None)
+    monkeypatch.setattr(
+        controller_module,
+        "_spawn_detached_controller",
+        lambda **_kwargs: (fake_process, Path(r"C:\runtime\python.exe")),
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "_wait_for_controller_startup",
+        lambda **_kwargs: {"schema": "controller", "run_id": "run-1", "pid": 4321, "status": "RUNNING"},
+    )
+
+    result = recover_runtime(
+        SimpleNamespace(
+            runtime_root=runtime_root,
+            reason="repair completed-turn fusion race",
+            adopt_current_release=True,
+            startup_wait_seconds=1,
+        )
+    )
+
+    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    assert updated["run_id"] == "run-1"
+    assert updated["branch_lineages"] == config["branch_lineages"]
+    assert updated["root_lineage"] == config["root_lineage"]
+    assert updated["controller_release_path"] != str(old_release)
+    assert Path(updated["controller_release_path"]).is_file()
+    assert sha256_file(Path(updated["controller_release_path"])) == updated[
+        "controller_release_sha256"
+    ]
+    assert old_release.read_text(encoding="utf-8") == "# old frozen release\n"
+    assert updated["recovery_generation"] == 1
+    assert updated["controller_release_history"][0]["path"] == str(old_release)
+    assert result["controller_state"]["status"] == "RUNNING"
+    assert result["pointer"]["controller_pid"] == 4321
+    assert result["quarantined_incomplete_packet"]["reason"] == "PACKET_MANIFEST_MISSING"
+    assert not partial_packet.exists()
 
 
 def test_stop_runtime_fails_closed_when_controller_or_child_survives(

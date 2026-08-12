@@ -192,17 +192,30 @@ user-visible control narration stays event-driven and thin.
 
 ## 持续 C lineage 的工程入口
 
-只有当前人话与 live contract 已经任命持续 control-tower episode 时，才可用仓库入口 `uv run python scripts/xinao_perpetual_c.py start` 建立新的隔离 lineage。`status` 是只读 readback；`wake` 会重新打开已停驻 lineage，`stop` 会请求当前 episode 停止，因此后两者仍服从当前合同与 Stop：
+只有当前人话与 live contract 已经任命持续 control-tower episode 时，才可用仓库入口 `uv run python scripts/xinao_perpetual_c.py start` 建立新的隔离 lineage。这里持久化的是可再次进入同一 lineage 的运行身份、session、深证据、完成 turn 与生命周期，不是模型 hidden state、固定 world 列表、永久宽度、固定拓扑或一条无条件“继续研究”命令。每个 run 的 branch 数、关系和生命周期是该 episode 的可替换实例；以后可以随当前合同与新证据演化，不能反写成 S 的认知状态机。
+
+`status` 是只读 readback；`recover` 只恢复 exact current run；`wake` 会重新打开已停驻 lineage；`stop` 会请求当前 episode 停止。因此后三者仍服从当前合同与 Stop，恢复本身不会隐式 wake 一个由 branch 自己置为 `WAIT/BLOCKED/PAUSE` 的 lineage：
 
 ```powershell
 uv run python scripts/xinao_perpetual_c.py status
+uv run python scripts/xinao_perpetual_c.py recover --reason <inspected-failure>
 uv run python scripts/xinao_perpetual_c.py wake --lineage-id <lineage-id> --reason <reason>
 uv run python scripts/xinao_perpetual_c.py stop --reason <reason>
 ```
 
-默认运行指针是 `D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c\current.json`。它定位 exact `run_dir`；每次运行的 `run_config.json`、`controller_release.py`、controller/lineage state、turn receipts 和 late-fusion packets 才是该 episode 的冻结身份与恢复材料。仓库源码更新不会热替换正在运行的 frozen release。
+默认运行指针是 `D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c\current.json`。它定位 exact `run_dir`；每次运行的 `run_config.json`、版本化 controller releases、controller/lineage state、turn receipts、recovery receipts 和 late-fusion packets 才是该 episode 的冻结身份与恢复材料。仓库源码更新不会热替换正在运行的 frozen release，也不会仅凭文件存在自动续跑。
 
-controller 意外死亡时，先以 `status` 和 exact state/receipt 核对 PID、STOP、记录中的 child PID 与 frozen release hash；只有当前合同仍要求恢复且没有 live orphan child，才从该 `run_dir` 的 `controller_release.py run --config run_config.json` 恢复。不得改用仓库当前源码冒充原 release，也不得因发现旧 run 就自动续跑。
+controller 意外死亡时，先以 `status` 和 exact state/receipt 核对 PID、STOP、记录中的 child PID、当前 release hash、completed-turn receipts 与未提交 fusion packet；只有当前合同仍要求恢复且没有 live orphan child，才运行 `recover`。默认恢复仍使用 config 指向的 exact frozen release。若根因已经证明 frozen release 本身有缺陷，并且仓库当前修复已由相称测试验证，S 才可显式运行：
+
+```powershell
+uv run python scripts/xinao_perpetual_c.py recover `
+  --adopt-current-release `
+  --reason <verified-controller-defect-and-fix>
+```
+
+这个入口把当前修复封成同一 run 内的新版本 release，保留旧 release 与 config-before 快照，给 manifest 缺失的未提交 packet 建立非删除式 quarantine，并写 recovery receipt 后恢复原 clones、原 sessions 和原 turn 序列。它不能新建替代 run、覆盖 branch worktree、把 partial turn 冒充 completed turn，或因恢复而改变 branch 的认识内容与生命周期。若 packet 已被 pending/committed transaction 声明、STOP 已存在、controller/child 仍活着或身份不闭合，恢复必须 fail closed。
+
+这些命令与字段是当前可演化工程接口，不是永久认知拓扑。后续窗口先重读当前人话、此文、live pointer/config/receipt 和当前实现；若工程身体后来升级，就在同一共享载体与消费者测试中更新接口，而不是让用户重新叙述“多个 world-owning Sol、S 只管 runtime、fresh root 重综合”这组父关系。
 
 ## 后续 S 窗口的最小恢复顺序
 
@@ -211,7 +224,7 @@ controller 意外死亡时，先以 `status` 和 exact state/receipt 核对 PID�
 1. 先读当前用户整句话与 live facts，确认 S 此刻是工程 Owner、control tower、普通答复者，还是未被任命；
 2. 若是 control tower，恢复 exact experiment/run identity、合同、已完成/运行/失败 branches、允许的下一 cell、Stop 与 write domain；
 3. 从真实进程、session、receipt、原始产物和消费者读取 current state，不以报告自述替代；
-4. 继续最小合法前沿：观察、恢复、启动预定 cell、保存 terminal、fresh fusion 或结算；
+4. 继续最小合法前沿：观察、恢复同一 run、启动预定 cell、保存 terminal、fresh fusion 或结算；
 5. 不因窗口重启重新选研究题，不要求用户再解释“研究属于 Sol”，也不把旧 runner/Skill 自动复活成当前任务。
 
 ## 验收与反例

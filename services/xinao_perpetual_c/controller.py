@@ -23,6 +23,7 @@ CONTROLLER_SCHEMA = "xinao.cleanroom-c.perpetual-controller-state.v1"
 LINEAGE_SCHEMA = "xinao.cleanroom-c.perpetual-lineage-state.v1"
 TURN_SCHEMA = "xinao.cleanroom-c.perpetual-turn-receipt.v1"
 PACKET_SCHEMA = "xinao.cleanroom-c.late-fusion-packet.v1"
+RECOVERY_SCHEMA = "xinao.cleanroom-c.controller-recovery.v1"
 
 DEFAULT_SOURCE_REPO = Path(r"E:\CODEX_CLEANROOM\workspace")
 DEFAULT_LAUNCHER = Path(r"E:\CODEX_CLEANROOM\Open-Codex-Cleanroom.ps1")
@@ -532,9 +533,11 @@ def exclusive_lock(path: Path) -> Iterator[None]:
 
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         acquired = True
-        yield
     except OSError as exc:
+        handle.close()
         raise PerpetualRuntimeError(f"CONTROLLER_ALREADY_ACTIVE: {path}") from exc
+    try:
+        yield
     finally:
         if acquired:
             handle.seek(0)
@@ -1025,6 +1028,14 @@ class PerpetualController:
     def branch_loop(self, spec: Mapping[str, Any]) -> None:
         lineage_id = str(spec["lineage_id"])
         try:
+            recovered_state = self._lineage_states[lineage_id]
+            recovered_lifecycle = recovered_state.get("lifecycle_state")
+            if (
+                recovered_state.get("session_id")
+                and recovered_lifecycle in PARKED_LIFECYCLE_STATES
+                and not self._wait_parked(lineage_id, f"PARKED_{recovered_lifecycle}")
+            ):
+                return
             while not self.stopped():
                 state = self._lineage_states[lineage_id]
                 if not state.get("session_id"):
@@ -1291,6 +1302,14 @@ class PerpetualController:
     def fusion_loop(self) -> None:
         lineage_id = str(self.root_spec["lineage_id"])
         try:
+            recovered_state = self._lineage_states[lineage_id]
+            recovered_lifecycle = recovered_state.get("lifecycle_state")
+            if (
+                recovered_state.get("session_id")
+                and recovered_lifecycle in PARKED_LIFECYCLE_STATES
+                and not self._wait_parked(lineage_id, f"PARKED_{recovered_lifecycle}")
+            ):
+                return
             fusion_state = self._load_fusion_state()
             while not self.stopped():
                 if not isinstance(fusion_state.get("pending_packet"), dict):
@@ -1436,6 +1455,225 @@ def ensure_no_active_controller(runtime_root: Path) -> None:
         raise PerpetualRuntimeError(
             f"ACTIVE_CONTROLLER_ALREADY_EXISTS: run_id={value.get('run_id')} pid={pid}"
         )
+
+
+def validate_recovery_identity(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate an existing run without requiring the caller to be its frozen release."""
+
+    if config.get("schema") != RUN_SCHEMA:
+        raise PerpetualRuntimeError("RUN_CONFIG_SCHEMA_MISMATCH")
+    if config.get("account_slot") != "C":
+        raise PerpetualRuntimeError("RECOVERY_ACCOUNT_SLOT_MUST_BE_C")
+    run_dir = resolve_path(config["run_dir"])
+    release_path = resolve_path(config["controller_release_path"])
+    if not release_path.is_file():
+        raise PerpetualRuntimeError(f"CONTROLLER_RELEASE_MISSING: {release_path}")
+    observed_release_sha = sha256_file(release_path)
+    if observed_release_sha != str(config["controller_release_sha256"]):
+        raise PerpetualRuntimeError("CONTROLLER_RELEASE_BYTES_CHANGED")
+    source = validate_pinned_source_commit(
+        resolve_path(config["source_repo"]), str(config["source_head"])
+    )
+    launcher = resolve_path(config["launcher_path"])
+    if not launcher.is_file() or sha256_file(launcher) != str(config["launcher_sha256"]):
+        raise PerpetualRuntimeError("CLEANROOM_LAUNCHER_BYTES_CHANGED")
+    shared_config = resolve_path(config["shared_config_path"])
+    if not shared_config.is_file():
+        raise PerpetualRuntimeError(f"CLEANROOM_SHARED_CONFIG_MISSING: {shared_config}")
+    shared_identity = cleanroom_config_identity(shared_config)
+    expected_semantic = str(
+        config.get("shared_config_semantic_sha256", config["shared_config_sha256"])
+    )
+    if shared_identity["semantic_sha256"] != expected_semantic:
+        raise PerpetualRuntimeError(
+            "CLEANROOM_SHARED_CONFIG_SEMANTICS_CHANGED: "
+            f"expected={expected_semantic} observed={shared_identity['semantic_sha256']}"
+        )
+    lineages = [
+        validate_lineage_runtime_repo(
+            resolve_path(spec["workspace"]), str(config["source_head"])
+        )
+        for spec in [*config["branch_lineages"], config["root_lineage"]]
+    ]
+    return {
+        "run_dir": str(run_dir),
+        "frozen_release_path": str(release_path),
+        "frozen_release_sha256": observed_release_sha,
+        "source": source,
+        "shared_config": shared_identity,
+        "lineages": lineages,
+    }
+
+
+def find_live_runtime_processes(
+    pointer: Mapping[str, Any],
+    state: Mapping[str, Any] | None,
+    config: Mapping[str, Any],
+) -> dict[str, int]:
+    """Return every recorded controller/child PID that is still alive."""
+
+    candidates: dict[str, int] = {}
+
+    def remember(label: str, raw_pid: object) -> None:
+        if isinstance(raw_pid, int) and raw_pid > 0:
+            candidates[label] = raw_pid
+
+    remember("pointer.controller", pointer.get("controller_pid"))
+    if state:
+        remember("state.controller", state.get("pid"))
+        for lineage_id, raw_pid in dict(state.get("active_processes", {})).items():
+            remember(f"state.child.{lineage_id}", raw_pid)
+    run_dir = resolve_path(config["run_dir"])
+    for spec in [*config["branch_lineages"], config["root_lineage"]]:
+        lineage_id = str(spec["lineage_id"])
+        state_path = run_dir / "lineages" / lineage_id / "state.json"
+        if state_path.is_file():
+            remember(f"lineage.child.{lineage_id}", read_json_object(state_path).get("active_pid"))
+    return {label: pid for label, pid in candidates.items() if is_process_alive(pid)}
+
+
+def _next_incomplete_fusion_packet(config: Mapping[str, Any]) -> Path | None:
+    run_dir = resolve_path(config["run_dir"])
+    root_spec = dict(config["root_lineage"])
+    fusion_state_path = run_dir / "lineages" / str(root_spec["lineage_id"]) / "fusion_state.json"
+    fusion_state = read_json_object(fusion_state_path) if fusion_state_path.is_file() else {}
+    wave_number = int(fusion_state.get("waves_completed", 0)) + 1
+    packet_dir = (
+        resolve_path(root_spec["workspace"])
+        / "S_CONTROL_INPUTS"
+        / f"wave-{wave_number:06d}"
+    )
+    if packet_dir.is_dir() and not (packet_dir / "PACKET_MANIFEST.json").is_file():
+        return packet_dir
+    return None
+
+
+def _directory_inventory(root: Path) -> list[dict[str, Any]]:
+    inventory: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*"), key=lambda value: value.as_posix().lower()):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            inventory.append({"path": relative, "type": "symlink", "target": os.readlink(path)})
+        elif path.is_file():
+            inventory.append(
+                {
+                    "path": relative,
+                    "type": "file",
+                    "size": path.stat().st_size,
+                    "sha256": sha256_file(path),
+                }
+            )
+        elif path.is_dir():
+            inventory.append({"path": relative, "type": "directory"})
+        else:
+            inventory.append({"path": relative, "type": "other"})
+    return inventory
+
+
+def quarantine_incomplete_fusion_packet(
+    config: Mapping[str, Any], *, recovery_id: str
+) -> dict[str, Any] | None:
+    """Move an uncommitted manifest-less packet aside without deleting its evidence."""
+
+    packet_dir = _next_incomplete_fusion_packet(config)
+    if packet_dir is None:
+        return None
+    run_dir = resolve_path(config["run_dir"])
+    root_spec = dict(config["root_lineage"])
+    fusion_state_path = run_dir / "lineages" / str(root_spec["lineage_id"]) / "fusion_state.json"
+    fusion_state = read_json_object(fusion_state_path) if fusion_state_path.is_file() else {}
+    pending = fusion_state.get("pending_packet")
+    if isinstance(pending, dict) and resolve_path(pending.get("packet_dir", "")) == packet_dir:
+        raise PerpetualRuntimeError(f"INCOMPLETE_PACKET_IS_PENDING_TRANSACTION: {packet_dir}")
+    if fusion_state.get("last_packet") and resolve_path(fusion_state["last_packet"]) == packet_dir:
+        raise PerpetualRuntimeError(f"INCOMPLETE_PACKET_ALREADY_RECORDED_AS_COMMITTED: {packet_dir}")
+    inventory = _directory_inventory(packet_dir)
+    quarantine_root = resolve_path(root_spec["workspace"]) / "S_CONTROL_QUARANTINE"
+    quarantine_root.mkdir(parents=True, exist_ok=True)
+    quarantine_path = quarantine_root / f"{recovery_id}-{packet_dir.name}-manifest-missing"
+    if quarantine_path.exists():
+        raise PerpetualRuntimeError(f"RECOVERY_QUARANTINE_ALREADY_EXISTS: {quarantine_path}")
+    os.replace(packet_dir, quarantine_path)
+    return {
+        "reason": "PACKET_MANIFEST_MISSING",
+        "source_path": str(packet_dir),
+        "quarantine_path": str(quarantine_path),
+        "inventory": inventory,
+        "moved_at": now_iso(),
+    }
+
+
+def _spawn_detached_controller(
+    *,
+    release_path: Path,
+    config_path: Path,
+    run_dir: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> tuple[subprocess.Popen[bytes], Path]:
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    stdout_handle = stdout_path.open("ab", buffering=0)
+    stderr_handle = stderr_path.open("ab", buffering=0)
+    creationflags = (
+        getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        | getattr(subprocess, "DETACHED_PROCESS", 0)
+    )
+    controller_python = Path(str(getattr(sys, "_base_executable", sys.executable))).resolve(
+        strict=False
+    )
+    try:
+        process = subprocess.Popen(
+            [
+                str(controller_python),
+                str(release_path),
+                "run",
+                "--config",
+                str(config_path),
+            ],
+            cwd=run_dir,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            close_fds=True,
+            shell=False,
+            creationflags=creationflags,
+        )
+    finally:
+        stdout_handle.close()
+        stderr_handle.close()
+    return process, controller_python
+
+
+def _wait_for_controller_startup(
+    *,
+    process: subprocess.Popen[bytes],
+    run_dir: Path,
+    expected_run_id: str,
+    startup_wait_seconds: float,
+    stderr_path: Path,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + startup_wait_seconds
+    state_path = run_dir / "controller_state.json"
+    while time.monotonic() < deadline:
+        if state_path.is_file():
+            state = read_json_object(state_path)
+            if state.get("run_id") == expected_run_id and state.get("pid") == process.pid:
+                if state.get("status") in {"STARTING", "RUNNING"}:
+                    return state
+                if state.get("status") == "FAILED":
+                    raise PerpetualRuntimeError(
+                        f"CONTROLLER_FAILED_DURING_RECOVERY: {safe_tail(stderr_path)}"
+                    )
+        if process.poll() is not None:
+            raise PerpetualRuntimeError(
+                "CONTROLLER_EXITED_DURING_RECOVERY: "
+                f"exit={process.returncode} stderr={safe_tail(stderr_path)}"
+            )
+        time.sleep(0.25)
+    raise PerpetualRuntimeError(
+        f"CONTROLLER_RECOVERY_READBACK_TIMEOUT: pid={process.pid} run={expected_run_id}"
+    )
 
 
 def make_run_id(head: str) -> str:
@@ -1622,6 +1860,248 @@ def load_current(runtime_root: Path) -> tuple[dict[str, Any], dict[str, Any] | N
     return pointer, state
 
 
+def _validate_recovery_pointer(
+    pointer: Mapping[str, Any],
+    state: Mapping[str, Any] | None,
+    config: Mapping[str, Any],
+    run_dir: Path,
+) -> None:
+    run_id = str(config.get("run_id", ""))
+    if not run_id or pointer.get("run_id") != run_id:
+        raise PerpetualRuntimeError("RECOVERY_POINTER_RUN_ID_MISMATCH")
+    if resolve_path(pointer.get("run_dir", "")) != run_dir:
+        raise PerpetualRuntimeError("RECOVERY_POINTER_RUN_DIR_MISMATCH")
+    if resolve_path(config.get("run_dir", "")) != run_dir:
+        raise PerpetualRuntimeError("RECOVERY_CONFIG_RUN_DIR_MISMATCH")
+    if state and state.get("run_id") != run_id:
+        raise PerpetualRuntimeError("RECOVERY_CONTROLLER_STATE_RUN_ID_MISMATCH")
+    if (run_dir / "STOP.json").exists():
+        raise PerpetualRuntimeError("RECOVERY_REFUSED_AFTER_STOP_REQUEST")
+
+
+def _seal_repaired_controller_release(
+    *,
+    config_path: Path,
+    config: Mapping[str, Any],
+    recovery_dir: Path,
+    recovery_id: str,
+    reason: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    current_source = Path(__file__).resolve()
+    current_raw = current_source.read_bytes()
+    current_sha = sha256_bytes(current_raw)
+    previous_path = resolve_path(config["controller_release_path"])
+    previous_sha = str(config["controller_release_sha256"])
+    if not previous_path.is_file() or sha256_file(previous_path) != previous_sha:
+        raise PerpetualRuntimeError("CONTROLLER_RELEASE_BYTES_CHANGED")
+    generation = int(config.get("recovery_generation", 0)) + 1
+    release_dir = resolve_path(config["run_dir"]) / "controller_releases"
+    release_path = release_dir / f"recovery-{generation:06d}-{current_sha[:12].lower()}.py"
+    if release_path.exists():
+        if not release_path.is_file() or sha256_file(release_path) != current_sha:
+            raise PerpetualRuntimeError(f"RECOVERY_RELEASE_PATH_COLLISION: {release_path}")
+    else:
+        atomic_write_bytes(release_path, current_raw)
+    atomic_write_bytes(recovery_dir / "run_config.before.json", config_path.read_bytes())
+    raw_history = config.get("controller_release_history")
+    if raw_history is None:
+        history: list[dict[str, Any]] = [
+            {
+                "generation": int(config.get("recovery_generation", 0)),
+                "path": str(previous_path),
+                "sha256": previous_sha,
+                "activated_at": config.get("created_at"),
+                "preserved": True,
+            }
+        ]
+    elif isinstance(raw_history, list) and all(isinstance(item, dict) for item in raw_history):
+        history = [dict(item) for item in raw_history]
+    else:
+        raise PerpetualRuntimeError("CONTROLLER_RELEASE_HISTORY_INVALID")
+    history.append(
+        {
+            "generation": generation,
+            "path": str(release_path),
+            "sha256": current_sha,
+            "activated_at": now_iso(),
+            "adoption_reason": reason,
+            "adopted_by_recovery_id": recovery_id,
+            "source_path": str(current_source),
+        }
+    )
+    updated = dict(config)
+    updated.update(
+        {
+            "controller_release_path": str(release_path),
+            "controller_release_sha256": current_sha,
+            "controller_release_history": history,
+            "recovery_generation": generation,
+            "controller_release_adopted_at": now_iso(),
+            "controller_release_adoption_reason": reason,
+        }
+    )
+    atomic_write_json(config_path, updated)
+    return updated, {
+        "previous_path": str(previous_path),
+        "previous_sha256": previous_sha,
+        "adopted_path": str(release_path),
+        "adopted_sha256": current_sha,
+        "source_path": str(current_source),
+        "generation": generation,
+    }
+
+
+def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
+    """Recover the exact current run, optionally adopting a repaired controller release."""
+
+    if os.name != "nt":
+        raise PerpetualRuntimeError("WINDOWS_RUNTIME_REQUIRED")
+    runtime_root = resolve_path(args.runtime_root)
+    pointer, state = load_current(runtime_root)
+    run_dir = resolve_path(pointer["run_dir"])
+    config_path = run_dir / "run_config.json"
+    if not config_path.is_file():
+        raise PerpetualRuntimeError(f"RUN_CONFIG_MISSING: {config_path}")
+    recovery_id = (
+        "recovery-"
+        + dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        + "-"
+        + uuid.uuid4().hex[:8]
+    )
+    recovery_dir = run_dir / "recovery" / recovery_id
+    receipt_path = recovery_dir / "receipt.json"
+    receipt: dict[str, Any] | None = None
+    with exclusive_lock(run_dir / "recovery.lock"):
+        try:
+            pointer, state = load_current(runtime_root)
+            config = read_json_object(config_path)
+            _validate_recovery_pointer(pointer, state, config, run_dir)
+            live = find_live_runtime_processes(pointer, state, config)
+            if live:
+                raise PerpetualRuntimeError(
+                    "RECOVERY_REFUSED_LIVE_PROCESSES: "
+                    + json.dumps(live, ensure_ascii=False, sort_keys=True)
+                )
+            identity = validate_recovery_identity(config)
+            recovery_dir.mkdir(parents=True)
+            atomic_write_json(recovery_dir / "pointer.before.json", pointer)
+            if state is not None:
+                atomic_write_json(recovery_dir / "controller_state.before.json", state)
+            adopt_current = bool(getattr(args, "adopt_current_release", False))
+            receipt = {
+                "schema": RECOVERY_SCHEMA,
+                "recovery_id": recovery_id,
+                "run_id": config["run_id"],
+                "status": "PREPARING",
+                "prepared_at": now_iso(),
+                "reason": str(args.reason),
+                "adopt_current_release": adopt_current,
+                "runtime_identity": identity,
+                "release_adoption": None,
+                "quarantined_incomplete_packet": None,
+                "pointer_before": pointer,
+                "controller_state_before": state,
+            }
+            atomic_write_json(receipt_path, receipt)
+            quarantined: dict[str, Any] | None = None
+            release_adoption: dict[str, Any] | None = None
+            with exclusive_lock(run_dir / "controller.lock"):
+                if adopt_current:
+                    quarantined = quarantine_incomplete_fusion_packet(
+                        config, recovery_id=recovery_id
+                    )
+                    receipt["quarantined_incomplete_packet"] = quarantined
+                    atomic_write_json(receipt_path, receipt)
+                    config, release_adoption = _seal_repaired_controller_release(
+                        config_path=config_path,
+                        config=config,
+                        recovery_dir=recovery_dir,
+                        recovery_id=recovery_id,
+                        reason=str(args.reason),
+                    )
+                    receipt["release_adoption"] = release_adoption
+                    atomic_write_json(receipt_path, receipt)
+                else:
+                    incomplete = _next_incomplete_fusion_packet(config)
+                    if incomplete is not None:
+                        raise PerpetualRuntimeError(
+                            "INCOMPLETE_FUSION_PACKET_REQUIRES_REPAIRED_RELEASE: "
+                            f"{incomplete}"
+                        )
+            release_path = resolve_path(config["controller_release_path"])
+            release_sha = str(config["controller_release_sha256"])
+            if sha256_file(release_path) != release_sha:
+                raise PerpetualRuntimeError("CONTROLLER_RELEASE_BYTES_CHANGED_AFTER_PREPARE")
+            receipt.update(
+                {
+                    "status": "PREPARED",
+                    "release_adoption": release_adoption,
+                    "quarantined_incomplete_packet": quarantined,
+                }
+            )
+            atomic_write_json(receipt_path, receipt)
+            stdout_path = recovery_dir / "controller_stdout.txt"
+            stderr_path = recovery_dir / "controller_stderr.txt"
+            process, controller_python = _spawn_detached_controller(
+                release_path=release_path,
+                config_path=config_path,
+                run_dir=run_dir,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+            )
+            pointer_after = dict(pointer)
+            pointer_after.update(
+                {
+                    "controller_pid": process.pid,
+                    "launcher_pid": process.pid,
+                    "controller_python": str(controller_python),
+                    "controller_release_path": str(release_path),
+                    "controller_release_sha256": release_sha,
+                    "recovered_at": now_iso(),
+                    "recovery_id": recovery_id,
+                    "recovery_generation": int(config.get("recovery_generation", 0)),
+                }
+            )
+            atomic_write_json(current_pointer(runtime_root), pointer_after)
+            controller_state = _wait_for_controller_startup(
+                process=process,
+                run_dir=run_dir,
+                expected_run_id=str(config["run_id"]),
+                startup_wait_seconds=float(args.startup_wait_seconds),
+                stderr_path=stderr_path,
+            )
+            receipt.update(
+                {
+                    "status": "RECOVERED",
+                    "completed_at": now_iso(),
+                    "pointer_after": pointer_after,
+                    "controller_state_after": controller_state,
+                }
+            )
+            atomic_write_json(receipt_path, receipt)
+            return {
+                "run_id": config["run_id"],
+                "recovery_id": recovery_id,
+                "recovery_receipt": str(receipt_path),
+                "pointer": pointer_after,
+                "controller_state": controller_state,
+                "release_adoption": release_adoption,
+                "quarantined_incomplete_packet": quarantined,
+            }
+        except BaseException as exc:
+            if receipt is not None:
+                receipt.update(
+                    {
+                        "status": "FAILED",
+                        "failed_at": now_iso(),
+                        "error_class": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                )
+                atomic_write_json(receipt_path, receipt)
+            raise
+
+
 def status_runtime(args: argparse.Namespace) -> dict[str, Any]:
     pointer, state = load_current(resolve_path(args.runtime_root))
     pid = state.get("pid") if state else pointer.get("controller_pid")
@@ -1740,6 +2220,19 @@ def build_parser() -> argparse.ArgumentParser:
     status = subparsers.add_parser("status")
     status.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
 
+    recover = subparsers.add_parser("recover")
+    recover.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
+    recover.add_argument(
+        "--reason",
+        default="recover the current run after an inspected controller failure",
+    )
+    recover.add_argument(
+        "--adopt-current-release",
+        action="store_true",
+        help="seal the current repository controller as a new preserved release for this run",
+    )
+    recover.add_argument("--startup-wait-seconds", type=int, default=30)
+
     stop = subparsers.add_parser("stop")
     stop.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
     stop.add_argument("--reason", default="explicit operator stop")
@@ -1762,6 +2255,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return PerpetualController(args.config).run()
         elif args.command == "status":
             result = status_runtime(args)
+        elif args.command == "recover":
+            result = recover_runtime(args)
         elif args.command == "stop":
             result = stop_runtime(args)
         elif args.command == "wake":
