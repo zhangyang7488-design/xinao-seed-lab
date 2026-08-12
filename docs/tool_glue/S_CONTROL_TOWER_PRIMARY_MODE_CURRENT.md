@@ -170,6 +170,8 @@ S 只保证输入身份、盲法、完整性、输出保存和后续 effect 边�
 
 branch terminal、一次 fusion、漂亮报告或局部 null 都不自动关闭父对象；同样，父对象开放也不授权 S 无限扩张。当前合同决定本 episode 是 one-shot、固定代数、terminal-driven refill、持续研究还是到点停止。Pause/Stop 立即压过任何续跑规则。
 
+对于已经 `RUNNING` 的持续 episode，修 launcher/controller、跑回归、recover 原 lineage、冻结证据或启动 fresh fusion 都是后台维护事件，不是新的父任务，也不是交回用户的完成点。维护子事务完成后，S 保持 episode 存活并继续原合同；对用户默认只给能改变其判断的一句最小状态。完整 PID、manifest、路径、hash、测试、commit 和恢复账留在可追溯 receipt，只有用户明确索取、真实阻塞、需要授权、账号/额度变化、Pause/Stop 或实质运行/认识状态转折时展开。一次 assistant turn 结束也不等于 episode 停止，但不得用一堵工程结算报告制造父活动已经交付完毕的语义。
+
 ## 2026-08-12 现场实例留下的行为事实
 
 本模式不是只从文本推演。当天 S 窗口在一个隔离的 CodexA one-shot 研究实验中实际承担了以下职责：

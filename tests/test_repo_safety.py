@@ -252,6 +252,9 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "docs/tool_glue/S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md" in agreement
     assert "不以 supervisor 身份替独立 Sol 选研究题" in agreement
     assert "用户可见控制叙述只在状态变化、故障、边界、采用和结算时" in agreement
+    assert "后台维护子事务" in agreement
+    assert "不产生父活动完成、暂停或 hand-back" in agreement
+    assert "深证据留在 receipt" in agreement
     assert "同一套持续 world-owning compute protocol" in agreement
     assert "A/C 不定义研究模式、cognition、branch 拓扑或历史 experiment arm" in agreement
     control_tower_text = control_tower.read_text(encoding="utf-8")
@@ -270,6 +273,8 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "恢复本身不会隐式 wake" in control_tower_text
     assert "--adopt-current-release" in control_tower_text
     assert "恢复原 clones、原 sessions 和原 turn 序列" in control_tower_text
+    assert "维护子事务完成后，S 保持 episode 存活并继续原合同" in control_tower_text
+    assert "不得用一堵工程结算报告制造父活动已经交付完毕的语义" in control_tower_text
     assert "这些命令与字段是当前可演化工程接口，不是永久认知拓扑" in control_tower_text
     assert "Codex personally advances the domain main line" not in control_tower_text
     topology_text = (
