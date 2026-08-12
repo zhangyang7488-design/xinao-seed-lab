@@ -1,8 +1,8 @@
 # Local behavior regression
 
 This is a bounded S engineering capability, not a research platform, scheduler,
-authority source, or completion gate. The catalog currently inventories 67
-live and reusable specifications. XINAO domain research and economic evidence
+authority source, or completion gate. The catalog currently inventories 120
+declared live and reusable specifications. XINAO domain research and economic evidence
 belong to `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`.
 
 `capability_lineage.v1.json` is a non-runtime migration preflight. It preserves
@@ -23,6 +23,10 @@ The active profiles are:
 - `reuse`: frozen/live recall plus thin localization and static checks;
 - `productivity`: eight disposable-workspace trajectories, including complete
   reference-behavior alignment without configuration or health proxies;
+- `surface`: nine natural-language fresh-consumer cases for message authority,
+  object-centered status, real blockers, completion, and non-handback action
+  transfers (silent or a concise immediate route); it does not claim the
+  underlying action executed;
 - `subagent`: one fail-closed disposable native-Codex-subagent capability
   probe, excluded from ordinary `core` and `deep` runs; it cannot claim a
   runtime pass until the raw parent trace includes the child's terminal state.
@@ -38,5 +42,6 @@ Each run writes operation-scoped raw output and a compact summary under D.
 .\scripts\run_behavior_regression.ps1 -Profile deep
 .\scripts\run_behavior_regression.ps1 -Profile proactive -CasePattern 'description'
 .\scripts\run_behavior_regression.ps1 -Profile proactive -FailedFrom D:\path\result.json
+.\scripts\run_behavior_regression.ps1 -Profile surface -MaxConcurrency 1 -MaxErrorRetries 0
 .\scripts\run_behavior_regression.ps1 -Profile subagent -MaxConcurrency 1 -MaxErrorRetries 0
 ```

@@ -310,6 +310,7 @@ def _profile_flags(
         "intent": profile in {"intent", "smoke", "core", "deep"},
         "external_reality": profile in {"external", "core", "deep"},
         "reconstitution": profile in {"reconstitution", "core", "deep"},
+        "surface": profile in {"surface", "core", "deep"},
         "proactive": profile in {"proactive", "core", "deep"},
         "recall_replay": profile in {"core", "deep", "reuse"},
         "recall_live": profile in {"deep", "reuse"},
@@ -400,6 +401,19 @@ def selected_inputs(
                 ("evals/parent_frame_admission", "parent_frame_admission"),
             )
         )
+    if flags["surface"]:
+        relative_inputs.extend(
+            (
+                (
+                    "tests/test_parent_continuity_user_surface.py",
+                    "parent_continuity_user_surface_tests",
+                ),
+                (
+                    "evals/parent_continuity_user_surface",
+                    "parent_continuity_user_surface_eval",
+                ),
+            )
+        )
     if flags["external_reality"]:
         relative_inputs.extend(
             (
@@ -471,11 +485,12 @@ def selected_inputs(
         flags["intent"]
         or flags["external_reality"]
         or flags["reconstitution"]
+        or flags["surface"]
         or flags["productivity"]
     ):
         if codex_home is None:
             raise ValueError(
-                "codex_home is required for intent, external-reality, and productive-action profiles"
+                "codex_home is required for intent, external-reality, reconstitution, surface, and productive-action profiles"
             )
         inputs.append(
             SourceInput(
@@ -696,6 +711,7 @@ def _parser() -> argparse.ArgumentParser:
             "intent",
             "external",
             "reconstitution",
+            "surface",
             "productivity",
             "subagent",
         ),

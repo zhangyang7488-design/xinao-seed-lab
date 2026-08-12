@@ -254,6 +254,8 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "用户可见控制叙述只在状态变化、故障、边界、采用和结算时" in agreement
     assert "后台维护子事务" in agreement
     assert "不产生父活动完成、暂停或 hand-back" in agreement
+    assert "没有足以改变用户判断的事实时不主动生成状态消息" in agreement
+    assert "不得翻译成对用户的安置、接管承诺或离场许可" in agreement
     assert "深证据留在 receipt" in agreement
     assert "同一套持续 world-owning compute protocol" in agreement
     assert "A/C 不定义研究模式、cognition、branch 拓扑或历史 experiment arm" in agreement
@@ -274,6 +276,8 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "--adopt-current-release" in control_tower_text
     assert "恢复原 clones、原 sessions 和原 turn 序列" in control_tower_text
     assert "维护子事务完成后，S 保持 episode 存活并继续原合同" in control_tower_text
+    assert "自动恢复后回到同一可用状态的维护事件默认只留在 receipt" in control_tower_text
+    assert "过程减负不能被翻译成对用户的安置、接管承诺或离场许可" in control_tower_text
     assert "不得用一堵工程结算报告制造父活动已经交付完毕的语义" in control_tower_text
     assert "这些命令与字段是当前可演化工程接口，不是永久认知拓扑" in control_tower_text
     assert "Codex personally advances the domain main line" not in control_tower_text
@@ -450,7 +454,7 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     assert '"context": False' in snapshot
 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(encoding="utf-8")
-    assert "currently inventories 67" in readme
+    assert "currently inventories 120" in readme
     assert "-Profile context" not in readme
 
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
@@ -1402,6 +1406,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "native_subagent_trajectory" in live_ids
     assert "external_reality_research" in live_ids
     assert "recursive_frame_reconstitution" in live_ids
+    assert "parent_continuity_user_surface" in live_ids
     assert "semantic_implication_regression" in live_ids
     retired_ids = {item["id"] for item in registry["retired_compatibility_suites"]}
     assert retired_ids == {"context_intent_alignment"}
@@ -1414,7 +1419,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "'--max-concurrency', $Concurrency" in runner
     assert "[int]$MaxErrorRetries = 1" in runner
     assert "'--filter-errors-only', $previousResult" in runner
-    assert "@('proactive', 'intent', 'external', 'reconstitution', 'productivity')" in runner
+    assert "@('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity')" in runner
     assert "$productiveFilters += @('--filter-pattern', $CasePattern)" in runner
     assert "-Concurrency 1" in runner
     assert "FailedFrom belongs to a different behavior suite" in runner
@@ -1426,15 +1431,16 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 111
+    assert suite_count == catalog["declared_case_count"] == 120
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 9 + 9 + 6 + 2 + 1 + 2 + 8,
-        "deep": 18 + 1 + 9 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
+        "core": 18 + 1 + 9 + 9 + 9 + 6 + 2 + 1 + 2 + 8,
+        "deep": 18 + 1 + 9 + 9 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
         "intent": 67,
         "external": 9,
         "reconstitution": 9,
+        "surface": 9,
         "proactive": 6,
         "reuse": 4,
         "productivity": 8,
@@ -1459,6 +1465,14 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert reconstitution["kind"] == "promptfoo_live"
     assert reconstitution["case_count"] == 9
     assert reconstitution["current_action_binding_claim_allowed"] is True
+    user_surface = next(
+        item for item in catalog["suites"] if item["id"] == "parent_continuity_user_surface"
+    )
+    assert user_surface["kind"] == "promptfoo_live_natural_language"
+    assert user_surface["case_count"] == 9
+    assert user_surface["natural_user_surface_claim_allowed"] is True
+    assert user_surface["underlying_action_execution_claim_allowed"] is False
+    assert user_surface["universal_future_behavior_claim_allowed"] is False
     assert reconstitution["one_trajectory_permanent_uptake_claim_allowed"] is False
     assert reconstitution["hidden_state_claim_allowed"] is False
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")

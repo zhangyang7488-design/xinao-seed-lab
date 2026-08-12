@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'reconstitution', 'productivity', 'subagent')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'subagent')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
@@ -29,8 +29,8 @@ if ($List) {
 if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
     throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'reconstitution', 'productivity')) {
-    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, reconstitution, or productivity.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, reconstitution, surface, or productivity.'
 }
 if ($FailedFrom -and $Profile -ne 'proactive') {
     throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
@@ -618,6 +618,7 @@ $runCapability = $Profile -in @('capability', 'smoke', 'core', 'deep') -and
 $runIntent = $Profile -in @('intent', 'smoke', 'core', 'deep')
 $runExternalReality = $Profile -in @('external', 'core', 'deep')
 $runReconstitution = $Profile -in @('reconstitution', 'core', 'deep')
+$runUserSurface = $Profile -in @('surface', 'core', 'deep')
 $runProactive = $Profile -in @('proactive', 'core', 'deep')
 $runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
 $runRecallLive = $Profile -in @('deep', 'reuse')
@@ -704,7 +705,7 @@ if ($runStatic) {
         role = 'static_assertion_tests'
     }
 }
-if ($runIntent -or $runExternalReality -or $runReconstitution -or $runProductiveAction) {
+if ($runIntent -or $runExternalReality -or $runReconstitution -or $runUserSurface -or $runProductiveAction) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $CodexHome 'AGENTS.md')
         logical_path = 'external/global_codex_home/AGENTS.md'
@@ -719,6 +720,16 @@ if ($runIntent) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\parent_frame_admission')
         role = 'parent_frame_admission'
+    }
+}
+if ($runUserSurface) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_parent_continuity_user_surface.py')
+        role = 'parent_continuity_user_surface_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\parent_continuity_user_surface')
+        role = 'parent_continuity_user_surface_eval'
     }
 }
 if ($runReconstitution) {
@@ -852,6 +863,9 @@ try {
         $preflightTests += 'tests/test_parent_frame_admission.py'
         $preflightTests += 'tests/test_intent_action_consumer_coverage.py'
     }
+    if ($runUserSurface) {
+        $preflightTests += 'tests/test_parent_continuity_user_surface.py'
+    }
     if ($runExternalReality) {
         $preflightTests += 'tests/test_external_reality_research.py'
     }
@@ -917,6 +931,21 @@ try {
             -SuiteId 'parent_frame_admission' `
             -ConfigPath $intentConfig -ResultPath $intentResult `
             -ExtraArguments $intentFilters
+    }
+
+    if ($overallExit -eq 0 -and $runUserSurface -and -not $PreflightOnly) {
+        $userSurfaceConfig = Join-Path $executionRoot `
+            'evals\parent_continuity_user_surface\promptfooconfig.yaml'
+        $userSurfaceResult = Join-Path $outputRoot `
+            'parent-continuity-user-surface.result.json'
+        $userSurfaceFilters = @()
+        if ($Profile -eq 'surface' -and $CasePattern) {
+            $userSurfaceFilters += @('--filter-pattern', $CasePattern)
+        }
+        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
+            -SuiteId 'parent_continuity_user_surface' `
+            -ConfigPath $userSurfaceConfig -ResultPath $userSurfaceResult `
+            -ExtraArguments $userSurfaceFilters
     }
 
     if ($overallExit -eq 0 -and $runExternalReality -and -not $PreflightOnly) {

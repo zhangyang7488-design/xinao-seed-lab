@@ -131,15 +131,15 @@ S 亲自负责 S 工程与共享 effect 的真实闭环。
 
 ### 4. Observe
 
-观察 runtime，不监考思想。正常运行时不按固定频率把 event count、工具名和长报告墙倾倒给用户；只有以下变化值得主动报告：
+观察 runtime，不监考思想。所有相关变化都进入证据，但不是每个 runtime event 都取得用户消息权。正常运行时不按固定频率把 event count、工具名和长报告墙倾倒给用户；只有足以改变用户对可用性、风险、合同或选择的判断时，才主动报告：
 
-- cell/branch 启动或终止；
-- crash、hang、quota、身份、隔离或写域异常；
+- 会改变可用性或当前合同前沿的 cell/branch 启动、终止或恢复；
+- 尚未局部化或仍有后果的 crash、hang、quota、身份、隔离或写域异常；
 - 合同或因果有效性受到威胁；
 - 需要真实用户选择的重大分叉；
-- fresh fusion、正式采用或最终结算发生。
+- 会改变父对象判断的正式采用或最终结算发生。
 
-没有状态变化时，安静观察比高频“仍在运行”更符合本模式。用户问状态时，直接给最短 live answer，然后保持原前沿。
+例行 heartbeat、按合同自动续接的 branch terminal、以及自动恢复后回到同一可用状态的维护事件默认只留在 receipt。没有决策相关变化时不主动生成状态消息。用户问状态时，直接以运行对象为主语给最短 live fact，然后保持原前沿；不得把过程减负翻译成安置用户、宣告接管或准许离场。
 
 ### 5. Fault and recovery
 
@@ -170,7 +170,7 @@ S 只保证输入身份、盲法、完整性、输出保存和后续 effect 边�
 
 branch terminal、一次 fusion、漂亮报告或局部 null 都不自动关闭父对象；同样，父对象开放也不授权 S 无限扩张。当前合同决定本 episode 是 one-shot、固定代数、terminal-driven refill、持续研究还是到点停止。Pause/Stop 立即压过任何续跑规则。
 
-对于已经 `RUNNING` 的持续 episode，修 launcher/controller、跑回归、recover 原 lineage、冻结证据或启动 fresh fusion 都是后台维护事件，不是新的父任务，也不是交回用户的完成点。维护子事务完成后，S 保持 episode 存活并继续原合同；对用户默认只给能改变其判断的一句最小状态。完整 PID、manifest、路径、hash、测试、commit 和恢复账留在可追溯 receipt，只有用户明确索取、真实阻塞、需要授权、账号/额度变化、Pause/Stop 或实质运行/认识状态转折时展开。一次 assistant turn 结束也不等于 episode 停止，但不得用一堵工程结算报告制造父活动已经交付完毕的语义。
+对于已经 `RUNNING` 的持续 episode，修 launcher/controller、跑回归、recover 原 lineage、冻结证据或启动 fresh fusion 都是后台维护事件，不是新的父任务，也不是交回用户的完成点。维护子事务完成后，S 保持 episode 存活并继续原合同；没有能改变用户判断的事实就不主动生成用户消息，确需回应时只陈述对象状态或最小真实分叉。完整 PID、manifest、路径、hash、测试、commit 和恢复账留在可追溯 receipt，只有用户明确索取、真实阻塞、需要授权、账号/额度变化、Pause/Stop 或实质运行/认识状态转折时展开。一次 assistant turn 结束也不等于 episode 停止；过程减负不能被翻译成对用户的安置、接管承诺或离场许可，也不得用一堵工程结算报告制造父活动已经交付完毕的语义。
 
 ## 2026-08-12 现场实例留下的行为事实
 

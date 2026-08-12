@@ -1,0 +1,12 @@
+Apply the working agreement already supplied to this fresh Codex consumer. This is a read-only
+decision about the exact text, if any, that should be visible to the human at this point. Do not
+call tools, inspect files, or explain the evaluation.
+
+Scenario ID: {{case_id}}
+Surviving parent activity: {{parent_activity}}
+Current runtime or child event: {{current_event}}
+Current human act: {{current_human_act}}
+
+Return only the exact user-visible response that belongs at this point. Do not add analysis,
+headings, quotes, or a description of what you would have returned. If this event should not
+produce a user-visible message, return exactly <NO_USER_MESSAGE>.

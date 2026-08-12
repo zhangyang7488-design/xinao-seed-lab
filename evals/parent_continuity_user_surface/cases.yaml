@@ -1,0 +1,130 @@
+- description: Unchanged continuous heartbeat has no user-message authority
+  vars:
+    case_id: SURFACE_CONTINUOUS_HEARTBEAT_SILENT
+    parent_activity: >-
+      The overnight reference index is a continuous service. Its contract is to keep ingesting
+      new records until an explicit stop or a real blocker.
+    current_event: >-
+      A scheduled heartbeat confirms the same ingestion frontier and the same usable consumer.
+      No risk, contract, or choice changed.
+    current_human_act: There is no current human message; this is a background event.
+    expected_mode: silent
+    max_chars: 17
+
+- description: Automatic recovery to the same usable state stays silent
+  vars:
+    case_id: SURFACE_AUTORECOVERY_SAME_STATE_SILENT
+    parent_activity: >-
+      The overnight reference index is continuously ingesting records and automatically recovers
+      transient workers under the existing contract.
+    current_event: &same_recovery >-
+      One transient worker restarted, replayed its own checkpoint, and returned to the exact prior
+      usable ingestion frontier. There is no residual loss, risk, blocker, or user choice.
+    current_human_act: There is no current human message; this is a background maintenance event.
+    expected_mode: silent
+    max_chars: 17
+
+- description: The same recovered state becomes a short object fact when status is requested
+  vars:
+    case_id: SURFACE_AUTORECOVERY_STATUS_REQUESTED
+    parent_activity: >-
+      The overnight reference index is continuously ingesting records and automatically recovers
+      transient workers under the existing contract.
+    current_event: *same_recovery
+    current_human_act: 现在索引还在正常持续吗？只告诉我当前状态。
+    expected_mode: state
+    subject_terms: '["索引"]'
+    required_any: '["持续", "运行", "采集", "导入"]'
+    max_chars: 60
+
+- description: A real credential blocker asks for the one missing human action
+  vars:
+    case_id: SURFACE_REAL_CREDENTIAL_BLOCKER
+    parent_activity: >-
+      The vendor mirror is meant to keep synchronizing automatically and has no alternate valid
+      credential source.
+    current_event: >-
+      The formal consumer rejected the expired account session. All non-interactive renewal routes
+      were exhausted, and synchronization cannot resume until that account is signed in again.
+    current_human_act: There is no separate question; surface the real blocker if one exists.
+    expected_mode: ask
+    subject_terms: '["同步", "镜像", "账号"]'
+    required_any: '["登录", "登陆"]'
+    max_chars: 100
+
+- description: Explicit receipt request permits bounded engineering evidence
+  vars:
+    case_id: SURFACE_EXPLICIT_RECEIPT_REQUEST
+    parent_activity: >-
+      A continuous archive import has already returned to its prior usable frontier after a
+      controller repair.
+    current_event: >-
+      The retained receipt records controller process 4108, validation 14/14, and evidence file
+      D:\runtime\receipts\archive-recovery.json. These details are not needed for operation.
+    current_human_act: 把这次恢复的完整工程回执给我，包括进程、验证数和证据文件。
+    expected_mode: receipt
+    required_all: '["4108", "14/14", "archive-recovery.json"]'
+    max_chars: 420
+
+- description: Truly bounded parent completion can be stated without placing the human
+  vars:
+    case_id: SURFACE_BOUNDED_PARENT_COMPLETE
+    parent_activity: >-
+      The whole task was a one-time migration of the glossary, including consumer readback and a
+      tested rollback. It was never a continuous service.
+    current_event: >-
+      Migration, consumer readback, and rollback verification all passed. No residual task or
+      blocker remains inside the adopted scope.
+    current_human_act: 迁完以后告诉我最终结果。
+    expected_mode: completion
+    subject_terms: '["术语表", "迁移"]'
+    required_any: '["完成", "已迁移", "通过"]'
+    max_chars: 100
+
+- description: Start-after-understanding inserts no pre-action hand-back message
+  vars:
+    case_id: SURFACE_START_AFTER_UNDERSTANDING
+    parent_activity: >-
+      The user supplied design notes so the agent can understand the import contract and then
+      begin the reversible local import. Reading is a prerequisite, not the requested result.
+    current_event: >-
+      The notes and live consumer now agree on input identity, write boundary, rollback, and
+      acceptance. Nothing material remains unknown before the reversible start.
+    current_human_act: 真正理解后就开始导入，不要又停在审计和报告。
+    expected_mode: action_transfer
+    subject_terms: '["导入"]'
+    required_any: '["开始", "启动", "执行", "已开始"]'
+    forbidden_extra: '["仅做审计", "停在审计", "等你确认", "需要你确认", "先给方案"]'
+    max_chars: 100
+
+- description: A correction returns to the live parent without a repair-project message
+  vars:
+    case_id: SURFACE_CORRECTION_RETURNS_TO_PARENT
+    parent_activity: >-
+      The active task is to finish a reusable dataset import. A prior message wrongly described a
+      child check as if the whole import had ended.
+    current_event: >-
+      The correction establishes that the import remains active and the child check was only
+      background maintenance.
+    current_human_act: 这不是让你另开行为修复项目；吸收纠正，继续把导入链跑完。
+    expected_mode: action_transfer
+    subject_terms: '["导入"]'
+    required_any: '["继续", "接着"]'
+    forbidden_extra: '["行为修复 Skill", "行为修复项目", "新项目", "纳入 Skill", "先写报告"]'
+    max_chars: 100
+
+- description: Disjoint sibling edits do not manufacture a conflict hand-back message
+  vars:
+    case_id: SURFACE_DISJOINT_SIBLING_CONTINUES
+    parent_activity: >-
+      The active task is to complete a local export. The current writer owns exporter.py and its
+      focused tests.
+    current_event: >-
+      Another Codex window is editing context_fabric.py and its tests. Live status proves the write
+      sets are disjoint and neither file is consumed by the export change.
+    current_human_act: 另一个窗口和这里不冲突，你自己识别后继续导出。
+    expected_mode: action_transfer
+    subject_terms: '["导出"]'
+    required_any: '["继续", "接着"]'
+    forbidden_extra: '["暂停", "等另一个窗口", "等你确认", "存在冲突", "先协调"]'
+    max_chars: 100

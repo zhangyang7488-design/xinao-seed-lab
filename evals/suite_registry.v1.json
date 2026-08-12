@@ -49,6 +49,12 @@
       "role": "parent_grounded_external_search_local_delta_and_marginal_stop"
     },
     {
+      "id": "parent_continuity_user_surface",
+      "path": "evals/parent_continuity_user_surface",
+      "runner": "scripts/run_behavior_regression.ps1 -Profile surface",
+      "role": "natural_user_surface_message_authority_object_state_and_parent_continuation"
+    },
+    {
       "id": "recursive_frame_reconstitution",
       "path": "evals/recursive_frame_reconstitution",
       "runner": "scripts/run_behavior_regression.ps1 -Profile reconstitution",

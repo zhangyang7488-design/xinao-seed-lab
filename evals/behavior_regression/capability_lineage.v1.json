@@ -306,7 +306,9 @@
         "services/agent_runtime/codex_situation_hook.py",
         "scripts/manage_current_situation.py",
         "services/agent_runtime/action_resume_receipt.py",
-        "evals/parent_frame_admission"
+        "evals/parent_frame_admission",
+        "evals/parent_continuity_user_surface",
+        "tests/test_parent_continuity_user_surface.py"
       ],
       "current_state": "PARTIAL_CONSUMER",
       "disposition": "SELECTIVE_CONSUMER_RECOVERY",
