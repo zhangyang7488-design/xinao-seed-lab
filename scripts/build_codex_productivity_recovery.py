@@ -123,6 +123,11 @@ SITUATION_RUNTIME_SOURCES = (
         "situation_runtime_source",
     ),
     (
+        REPO_ROOT / "services" / "agent_runtime" / "context_fabric.py",
+        "repository/services/agent_runtime/context_fabric.py",
+        "context_fabric_runtime_source",
+    ),
+    (
         REPO_ROOT / "services" / "agent_runtime" / "codex_situation_hook.py",
         "repository/services/agent_runtime/codex_situation_hook.py",
         "situation_hook_adapter",
@@ -136,6 +141,26 @@ SITUATION_RUNTIME_SOURCES = (
         REPO_ROOT / "scripts" / "manage_current_situation.py",
         "repository/scripts/manage_current_situation.py",
         "explicit_situation_manager",
+    ),
+    (
+        REPO_ROOT / "scripts" / "manage_context_fabric.py",
+        "repository/scripts/manage_context_fabric.py",
+        "explicit_context_fabric_manager",
+    ),
+    (
+        REPO_ROOT / "scripts" / "Protect-SContextFabricState.ps1",
+        "repository/scripts/Protect-SContextFabricState.ps1",
+        "context_fabric_acl_installer",
+    ),
+    (
+        REPO_ROOT / "docs" / "tool_glue" / "CODEX_SITUATION_CONTEXT_PRODUCTION.md",
+        "contracts/CODEX_SITUATION_CONTEXT_PRODUCTION.md",
+        "situation_context_contract",
+    ),
+    (
+        REPO_ROOT / "docs" / "tool_glue" / "S_CONTEXT_FABRIC_CURRENT.md",
+        "contracts/S_CONTEXT_FABRIC_CURRENT.md",
+        "context_fabric_contract",
     ),
 )
 
@@ -410,7 +435,10 @@ def build(output_root: Path) -> dict[str, object]:
         "excluded_on_purpose": [
             "authentication credentials and refresh tokens",
             "live explicit-continuation locator and live task runs",
-            "sessions transcripts and memory data",
+            (
+                "sessions transcripts, memory data, and live Context Fabric raw state or "
+                "snapshots; only its generic source, contracts, and ACL installer are archived"
+            ),
             "plugin caches and reinstallable bundled or curated plugins",
             "conduct-xinao-native-research and all science-domain authority",
             "retired pretool_task_provenance_guard_v1.ps1",
@@ -438,6 +466,7 @@ def build(output_root: Path) -> dict[str, object]:
                 "B shared file and directory links resolve to the canonical main runtime",
                 "A/B credential files and active session state remain private",
                 "fresh app-server hooks/list trust from each installed account",
+                "Context Fabric ACL audit and cleanroom negative mount remain green",
                 "changed-context positive and negative behavior consumer",
                 "Grok public launcher verifies the restored 15-file runtime manifest",
                 "fresh SelectionOnly succeeds before any real Grok dispatch",

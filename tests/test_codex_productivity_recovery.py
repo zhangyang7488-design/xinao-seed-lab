@@ -52,6 +52,9 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
     assert installed_verified.returncode == 0, installed_verified.stderr
     package_root = RECOVERY_ROOT_V2
     package_archive = ARCHIVE
+    assert manifest["archive_sha256"] == _sha256(package_archive)
+    verified = _run_builder("verify-archive", "--output-root", str(package_root))
+    assert verified.returncode == 0, verified.stderr
     assert manifest["schema_version"] == "xinao.codex_productivity_recovery.v2"
     assert manifest["sentinel"] == "SENTINEL:CODEX_NON_PI_PRODUCTIVITY_RECOVERY_COLD_V2"
     assert manifest["authority"] is False
@@ -112,9 +115,14 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
     situation_runtime_roles = {
         "repository/services/agent_runtime/runtime_observation.py": "situation_runtime_source",
         "repository/services/agent_runtime/current_situation.py": "situation_runtime_source",
+        "repository/services/agent_runtime/context_fabric.py": "context_fabric_runtime_source",
         "repository/services/agent_runtime/codex_situation_hook.py": "situation_hook_adapter",
         "repository/scripts/codex_situation_context_hook.py": "situation_hook_adapter",
         "repository/scripts/manage_current_situation.py": "explicit_situation_manager",
+        "repository/scripts/manage_context_fabric.py": "explicit_context_fabric_manager",
+        "repository/scripts/Protect-SContextFabricState.ps1": "context_fabric_acl_installer",
+        "contracts/CODEX_SITUATION_CONTEXT_PRODUCTION.md": "situation_context_contract",
+        "contracts/S_CONTEXT_FABRIC_CURRENT.md": "context_fabric_contract",
     }
     assert situation_runtime_roles.keys() <= names
     assert (

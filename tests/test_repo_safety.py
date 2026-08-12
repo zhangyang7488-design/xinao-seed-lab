@@ -42,6 +42,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "audit_adjudication.py",
     "carrier_identity.py",
     "codex_situation_hook.py",
+    "context_fabric.py",
     "codex_inner_profile_consumer.py",
     "codex_rollout_token_analyzer.py",
     "context_slice_manifest.py",
@@ -1923,14 +1924,24 @@ def test_live_zero_beat_hook_is_trusted_for_each_account() -> None:
     main_hooks = json.loads((main_home / "hooks.json").read_text(encoding="utf-8-sig"))
     account_b_hooks = json.loads((account_b_home / "hooks.json").read_text(encoding="utf-8-sig"))
     assert main_hooks == account_b_hooks
-    assert set(main_hooks["hooks"]) == {"SessionStart", "UserPromptSubmit"}
+    hook_names = {
+        "SessionStart",
+        "UserPromptSubmit",
+        "Stop",
+        "PreCompact",
+        "PostCompact",
+        "SessionEnd",
+    }
+    assert set(main_hooks["hooks"]) == hook_names
 
-    prompt_handler = main_hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]
-    session_handler = main_hooks["hooks"]["SessionStart"][0]["hooks"][0]
+    handlers = {name: main_hooks["hooks"][name][0]["hooks"][0] for name in hook_names}
+    prompt_handler = handlers["UserPromptSubmit"]
+    session_handler = handlers["SessionStart"]
     assert prompt_handler["timeout"] >= 5
     assert session_handler["timeout"] >= 5
-    assert main_hooks["hooks"]["SessionStart"][0]["matcher"] == "resume|compact"
-    for handler in (prompt_handler, session_handler):
+    assert handlers["SessionEnd"]["timeout"] == 3
+    assert main_hooks["hooks"]["SessionStart"][0]["matcher"] == "startup|resume|compact"
+    for handler in handlers.values():
         assert "Get-FileHash" not in handler["command"]
         assert str(python) in handler["command"]
         assert " -I -B " in handler["command"]
@@ -1941,7 +1952,15 @@ def test_live_zero_beat_hook_is_trusted_for_each_account() -> None:
         config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8-sig"))
         trust = config["hooks"]["state"]
         trust_by_home[home] = {}
-        for event_key in ("session_start", "user_prompt_submit"):
+        event_keys = (
+            "session_start",
+            "user_prompt_submit",
+            "stop",
+            "pre_compact",
+            "post_compact",
+            "session_end",
+        )
+        for event_key in event_keys:
             key = f"{home}\\hooks.json:{event_key}:0:0"
             trusted_hash = trust[key]["trusted_hash"]
             assert trusted_hash.startswith("sha256:")
@@ -2031,12 +2050,23 @@ def test_live_zero_beat_hook_is_trusted_for_each_account() -> None:
             for hook in discovered["hooks"]
             if hook.get("source") == "user" and hook.get("key", "").startswith(owned_prefix)
         ]
-        assert len(owned_hooks) == 2
+        assert len(owned_hooks) == 6
         owned_by_event = {hook["eventName"]: hook for hook in owned_hooks}
-        assert set(owned_by_event) == {"sessionStart", "userPromptSubmit"}
+        assert set(owned_by_event) == {
+            "sessionStart",
+            "userPromptSubmit",
+            "stop",
+            "preCompact",
+            "postCompact",
+            "sessionEnd",
+        }
         for event_name, event_key in (
             ("sessionStart", "session_start"),
             ("userPromptSubmit", "user_prompt_submit"),
+            ("stop", "stop"),
+            ("preCompact", "pre_compact"),
+            ("postCompact", "post_compact"),
+            ("sessionEnd", "session_end"),
         ):
             hook = owned_by_event[event_name]
             assert hook["trustStatus"] == "trusted"
@@ -2067,7 +2097,7 @@ def test_live_zero_beat_hook_is_trusted_for_each_account() -> None:
         "cwd": str(REPO_ROOT),
         "model": "gpt-5.6-sol",
         "permission_mode": "dontAsk",
-        "session_id": "pytest",
+        "session_id": "019ff75c-703c-7972-96cd-b0d257b13baa",
         "transcript_path": None,
         "turn_id": "pytest-prompt",
     }

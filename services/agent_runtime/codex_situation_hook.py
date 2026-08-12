@@ -1,4 +1,4 @@
-"""Thin production context for the shared Account A/B Codex hook.
+"""Thin production context for the paired S/B Codex hook.
 
 The hook has two independent, non-authoritative outputs:
 
@@ -21,6 +21,10 @@ import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from services.agent_runtime.context_fabric import (
+    DEFAULT_CONTEXT_FABRIC_ROOT,
+    render_hook_context,
+)
 from services.agent_runtime.current_situation import (
     CurrentSituationError,
     load_current,
@@ -333,31 +337,84 @@ def _success(event_name: str, context: str) -> dict[str, object]:
     }
 
 
+def _bounded_join(parts: Sequence[str]) -> str:
+    accepted: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        candidate = "\n".join((*accepted, part))
+        if len(candidate) <= _MAX_HOOK_CONTEXT_CHARS:
+            accepted.append(part)
+    return "\n".join(accepted)
+
+
+def _fabric_context(
+    event: Mapping[str, object],
+    *,
+    enabled: bool,
+    root: Path,
+    environ: Mapping[str, str] | None,
+    allowed_homes: Mapping[str, str] | None,
+) -> str:
+    if not enabled:
+        return ""
+    try:
+        _, context = render_hook_context(
+            event,
+            root=root,
+            environ=environ,
+            allowed_homes=allowed_homes,
+        )
+        return context
+    except Exception:
+        # Conversation continuity is useful evidence, never a reason to block a
+        # user turn or suppress the existing human-words-first admission layer.
+        return ""
+
+
 def handle_hook_event(
     event: Mapping[str, object],
     *,
     store_root: Path = DEFAULT_CURRENT_SITUATION_ROOT,
+    context_fabric_enabled: bool = False,
+    context_fabric_root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+    context_fabric_environ: Mapping[str, str] | None = None,
+    context_fabric_allowed_homes: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """Handle supported events; optional checkpoint failure is deliberately fail-open."""
 
     event_name = str(event.get("hook_event_name") or "")
     if event_name == "UserPromptSubmit":
+        fabric = _fabric_context(
+            event,
+            enabled=context_fabric_enabled,
+            root=context_fabric_root,
+            environ=context_fabric_environ,
+            allowed_homes=context_fabric_allowed_homes,
+        )
         try:
             runtime = render_runtime_context(event)
         except Exception:
             runtime = ""
-        context = L0_CONTEXT + (("\n" + runtime) if runtime else "")
+        context = _bounded_join((L0_CONTEXT, fabric, runtime))
         try:
             return _success(event_name, context)
         except SituationHookError:
             return _success(event_name, L0_CONTEXT)
 
-    if event_name == "SessionStart" and event.get("source") in {"resume", "compact"}:
+    if event_name == "SessionStart":
+        fabric = _fabric_context(
+            event,
+            enabled=context_fabric_enabled,
+            root=context_fabric_root,
+            environ=context_fabric_environ,
+            allowed_homes=context_fabric_allowed_homes,
+        )
+        if event.get("source") not in {"resume", "compact"}:
+            return {"continue": True}
         contexts: list[str] = []
-        try:
-            contexts.append(render_runtime_context(event))
-        except Exception:
-            pass
+        if fabric:
+            contexts.append(fabric)
         try:
             contexts.append(
                 render_checkpoint_context(
@@ -367,17 +424,31 @@ def handle_hook_event(
             )
         except (CurrentSituationError, OSError, SituationHookError):
             pass
+        try:
+            contexts.append(render_runtime_context(event))
+        except Exception:
+            pass
         if contexts:
-            combined = "\n".join(contexts)
+            combined = _bounded_join(contexts)
             try:
                 return _success(event_name, combined)
             except SituationHookError:
                 return _success(event_name, contexts[0])
+
+    if event_name in {"Stop", "PreCompact", "PostCompact", "SessionEnd"}:
+        _fabric_context(
+            event,
+            enabled=context_fabric_enabled,
+            root=context_fabric_root,
+            environ=context_fabric_environ,
+            allowed_homes=context_fabric_allowed_homes,
+        )
     return {"continue": True}
 
 
 __all__ = [
     "DEFAULT_CURRENT_SITUATION_ROOT",
+    "DEFAULT_CONTEXT_FABRIC_ROOT",
     "L0_CONTEXT",
     "SituationHookError",
     "compact_checkpoint",

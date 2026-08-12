@@ -26,7 +26,7 @@ def main() -> int:
         event = json.loads(raw)
         if not isinstance(event, dict):
             raise ValueError("hook input must be an object")
-        payload = handle_hook_event(event)
+        payload = handle_hook_event(event, context_fabric_enabled=True)
     except Exception:
         payload = {"continue": True}
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")

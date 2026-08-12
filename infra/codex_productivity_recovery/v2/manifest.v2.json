@@ -13,15 +13,15 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "bff66dfd6b202abf6bdcba4c27d9b6ba55bd1ad9c38e03dacaf15d3195c7cf79",
-  "entry_count": 114,
+  "archive_sha256": "c43c5779f7d2634dcfacf2407c284636b071f84413a1c0c68393dac56cad0cde",
+  "entry_count": 119,
   "entries": [
     {
       "archive_path": "contracts/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
       "role": "two_bodies_paired_credential_slots",
-      "size": 2110,
-      "sha256": "eba19196550371d8ec444a3f649741bfdcf95546b8a4ef66cd3d2adb16aaa7ef"
+      "size": 2663,
+      "sha256": "e761b40d781e36037981ee11d09a1f2dcd3eb995af8823a2e22b7ab4c0478e73"
     },
     {
       "archive_path": "contracts/CODEX_GROK_WORKER_POOL_OPERATOR.md",
@@ -36,6 +36,20 @@
       "role": "shared_runtime_credential_boundary",
       "size": 4191,
       "sha256": "1ca3e13da26c4fbb836817ef6eb897fa1639adb0a3c0fa551b56b4f6b7c1df63"
+    },
+    {
+      "archive_path": "contracts/CODEX_SITUATION_CONTEXT_PRODUCTION.md",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\CODEX_SITUATION_CONTEXT_PRODUCTION.md",
+      "role": "situation_context_contract",
+      "size": 4775,
+      "sha256": "7418d0100d8146ef6ae4ac3790cb9e21ab9363943489c5a8983933543a94ef0d"
+    },
+    {
+      "archive_path": "contracts/S_CONTEXT_FABRIC_CURRENT.md",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\S_CONTEXT_FABRIC_CURRENT.md",
+      "role": "context_fabric_contract",
+      "size": 10321,
+      "sha256": "4665c37d0433c1ef4caee3a18c7cde1a808c3ad6eb3ff60d64597be4c27129a4"
     },
     {
       "archive_path": "human-entries/00_先读我_主线入口与读取顺序.txt",
@@ -111,15 +125,15 @@
       "archive_path": "main-home/config.toml",
       "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
       "role": "main_live_source",
-      "size": 14713,
-      "sha256": "7d1310f1b7f4315c76fd47b1014c22eb5947a6f89d4852c8302f26a19c93e4cc"
+      "size": 16025,
+      "sha256": "372662f2c9c7d8ab0ab114486dc4df52a9518e909461e417e63c29f30f20163b"
     },
     {
       "archive_path": "main-home/hooks.json",
       "live_source": "C:\\Users\\xx363\\.codex\\hooks.json",
       "role": "main_live_source",
-      "size": 885,
-      "sha256": "a6abef2a0fd99171d77310941ecc3360f4caedf9b15d6a86d891e3bb63b5613b"
+      "size": 2304,
+      "sha256": "ca75801b49efca26be8310dbaa8f859db43be50584b9e94fbfe96fa0360186b9"
     },
     {
       "archive_path": "main-home/inner-luna.config.toml",
@@ -619,11 +633,25 @@
       "sha256": "9031dfed687e20d6191ab70abe7aa367013b1f1661886690f6409cbd6d7286ec"
     },
     {
+      "archive_path": "repository/scripts/Protect-SContextFabricState.ps1",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Protect-SContextFabricState.ps1",
+      "role": "context_fabric_acl_installer",
+      "size": 3045,
+      "sha256": "37efc12631c833c475ccaeeb8d88b3f0d6894f4ec25beb5558788b4768afbd76"
+    },
+    {
       "archive_path": "repository/scripts/codex_situation_context_hook.py",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\codex_situation_context_hook.py",
       "role": "situation_hook_adapter",
-      "size": 1225,
-      "sha256": "e8ea5af0ea873dc232ae7d2e3ef8de437767cb5df62299102c973afac0c23824"
+      "size": 1254,
+      "sha256": "5088df9163ce16940015c22fae43a3fbdd0832a92035d6bcda07db87f156c64c"
+    },
+    {
+      "archive_path": "repository/scripts/manage_context_fabric.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\manage_context_fabric.py",
+      "role": "explicit_context_fabric_manager",
+      "size": 4841,
+      "sha256": "5fcdd57fb5089dd56ae2d42944b06d62c2ca345d5946f1ed14e5d93926436b4a"
     },
     {
       "archive_path": "repository/scripts/manage_current_situation.py",
@@ -636,8 +664,15 @@
       "archive_path": "repository/services/agent_runtime/codex_situation_hook.py",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\codex_situation_hook.py",
       "role": "situation_hook_adapter",
-      "size": 14927,
-      "sha256": "278a342940abe3102e02529e40a6f7c58437bc38354b9f736b81ec0443d4a2c3"
+      "size": 16750,
+      "sha256": "4f1c754da4295b0fbcad977c067f44f7616242616841af1d15546859b20a4a88"
+    },
+    {
+      "archive_path": "repository/services/agent_runtime/context_fabric.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\context_fabric.py",
+      "role": "context_fabric_runtime_source",
+      "size": 59490,
+      "sha256": "2f38cb41853812ba2a38d798913a429969f77f3255bc21d07757148b0b8d88f6"
     },
     {
       "archive_path": "repository/services/agent_runtime/current_situation.py",
@@ -833,7 +868,7 @@
   "excluded_on_purpose": [
     "authentication credentials and refresh tokens",
     "live explicit-continuation locator and live task runs",
-    "sessions transcripts and memory data",
+    "sessions transcripts, memory data, and live Context Fabric raw state or snapshots; only its generic source, contracts, and ACL installer are archived",
     "plugin caches and reinstallable bundled or curated plugins",
     "conduct-xinao-native-research and all science-domain authority",
     "retired pretool_task_provenance_guard_v1.ps1",
@@ -855,6 +890,7 @@
       "B shared file and directory links resolve to the canonical main runtime",
       "A/B credential files and active session state remain private",
       "fresh app-server hooks/list trust from each installed account",
+      "Context Fabric ACL audit and cleanroom negative mount remain green",
       "changed-context positive and negative behavior consumer",
       "Grok public launcher verifies the restored 15-file runtime manifest",
       "fresh SelectionOnly succeeds before any real Grok dispatch",
