@@ -308,7 +308,10 @@ def test_cleanup_never_traverses_reparse_points(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.name != "nt", reason="ACL repair is Windows-specific")
-def test_access_denied_tree_is_repaired_and_deleted_when_elevated(tmp_path: Path) -> None:
+def test_access_denied_tree_is_repaired_and_deleted_when_elevated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import safe_cleanup_core
     from safe_cleanup_core import current_process_is_administrator
 
     if not current_process_is_administrator():
@@ -338,11 +341,25 @@ def test_access_denied_tree_is_repaired_and_deleted_when_elevated(tmp_path: Path
     try:
         plan = _plan(service, target)
         assert plan["ready"] is True
+        original_remove = safe_cleanup_core._remove_tree_without_following_reparse
+        remove_attempts = 0
+
+        def deny_first_remove(path: Path) -> None:
+            nonlocal remove_attempts
+            remove_attempts += 1
+            if remove_attempts == 1:
+                raise PermissionError(13, "simulated access denied", str(path))
+            original_remove(path)
+
+        monkeypatch.setattr(
+            safe_cleanup_core, "_remove_tree_without_following_reparse", deny_first_remove
+        )
         result = service.execute_cleanup(
             plan_id=str(plan["plan_id"]), plan_sha256=str(plan["plan_sha256"])
         )
         assert result["ok"] is True, result
         assert result["targets"][0]["acl_repair_attempted"] is True
+        assert remove_attempts == 2
         assert not target.exists()
     finally:
         if target.exists():
