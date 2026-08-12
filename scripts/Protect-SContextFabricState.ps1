@@ -21,6 +21,10 @@ $expectedSids = @(
     [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'),
     [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
 )
+$inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
+$propagation = [System.Security.AccessControl.PropagationFlags]::None
+$allow = [System.Security.AccessControl.AccessControlType]::Allow
+$fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
 
 if ($Apply) {
     $acl = Get-Acl -LiteralPath $resolved
@@ -28,10 +32,6 @@ if ($Apply) {
     foreach ($rule in @($acl.Access)) {
         [void]$acl.RemoveAccessRuleSpecific($rule)
     }
-    $inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
-    $propagation = [System.Security.AccessControl.PropagationFlags]::None
-    $allow = [System.Security.AccessControl.AccessControlType]::Allow
-    $fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
     foreach ($sid in $expectedSids) {
         $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
             $sid,
@@ -46,20 +46,45 @@ if ($Apply) {
 }
 
 $readback = Get-Acl -LiteralPath $resolved
-$allowSids = @(
-    $readback.Access |
-        Where-Object AccessControlType -eq 'Allow' |
-        ForEach-Object {
-            $_.IdentityReference.Translate(
+$allowRules = @(
+    $readback.Access | Where-Object AccessControlType -eq 'Allow'
+)
+$normalizedAllowRules = @(
+    $allowRules | ForEach-Object {
+        [pscustomobject]@{
+            Sid = $_.IdentityReference.Translate(
                 [System.Security.Principal.SecurityIdentifier]
             ).Value
-        } |
-        Sort-Object -Unique
+            Rights = $_.FileSystemRights
+            Inheritance = $_.InheritanceFlags
+            Propagation = $_.PropagationFlags
+        }
+    }
 )
+$allowSids = @($normalizedAllowRules | ForEach-Object Sid | Sort-Object -Unique)
 $expectedValues = @($expectedSids | ForEach-Object Value | Sort-Object -Unique)
 $unexpected = @($allowSids | Where-Object { $_ -notin $expectedValues })
 $missing = @($expectedValues | Where-Object { $_ -notin $allowSids })
-$compliant = $readback.AreAccessRulesProtected -and $unexpected.Count -eq 0 -and $missing.Count -eq 0
+$missingFullControl = @()
+foreach ($expectedSid in $expectedValues) {
+    $matching = @(
+        $normalizedAllowRules | Where-Object {
+            $_.Sid -eq $expectedSid -and
+            ($_.Rights -band $fullControl) -eq $fullControl -and
+            ($_.Inheritance -band $inheritance) -eq $inheritance -and
+            $_.Propagation -eq $propagation
+        }
+    )
+    if ($matching.Count -eq 0) {
+        $missingFullControl += $expectedSid
+    }
+}
+$compliant = (
+    $readback.AreAccessRulesProtected -and
+    $unexpected.Count -eq 0 -and
+    $missing.Count -eq 0 -and
+    $missingFullControl.Count -eq 0
+)
 
 [ordered]@{
     schema_version = 's.context_fabric_acl.v1'
@@ -75,6 +100,7 @@ $compliant = $readback.AreAccessRulesProtected -and $unexpected.Count -eq 0 -and
     )
     unexpected_allow_count = $unexpected.Count
     missing_expected_count = $missing.Count
+    missing_full_control_count = $missingFullControl.Count
     compliant = $compliant
 } | ConvertTo-Json -Depth 5
 
