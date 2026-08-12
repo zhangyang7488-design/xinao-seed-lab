@@ -1970,8 +1970,15 @@ def _validate_recovery_pointer(
         raise PerpetualRuntimeError("RECOVERY_POINTER_RUN_DIR_MISMATCH")
     if resolve_path(config.get("run_dir", "")) != run_dir:
         raise PerpetualRuntimeError("RECOVERY_CONFIG_RUN_DIR_MISMATCH")
+    frozen_slot = validate_recovery_account_slot(config, expected=None)
+    pointer_slot = pointer.get("account_slot")
+    if pointer_slot is not None and validate_account_slot(pointer_slot) != frozen_slot:
+        raise PerpetualRuntimeError("RECOVERY_POINTER_ACCOUNT_SLOT_MISMATCH")
     if state and state.get("run_id") != run_id:
         raise PerpetualRuntimeError("RECOVERY_CONTROLLER_STATE_RUN_ID_MISMATCH")
+    state_slot = state.get("account_slot") if state else None
+    if state_slot is not None and validate_account_slot(state_slot) != frozen_slot:
+        raise PerpetualRuntimeError("RECOVERY_CONTROLLER_STATE_ACCOUNT_SLOT_MISMATCH")
     if (run_dir / "STOP.json").exists():
         raise PerpetualRuntimeError("RECOVERY_REFUSED_AFTER_STOP_REQUEST")
 

@@ -19,6 +19,7 @@ from services.xinao_perpetual_world_compute.controller import (
     WAKE_SCHEMA,
     PerpetualController,
     PerpetualRuntimeError,
+    _validate_recovery_pointer,
     build_branch_initial_prompt,
     build_codex_arguments,
     build_codex_command,
@@ -556,8 +557,9 @@ def test_exclusive_lock_preserves_body_oserror(tmp_path: Path) -> None:
             raise OSError("body failure")
 
 
+@pytest.mark.parametrize("run_schema", [RUN_SCHEMA, LEGACY_RUN_SCHEMA])
 def test_recover_adopts_repaired_release_without_replacing_lineages(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, run_schema: str
 ) -> None:
     runtime_root = tmp_path / "runtime"
     run_dir = runtime_root / "runs" / "run-1"
@@ -571,7 +573,7 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     old_release = run_dir / "controller_release.py"
     old_release.write_text("# old frozen release\n", encoding="utf-8")
     config = {
-        "schema": RUN_SCHEMA,
+        "schema": run_schema,
         "account_slot": "C",
         "run_id": "run-1",
         "run_dir": str(run_dir),
@@ -599,10 +601,11 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     config_path = run_dir / "run_config.json"
     config_path.write_text(json.dumps(config), encoding="utf-8")
     pointer = {
-        "schema": RUN_SCHEMA,
+        "schema": run_schema,
         "run_id": "run-1",
         "run_dir": str(run_dir),
         "controller_pid": 111,
+        "account_slot": "C",
         "started_at": "before",
     }
     runtime_root.mkdir(exist_ok=True)
@@ -633,6 +636,7 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     result = recover_runtime(
         SimpleNamespace(
             runtime_root=runtime_root,
+            expected_account_slot="C",
             reason="repair completed-turn fusion race",
             adopt_current_release=True,
             startup_wait_seconds=1,
@@ -640,6 +644,7 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     )
 
     updated = json.loads(config_path.read_text(encoding="utf-8"))
+    assert updated["schema"] == run_schema
     assert updated["run_id"] == "run-1"
     assert updated["branch_lineages"] == config["branch_lineages"]
     assert updated["root_lineage"] == config["root_lineage"]
@@ -655,6 +660,30 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     assert result["pointer"]["controller_pid"] == 4321
     assert result["quarantined_incomplete_packet"]["reason"] == "PACKET_MANIFEST_MISSING"
     assert not partial_packet.exists()
+
+
+def test_recovery_pointer_and_state_slot_mismatch_fail_closed(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    config = {
+        "schema": RUN_SCHEMA,
+        "account_slot": "C",
+        "run_id": "run-1",
+        "run_dir": str(run_dir),
+    }
+    pointer = {
+        "run_id": "run-1",
+        "run_dir": str(run_dir),
+        "account_slot": "A",
+    }
+    with pytest.raises(PerpetualRuntimeError, match="RECOVERY_POINTER_ACCOUNT_SLOT_MISMATCH"):
+        _validate_recovery_pointer(pointer, None, config, run_dir)
+
+    pointer["account_slot"] = "C"
+    state = {"run_id": "run-1", "account_slot": "A"}
+    with pytest.raises(
+        PerpetualRuntimeError, match="RECOVERY_CONTROLLER_STATE_ACCOUNT_SLOT_MISMATCH"
+    ):
+        _validate_recovery_pointer(pointer, state, config, run_dir)
 
 
 def test_stop_runtime_fails_closed_when_controller_or_child_survives(
