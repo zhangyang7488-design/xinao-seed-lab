@@ -194,13 +194,22 @@ const inventory = (root) => {
         rows.push({ path: relative, type: 'directory' });
         visit(absolute, relative);
       } else if (stat.isFile()) {
-        const body = fs.readFileSync(absolute);
-        rows.push({
-          path: relative,
-          type: 'file',
-          size_bytes: body.length,
-          sha256: sha256(body),
-        });
+        const descriptor = fs.openSync(absolute, 'r');
+        try {
+          const openedStat = fs.fstatSync(descriptor);
+          if (!openedStat.isFile() || openedStat.dev !== stat.dev || openedStat.ino !== stat.ino) {
+            throw new Error(`workspace entry changed during inventory: ${relative}`);
+          }
+          const body = fs.readFileSync(descriptor);
+          rows.push({
+            path: relative,
+            type: 'file',
+            size_bytes: body.length,
+            sha256: sha256(body),
+          });
+        } finally {
+          fs.closeSync(descriptor);
+        }
       } else {
         throw new Error(`workspace special entry: ${relative}`);
       }

@@ -73,7 +73,7 @@ export default function returnToParent(pi: ExtensionAPI): void {
 			const details = message.details as { arm_id?: unknown; arm_sequence?: unknown } | undefined;
 			const currentSignal = ctx.signal;
 			if (!currentSignal) return false;
-			const signalMatches = currentSignal !== undefined && (
+			const signalMatches = (
 				grant?.continuationRunSignal === currentSignal
 				|| (!grant?.continuationRunSignal && grant?.candidateRunSignal === currentSignal)
 			);

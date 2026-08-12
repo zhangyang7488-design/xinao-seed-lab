@@ -222,8 +222,10 @@ def test_ab_ba_pairs_change_only_order_and_case_identity() -> None:
     ):
         left = dict(by_id[left_id])
         right = dict(by_id[right_id])
-        assert left.pop("pair_order") == "AB"
-        assert right.pop("pair_order") == "BA"
+        left_order = left.pop("pair_order")
+        right_order = right.pop("pair_order")
+        assert left_order == "AB"
+        assert right_order == "BA"
         for key in ("case_id", "fixture_case"):
             left.pop(key)
             right.pop(key)
@@ -1040,12 +1042,16 @@ def test_javascript_parses_and_contains_exact_trace_state_oracles() -> None:
         "SEMANTIC_IMPLICATION_CASE_MANIFEST",
         "exactCommandSequence",
         "exactInventory",
+        "fs.openSync(absolute, 'r')",
+        "fs.fstatSync(descriptor)",
+        "fs.readFileSync(descriptor)",
         "lifecycleReadback",
         "threadId",
         "turnId",
         "dynamicToolCall",
     ):
         assert required in text
+    assert "fs.readFileSync(absolute)" not in text
 
 
 def test_suite_contains_no_real_result_or_forbidden_future_scope() -> None:
