@@ -249,6 +249,17 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "effect_owner_to_parallel_epistemic_owner",
         "stale_object_to_current_object",
     }
+    assert {
+        (route["candidate_frame"], route["next_action"])
+        for route in json.loads(scoped_owner["allowed_frame_routes"])
+    } == {
+        ("role_separated_supervision_frame", "supervise_parallel_packages_and_integrate_by_role"),
+        ("corrected_parent_frame", "restore_corrected_object"),
+    }
+    assert {
+        route["selected_control_action"]
+        for route in json.loads(scoped_owner["allowed_control_routes"])
+    } == {"supervise_parallel_and_integrate_by_role", "continue_existing_parent"}
 
     terminal_schema = schema["properties"]["turn_finalization"]
     assert "turn_finalization" in schema["required"]
@@ -761,7 +772,12 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         == "wait_for_condition"
     )
     one_shot = closure_cases["REG_S_CONTROL_TOWER_ONE_SHOT_REJECTS_AUTO_EXPANSION"]
-    assert len(json.loads(one_shot["allowed_frame_routes"])) == 4
+    assert len(json.loads(one_shot["allowed_frame_routes"])) == 5
+    assert {route["frame_relation"] for route in json.loads(one_shot["allowed_frame_routes"])} == {
+        "correction_to_existing_parent",
+        "same_parent_increment",
+        "same_parent_reprioritization",
+    }
     assert {
         route["selected_control_action"] for route in json.loads(one_shot["allowed_control_routes"])
     } == {"wait_for_condition", "supervise_parallel_and_integrate_by_role"}

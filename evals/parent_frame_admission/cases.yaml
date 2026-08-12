@@ -1262,7 +1262,7 @@
     expected_active_object: corrected_existing_object
     expected_candidate_frame: bounded_wait_frame
     expected_next_action: wait_for_exact_external_condition
-    allowed_frame_routes: '[{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"bounded_wait_frame","next_action":"wait_for_exact_external_condition","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"bounded_wait_frame","next_action":"wait_for_exact_external_condition","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"role_separated_supervision_frame","next_action":"supervise_parallel_packages_and_integrate_by_role","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"role_separated_supervision_frame","next_action":"supervise_parallel_packages_and_integrate_by_role","task_switch":false}]'
+    allowed_frame_routes: '[{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"bounded_wait_frame","next_action":"wait_for_exact_external_condition","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"bounded_wait_frame","next_action":"wait_for_exact_external_condition","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"role_separated_supervision_frame","next_action":"supervise_parallel_packages_and_integrate_by_role","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"role_separated_supervision_frame","next_action":"supervise_parallel_packages_and_integrate_by_role","task_switch":false},{"frame_relation":"same_parent_reprioritization","active_object":"existing_parent_object","candidate_frame":"role_separated_supervision_frame","next_action":"supervise_parallel_packages_and_integrate_by_role","task_switch":false}]'
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
     expected_parent_frame_before_trigger: true
@@ -2697,6 +2697,8 @@
     expected_active_object: corrected_existing_object
     expected_candidate_frame: role_separated_supervision_frame
     expected_next_action: supervise_parallel_packages_and_integrate_by_role
+    allowed_frame_routes: '[{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"role_separated_supervision_frame","next_action":"supervise_parallel_packages_and_integrate_by_role","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"corrected_parent_frame","next_action":"restore_corrected_object","task_switch":false}]'
+    allowed_control_routes: '[{"next_action":"supervise_parallel_packages_and_integrate_by_role","decision_family":"role_separated_supervision","selected_control_action":"supervise_parallel_and_integrate_by_role"},{"next_action":"restore_corrected_object","decision_family":"continue_or_finalize","selected_control_action":"continue_existing_parent"}]'
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
     allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
