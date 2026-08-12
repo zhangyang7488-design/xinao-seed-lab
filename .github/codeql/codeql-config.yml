@@ -1,0 +1,7 @@
+name: S CodeQL source scope
+
+paths-ignore:
+  # Byte-pinned TypeScript compiler and declaration fixtures are exercised by
+  # repository tests; they are retained inputs, not owned production sources.
+  - 'infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityCompilerFixture/**'
+  - 'infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/**'

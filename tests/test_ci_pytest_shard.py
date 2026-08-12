@@ -22,6 +22,7 @@ from scripts.pytest_shard import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "codeql.yml"
+CODEQL_CONFIG = REPO_ROOT / ".github" / "codeql" / "codeql-config.yml"
 SHARD_COUNT = 3
 
 
@@ -357,6 +358,14 @@ def test_project_verify_and_codeql_surfaces_remain() -> None:
     codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
     assert "github/codeql-action/analyze@v4.37.4" in codeql
     assert "name: CodeQL" in codeql
+    assert "config-file: ./.github/codeql/codeql-config.yml" in codeql
+
+    config = yaml.safe_load(CODEQL_CONFIG.read_text(encoding="utf-8"))
+    assert set(config) == {"name", "paths-ignore"}
+    assert config["paths-ignore"] == [
+        "infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityCompilerFixture/**",
+        "infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/**",
+    ]
 
 
 def test_local_non_sharded_pytest_invocation_unchanged_in_workflow_contract() -> None:
