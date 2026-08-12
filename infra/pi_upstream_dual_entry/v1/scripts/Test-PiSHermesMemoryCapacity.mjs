@@ -263,6 +263,8 @@ async function startProvider() {
       writeSse(response, "PROMPT_CAPTURED");
     } catch (error) {
       response.writeHead(500, { "content-type": "text/plain" });
+      // This loopback-only mock returns diagnostics only to its regression client.
+      // codeql[js/stack-trace-exposure]
       response.end(error instanceof Error ? error.stack : String(error));
     }
   });

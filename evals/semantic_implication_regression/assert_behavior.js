@@ -194,6 +194,8 @@ const inventory = (root) => {
         rows.push({ path: relative, type: 'directory' });
         visit(absolute, relative);
       } else if (stat.isFile()) {
+        // The descriptor is identity-checked against the lstat result before any data is read.
+        // codeql[js/file-system-race]
         const descriptor = fs.openSync(absolute, 'r');
         try {
           const openedStat = fs.fstatSync(descriptor);
