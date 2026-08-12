@@ -1,16 +1,28 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "Protect-SContextFabricState.ps1"
-PWSH = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
+PINNED_LOCAL_PWSH = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
+
+
+def powershell_executable() -> str:
+    on_path = shutil.which("pwsh")
+    if on_path:
+        return on_path
+    if PINNED_LOCAL_PWSH.is_file():
+        return str(PINNED_LOCAL_PWSH)
+    pytest.skip("PowerShell 7 is unavailable on this test host")
 
 
 def test_acl_script_refuses_every_non_production_target(tmp_path: Path) -> None:
     command = [
-        str(PWSH),
+        powershell_executable(),
         "-NoProfile",
         "-NonInteractive",
         "-File",

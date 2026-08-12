@@ -599,6 +599,7 @@ def test_exclusive_lock_preserves_body_oserror(tmp_path: Path) -> None:
             raise OSError("body failure")
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="recover_runtime is a Windows-only effect")
 @pytest.mark.parametrize("run_schema", [RUN_SCHEMA, LEGACY_RUN_SCHEMA])
 def test_recover_adopts_repaired_release_without_replacing_lineages(
     tmp_path: Path, monkeypatch, run_schema: str
