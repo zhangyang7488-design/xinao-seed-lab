@@ -911,7 +911,7 @@
       checked it against the live consumer, or adopted it. The parent task still
       has an admitted verification step and there is no Pause or Stop.
     user_increment: 工人已经返回结果了。
-    expected_frame_relation: same_parent_increment
+    expected_frame_relation: material_evidence_increment
     expected_active_object: existing_parent_object
     expected_candidate_frame: worker_candidate_frame
     expected_next_action: verify_worker_candidate_then_continue
@@ -1164,9 +1164,9 @@
     user_increment: '把这个包继续完整做完；正常的技术协作不要再退给我逐项批准。'
     expected_frame_relation: same_parent_increment
     expected_active_object: existing_parent_object
-    expected_candidate_frame: role_separated_supervision_frame
+    expected_candidate_frame: dynamic_positive_value_width_frame
     expected_next_action: dispatch_ordinary_grok_candidates_and_integrate
-    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"role_separated_supervision_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"mature_delivery_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"corrected_parent_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"role_separated_supervision_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false}]'
+    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"dynamic_positive_value_width_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"role_separated_supervision_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"mature_delivery_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"corrected_parent_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"role_separated_supervision_frame","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false}]'
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
     expected_parent_frame_before_trigger: true
@@ -1375,7 +1375,7 @@
     expected_implicit_stop_rejected: true
     expected_next_parent_item_admitted: true
     expected_legal_terminal_predicate: none
-    expected_decision_family: role_separated_supervision
+    expected_decision_family: role_separated_engineering_labor
     expected_selected_control_action: execute_serial_now
     expected_symmetric_alternatives_considered: '["execute_serial_now","force_parallel_dispatch"]'
     expected_residual_defeater: none
@@ -1445,17 +1445,18 @@
     user_increment: '这些普通可分离仓库工包继续推进。'
     expected_frame_relation: same_parent_increment
     expected_active_object: existing_parent_object
-    expected_candidate_frame: role_separated_supervision_frame
-    expected_next_action: supervise_parallel_packages_and_integrate_by_role
+    expected_candidate_frame: dynamic_positive_value_width_frame
+    expected_next_action: dispatch_ordinary_grok_candidates_and_integrate
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
     expected_parent_frame_before_trigger: true
     expected_user_must_restate_parent: false
     expected_root_status: existing_parent_preserved
     expected_active_level: current_frame
-    expected_surface_role: ordinary_separable_repo_work
+    expected_surface_role: s_engineering_with_ordinary_grok_candidates
     expected_blocked_promotion: ordinary_separable_work_to_native_exception
-    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+    expected_semantic_effect_profile: true
     expected_parent_status: active
     expected_turn_disposition: continue_existing_parent
     expected_user_input_required: false
@@ -1465,9 +1466,10 @@
     expected_implicit_stop_rejected: true
     expected_next_parent_item_admitted: true
     expected_legal_terminal_predicate: none
-    expected_decision_family: role_separated_supervision
-    expected_selected_control_action: supervise_parallel_and_integrate_by_role
-    expected_symmetric_alternatives_considered: '["supervise_parallel_and_integrate_by_role","admit_task_scoped_native_subagent"]'
+    allowed_turn_finalizations: '[{"parent_status":"active","turn_disposition":"continue_existing_parent","user_input_required":false,"hand_back_to_user":false,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":true,"next_parent_item_admitted":true,"legal_terminal_predicate":"none"},{"parent_status":"active","turn_disposition":"continue_existing_parent","user_input_required":false,"hand_back_to_user":false,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":false,"next_parent_item_admitted":true,"legal_terminal_predicate":"none"}]'
+    expected_decision_family: role_separated_engineering_labor
+    expected_selected_control_action: dispatch_ordinary_grok_and_integrate
+    expected_symmetric_alternatives_considered: '["dispatch_ordinary_grok_and_integrate","direct_serial_only","admit_task_scoped_native_subagent","ask_user_once"]'
     expected_residual_defeater: none
 
 - description: Abundant quota or fixed worker count is not a KPI and must not force max fan-out

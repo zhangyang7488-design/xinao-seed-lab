@@ -674,6 +674,10 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         ]
         == "role_scoped_verify_candidate"
     )
+    assert (
+        closure_cases["REG_WORKER_RETURN_REQUIRES_ROLE_SCOPED_ADOPTION"]["expected_frame_relation"]
+        == "material_evidence_increment"
+    )
     role_separated_cases = {
         "REG_S_CONTROL_TOWER_PRESERVES_WORLD_OWNING_BRANCHES",
         "REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER",
@@ -713,6 +717,12 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "expected_next_action"
         ]
         == "dispatch_ordinary_grok_candidates_and_integrate"
+    )
+    assert (
+        closure_cases["REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER"][
+            "expected_candidate_frame"
+        ]
+        == "dynamic_positive_value_width_frame"
     )
     assert (
         closure_cases["REG_S_ENGINEERING_WORKER_ROUTE_NEEDS_NO_APPROVAL_THEATER"][
@@ -781,6 +791,12 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         == "tight_coupling_to_forced_parallel"
     )
     assert (
+        closure_cases["REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL"][
+            "expected_decision_family"
+        ]
+        == "role_separated_engineering_labor"
+    )
+    assert (
         closure_cases["REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT"][
             "expected_selected_control_action"
         ]
@@ -793,7 +809,37 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
             "expected_selected_control_action"
         ]
-        == "supervise_parallel_and_integrate_by_role"
+        == "dispatch_ordinary_grok_and_integrate"
+    )
+    assert (
+        closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
+            "expected_next_action"
+        ]
+        == "dispatch_ordinary_grok_candidates_and_integrate"
+    )
+    assert (
+        closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
+            "expected_candidate_frame"
+        ]
+        == "dynamic_positive_value_width_frame"
+    )
+    assert (
+        closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
+            "expected_surface_role"
+        ]
+        == "s_engineering_with_ordinary_grok_candidates"
+    )
+    assert (
+        closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
+            "expected_decision_family"
+        ]
+        == "role_separated_engineering_labor"
+    )
+    assert (
+        closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
+            "expected_semantic_effect_profile"
+        ]
+        is True
     )
     assert (
         closure_cases["REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"][
