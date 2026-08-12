@@ -34,6 +34,12 @@ def _sha256(path: Path) -> str:
 
 
 def test_pi_contract_island_manifests_keep_one_home_and_cold_history() -> None:
+    manifests = (
+        FAMILY_ISLAND / "island.manifest.json",
+        PRIME_S_ISLAND / "island.manifest.json",
+    )
+    if not all(path.is_file() for path in manifests):
+        pytest.skip("local Pi contract-island consumers are not installed")
     family = json.loads(_text(FAMILY_ISLAND / "island.manifest.json"))
     surface = json.loads(_text(PRIME_S_ISLAND / "island.manifest.json"))
 
@@ -135,6 +141,17 @@ def test_pi_windows_powershell_51_scripts_avoid_newer_dotnet_hash_apis() -> None
     scripts = "\n".join(_text(path) for path in sorted((SOURCE_ROOT / "scripts").glob("*.ps1")))
     assert "[Security.Cryptography.SHA256]::HashData" not in scripts
     assert "[Convert]::ToHexString" not in scripts
+
+
+def test_pi_windows_powershell_51_non_ascii_scripts_have_utf8_bom() -> None:
+    failures = []
+    for script in sorted((SOURCE_ROOT / "scripts").glob("*.ps1")):
+        content = script.read_bytes()
+        if any(byte >= 0x80 for byte in content) and not content.startswith(b"\xef\xbb\xbf"):
+            failures.append(script.name)
+    assert not failures, "Windows PowerShell 5.1 requires a BOM for non-ASCII UTF-8: " + ", ".join(
+        failures
+    )
 
 
 @pytest.mark.skipif(

@@ -7,6 +7,8 @@ import sys
 import zipfile
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RECOVERY_ROOT = REPO_ROOT / "infra" / "codex_productivity_recovery"
 LEGACY_ROOT = RECOVERY_ROOT / "v1"
@@ -43,20 +45,13 @@ def test_legacy_v1_recovery_media_remains_byte_frozen() -> None:
     assert _sha256(LEGACY_ARCHIVE) == LEGACY_ARCHIVE_SHA256
 
 
-def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
-    tmp_path: Path,
-) -> None:
-    installed_manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    assert installed_manifest["archive_sha256"] == _sha256(ARCHIVE)
+def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path) -> None:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert manifest["archive_sha256"] == _sha256(ARCHIVE)
     installed_verified = _run_builder("verify-archive")
     assert installed_verified.returncode == 0, installed_verified.stderr
-
-    candidate_root = tmp_path / "candidate-v2"
-    built = _run_builder("build", "--output-root", str(candidate_root))
-    assert built.returncode == 0, built.stderr
-    candidate_manifest_path = candidate_root / "manifest.v2.json"
-    candidate_archive = candidate_root / "codex-productivity-recovery.non-pi.v2.zip"
-    manifest = json.loads(candidate_manifest_path.read_text(encoding="utf-8"))
+    package_root = RECOVERY_ROOT_V2
+    package_archive = ARCHIVE
     assert manifest["schema_version"] == "xinao.codex_productivity_recovery.v2"
     assert manifest["sentinel"] == "SENTINEL:CODEX_NON_PI_PRODUCTIVITY_RECOVERY_COLD_V2"
     assert manifest["authority"] is False
@@ -68,7 +63,7 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         "excluded_product_skill_trees": [EXCLUDED_PRODUCT_SKILL],
         "excluded_trees_are_not_read_verified_or_restored": True,
     }
-    assert manifest["archive_sha256"] == _sha256(candidate_archive)
+    assert manifest["archive_sha256"] == _sha256(package_archive)
     assert manifest["entry_count"] == len(manifest["entries"])
     assert manifest["source_and_projection"] == {
         "main_home_is_canonical_shared_runtime_source": True,
@@ -174,19 +169,19 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
     ):
         assert forbidden not in serialized_names
 
-    verified = _run_builder("verify-archive", "--output-root", str(candidate_root))
+    verified = _run_builder("verify-archive", "--output-root", str(package_root))
     assert verified.returncode == 0, verified.stderr
 
     restore_root = tmp_path / "restored"
     restored = _run_builder(
         "restore-to",
         "--output-root",
-        str(candidate_root),
+        str(package_root),
         "--target",
         str(restore_root),
     )
     assert restored.returncode == 0, restored.stderr
-    with zipfile.ZipFile(candidate_archive) as archive:
+    with zipfile.ZipFile(package_archive) as archive:
         assert set(archive.namelist()) == names
         agents_text = archive.read("main-home/AGENTS.md").decode("utf-8")
         assert "SENTINEL:LOCAL_DOCKER_EXCEPTION_ONLY_V1" in agents_text
@@ -215,16 +210,40 @@ def test_non_pi_v2_recovery_archive_is_scoped_self_contained_and_reproducible(
         assert restored_path.is_file()
         assert _sha256(restored_path) == entry["sha256"]
 
+
+def test_non_pi_v2_recovery_archive_rebuild_is_reproducible_when_live_sources_are_installed(
+    tmp_path: Path,
+) -> None:
+    installed_manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    live_sources = [Path(str(entry["live_source"])) for entry in installed_manifest["entries"]]
+    if not all(path.is_file() for path in live_sources):
+        pytest.skip("live non-Pi recovery sources are not installed on this consumer")
+
+    candidate_root = tmp_path / "candidate-v2"
+    built = _run_builder("build", "--output-root", str(candidate_root))
+    assert built.returncode == 0, built.stderr
+    verified = _run_builder("verify-archive", "--output-root", str(candidate_root))
+    assert verified.returncode == 0, verified.stderr
+    candidate_manifest = json.loads(
+        (candidate_root / "manifest.v2.json").read_text(encoding="utf-8")
+    )
+
     rebuilt_root = tmp_path / "rebuilt-v2"
     rebuilt = _run_builder("build", "--output-root", str(rebuilt_root))
     assert rebuilt.returncode == 0, rebuilt.stderr
     rebuilt_manifest = json.loads((rebuilt_root / "manifest.v2.json").read_text(encoding="utf-8"))
-    assert rebuilt_manifest["archive_sha256"] == manifest["archive_sha256"]
+    assert candidate_manifest["archive_sha256"] == installed_manifest["archive_sha256"]
+    assert rebuilt_manifest["archive_sha256"] == candidate_manifest["archive_sha256"]
 
     def portable_entries(rows: list[dict[str, object]]) -> list[dict[str, object]]:
         return [{key: value for key, value in row.items() if key != "live_source"} for row in rows]
 
-    assert portable_entries(rebuilt_manifest["entries"]) == portable_entries(manifest["entries"])
+    assert portable_entries(candidate_manifest["entries"]) == portable_entries(
+        installed_manifest["entries"]
+    )
+    assert portable_entries(rebuilt_manifest["entries"]) == portable_entries(
+        candidate_manifest["entries"]
+    )
 
 
 def test_builder_refuses_to_refresh_legacy_v1_media() -> None:

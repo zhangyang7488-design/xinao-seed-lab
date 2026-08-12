@@ -819,10 +819,12 @@ def test_formal_suite_runner_is_dedicated_cold_and_causal_body_bound() -> None:
         "--required-case-count', '14'",
         "fresh_workspace_count",
         "causal_file_stability_verified = $true",
+        "$SourceContractPath",
     ):
         assert required in runner
     assert "run_behavior_regression.ps1" not in runner
     assert "git -C $workspace init" not in runner
+    assert "Join-Path $nativeRepo" not in runner
 
 
 def test_runner_isolates_live_home_and_rejects_eval_config_drift_before_summary(
@@ -866,6 +868,79 @@ console.log('fake promptfoo completed');
         + "\n",
         encoding="utf-8",
     )
+    native_repo = tmp_path / "native-source"
+    native_repo.mkdir()
+
+    def git_output(*arguments: str) -> str:
+        completed = subprocess.run(
+            ["git", "-C", str(native_repo), *arguments],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        return completed.stdout.strip()
+
+    git_output("init", "--quiet")
+    git_output("config", "user.name", "Semantic Regression Fixture")
+    git_output("config", "user.email", "semantic-regression@example.invalid")
+    git_output("config", "commit.gpgsign", "false")
+    git_output("config", "core.autocrlf", "false")
+    corpus_seal = "a" * 64
+    case_seal = "b" * 64
+    corpus_relative = Path("semantic_accidents") / "cases.v1.json"
+    corpus_path = native_repo / corpus_relative
+    corpus_path.parent.mkdir()
+    corpus_bytes = (
+        json.dumps(
+            {
+                "schema_version": "xinao.semantic-accident-corpus.v1",
+                "corpus_id": "semantic-regression-fixture",
+                "load_policy": "explicit_cold_read_only",
+                "seal": {"sha256": corpus_seal},
+                "cases": [{"case_id": "fixture-case", "seal": {"sha256": case_seal}}],
+            },
+            indent=2,
+        )
+        + "\n"
+    ).encode()
+    corpus_path.write_bytes(corpus_bytes)
+    git_output("add", "--", corpus_relative.as_posix())
+    git_output("commit", "--quiet", "-m", "semantic regression fixture")
+    repository_commit = git_output("rev-parse", "HEAD")
+    source_contract = tmp_path / "source-contract.v1.json"
+    source_contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.semantic_implication_source_contract.v1",
+                "authority": False,
+                "runtime_loaded": False,
+                "canonical_source": {
+                    "repository": str(native_repo),
+                    "relative_path": corpus_relative.as_posix(),
+                    "git_object_format": git_output("rev-parse", "--show-object-format"),
+                    "repository_commit": repository_commit,
+                    "repository_tree": git_output("rev-parse", f"{repository_commit}^{{tree}}"),
+                    "file_blob": git_output(
+                        "rev-parse", f"{repository_commit}:{corpus_relative.as_posix()}"
+                    ),
+                    "schema_version": "xinao.semantic-accident-corpus.v1",
+                    "corpus_id": "semantic-regression-fixture",
+                    "load_policy": "explicit_cold_read_only",
+                    "file_sha256": hashlib.sha256(corpus_bytes).hexdigest(),
+                    "corpus_seal_sha256": corpus_seal,
+                    "selected_case_ids": ["fixture-case"],
+                    "selected_case_seals": {"fixture-case": case_seal},
+                },
+                "automatic_core_inclusion": False,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir()
     (codex_home / "config.toml").write_text(
@@ -880,6 +955,12 @@ console.log('fake promptfoo completed');
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     (fake_bin / "uv.cmd").write_text("@exit /b 0\n", encoding="ascii")
+    (fake_bin / "codex.cmd").write_text("@exit /b 0\n", encoding="ascii")
+    fake_codex_package = fake_bin / "node_modules" / "@openai" / "codex"
+    fake_codex_package.mkdir(parents=True)
+    node_executable = shutil.which("node")
+    assert node_executable is not None
+    shutil.copy2(node_executable, fake_codex_package / "codex.exe")
     environment = os.environ.copy()
     environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
     runner = REPO_ROOT / "scripts" / "run_semantic_implication_regression_eval.ps1"
@@ -891,6 +972,8 @@ console.log('fake promptfoo completed');
             "Bypass",
             "-File",
             str(runner),
+            "-SourceContractPath",
+            str(source_contract),
             "-RuntimeRoot",
             str(runtime_root),
             "-CodexHome",

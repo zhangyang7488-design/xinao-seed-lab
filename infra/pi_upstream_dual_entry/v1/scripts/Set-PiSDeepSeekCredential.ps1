@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [string]$SourcePath = 'C:\Users\xx363\私钥\DeepSeek-api-key-active.txt',

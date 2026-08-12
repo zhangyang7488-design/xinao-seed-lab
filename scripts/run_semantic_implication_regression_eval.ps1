@@ -4,6 +4,7 @@ param(
     [ValidateRange(1, 4)]
     [int]$MaxConcurrency = 1,
     [switch]$PreflightOnly,
+    [string]$SourceContractPath,
     [string]$RuntimeRoot = $(if ($env:XINAO_RUNTIME_ROOT) { $env:XINAO_RUNTIME_ROOT } else { 'D:\XINAO_RESEARCH_RUNTIME' }),
     [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' })
 )
@@ -12,7 +13,12 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $suiteRelative = 'evals\semantic_implication_regression'
 $suiteRoot = Join-Path $repoRoot $suiteRelative
-$contractPath = Join-Path $suiteRoot 'source_contract.v1.json'
+if ($SourceContractPath) {
+    $contractPath = [IO.Path]::GetFullPath($SourceContractPath)
+}
+else {
+    $contractPath = Join-Path $suiteRoot 'source_contract.v1.json'
+}
 $configPath = Join-Path $suiteRoot 'promptfooconfig.yaml'
 $casesPath = Join-Path $suiteRoot 'cases.yaml'
 $builderPath = Join-Path $suiteRoot 'prepare_case_workspace.py'
@@ -140,6 +146,7 @@ foreach ($required in @($contractPath, $configPath, $casesPath, $builderPath, $t
 $bodyWitnessStatesBefore = @(
     Get-CausalFileState -Role 'runner' -Path $runnerPath
     Get-CausalFileState -Role 'static_test' -Path $testPath
+    Get-CausalFileState -Role 'source_contract' -Path $contractPath
 )
 
 $contract = Get-Content -LiteralPath $contractPath -Raw | ConvertFrom-Json -Depth 30
@@ -151,7 +158,9 @@ if ($contract.runtime_loaded -ne $false -or $contract.automatic_core_inclusion -
 }
 $nativeRepo = [string]$contract.canonical_source.repository
 $nativeRelativeGit = ([string]$contract.canonical_source.relative_path).Replace('\', '/')
-$canonicalSource = Join-Path $nativeRepo $nativeRelativeGit.Replace('/', '\')
+$canonicalSource = [IO.Path]::GetFullPath(
+    [IO.Path]::Combine($nativeRepo, $nativeRelativeGit.Replace('/', [IO.Path]::DirectorySeparatorChar))
+)
 if (-not (Test-Path -LiteralPath $canonicalSource -PathType Leaf)) {
     throw "Canonical cold semantic-accident corpus is missing: $canonicalSource"
 }
