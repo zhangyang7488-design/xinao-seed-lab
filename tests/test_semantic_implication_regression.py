@@ -1042,7 +1042,6 @@ def test_javascript_parses_and_contains_exact_trace_state_oracles() -> None:
         "SEMANTIC_IMPLICATION_CASE_MANIFEST",
         "exactCommandSequence",
         "exactInventory",
-        "codeql[js/file-system-race]",
         "fs.openSync(absolute, 'r')",
         "fs.fstatSync(descriptor)",
         "fs.readFileSync(descriptor)",

@@ -273,7 +273,6 @@ async function startStubServer(fixture) {
 			} catch (error) {
 				res.writeHead(500, { "content-type": "application/json" });
 				// This loopback-only test provider returns diagnostics only to its test client.
-				// codeql[js/stack-trace-exposure]
 				res.end(JSON.stringify({ error: { message: error instanceof Error ? error.message : String(error) } }));
 			}
 		});

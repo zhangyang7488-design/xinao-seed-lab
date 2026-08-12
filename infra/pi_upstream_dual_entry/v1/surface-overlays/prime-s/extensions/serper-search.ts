@@ -131,7 +131,6 @@ export default function serperSearch(pi: ExtensionAPI): void {
 				const response = await fetch(ENDPOINT, {
 					method: "POST",
 					// The fixed Serper API is this credential's intended consumer.
-					// codeql[js/file-access-to-http]
 					headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
 					body: JSON.stringify(body),
 					signal: controller.signal,
