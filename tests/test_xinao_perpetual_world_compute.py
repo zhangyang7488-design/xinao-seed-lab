@@ -247,11 +247,13 @@ def test_runtime_root_falls_back_to_one_legacy_pointer_without_making_it_the_pro
 ) -> None:
     generic_root = tmp_path / "perpetual_world_compute"
     legacy_root = tmp_path / "perpetual_c"
+    dedicated_a_root = tmp_path / "perpetual_a"
     assert select_runtime_root(
         None,
         require_current=False,
         default_root=generic_root,
         legacy_root=legacy_root,
+        dedicated_a_root=dedicated_a_root,
     ) == generic_root
     legacy_root.mkdir()
     (legacy_root / "current.json").write_text("{}", encoding="utf-8")
@@ -260,6 +262,7 @@ def test_runtime_root_falls_back_to_one_legacy_pointer_without_making_it_the_pro
         require_current=True,
         default_root=generic_root,
         legacy_root=legacy_root,
+        dedicated_a_root=dedicated_a_root,
     ) == legacy_root
     generic_root.mkdir()
     (generic_root / "current.json").write_text("{}", encoding="utf-8")
@@ -269,6 +272,36 @@ def test_runtime_root_falls_back_to_one_legacy_pointer_without_making_it_the_pro
             require_current=True,
             default_root=generic_root,
             legacy_root=legacy_root,
+            dedicated_a_root=dedicated_a_root,
+        )
+
+
+def test_runtime_root_discovers_dedicated_a_and_fails_closed_with_live_c(
+    tmp_path: Path,
+) -> None:
+    generic_root = tmp_path / "perpetual_world_compute"
+    legacy_c_root = tmp_path / "perpetual_c"
+    dedicated_a_root = tmp_path / "perpetual_a"
+    dedicated_a_root.mkdir()
+    (dedicated_a_root / "current.json").write_text("{}", encoding="utf-8")
+
+    assert select_runtime_root(
+        None,
+        require_current=True,
+        default_root=generic_root,
+        legacy_root=legacy_c_root,
+        dedicated_a_root=dedicated_a_root,
+    ) == dedicated_a_root
+
+    legacy_c_root.mkdir()
+    (legacy_c_root / "current.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(PerpetualRuntimeError, match="MULTIPLE_CURRENT_RUNTIME_POINTERS"):
+        select_runtime_root(
+            None,
+            require_current=True,
+            default_root=generic_root,
+            legacy_root=legacy_c_root,
+            dedicated_a_root=dedicated_a_root,
         )
 
 

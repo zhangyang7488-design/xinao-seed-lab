@@ -63,6 +63,7 @@ DEFAULT_RUNTIME_ROOT = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute"
 )
 LEGACY_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c")
+DEDICATED_A_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a")
 DEFAULT_CLONE_ROOT = Path(r"E:\CODEX_CLEANROOM\research-lineages")
 DEFAULT_MODEL = "gpt-5.6-sol"
 DEFAULT_REASONING_EFFORT = "max"
@@ -1513,16 +1514,17 @@ def select_runtime_root(
     require_current: bool,
     default_root: Path = DEFAULT_RUNTIME_ROOT,
     legacy_root: Path = LEGACY_RUNTIME_ROOT,
+    dedicated_a_root: Path = DEDICATED_A_RUNTIME_ROOT,
 ) -> Path:
     if supplied is not None:
         return resolve_path(supplied)
     if not require_current:
         return resolve_path(default_root)
-    candidates = [
-        resolve_path(root)
-        for root in (default_root, legacy_root)
-        if current_pointer(root).is_file()
-    ]
+    candidates: list[Path] = []
+    for root in (default_root, legacy_root, dedicated_a_root):
+        resolved = resolve_path(root)
+        if resolved not in candidates and current_pointer(resolved).is_file():
+            candidates.append(resolved)
     if len(candidates) > 1:
         raise PerpetualRuntimeError(
             "MULTIPLE_CURRENT_RUNTIME_POINTERS_REQUIRE_EXPLICIT_ROOT: "
@@ -1789,7 +1791,11 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         [runtime_root]
         if args.runtime_root is not None
         else sorted(
-            {resolve_path(DEFAULT_RUNTIME_ROOT), resolve_path(LEGACY_RUNTIME_ROOT)},
+            {
+                resolve_path(DEFAULT_RUNTIME_ROOT),
+                resolve_path(LEGACY_RUNTIME_ROOT),
+                resolve_path(DEDICATED_A_RUNTIME_ROOT),
+            },
             key=str,
         )
     )
