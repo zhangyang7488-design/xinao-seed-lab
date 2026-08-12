@@ -23,6 +23,8 @@ CONTROLLER_SCHEMA = "xinao.cleanroom.perpetual-world-compute-controller-state.v2
 LINEAGE_SCHEMA = "xinao.cleanroom.perpetual-world-compute-lineage-state.v2"
 TURN_SCHEMA = "xinao.cleanroom.perpetual-world-compute-turn-receipt.v2"
 PACKET_SCHEMA = "xinao.cleanroom.perpetual-world-compute-late-fusion-packet.v2"
+STOP_SCHEMA = "xinao.cleanroom.perpetual-world-compute-stop-request.v2"
+WAKE_SCHEMA = "xinao.cleanroom.perpetual-world-compute-wake-request.v2"
 RECOVERY_SCHEMA = "xinao.cleanroom.world-compute-controller-recovery.v1"
 
 LEGACY_RUN_SCHEMA = "xinao.cleanroom-c.perpetual-run.v1"
@@ -30,6 +32,8 @@ LEGACY_CONTROLLER_SCHEMA = "xinao.cleanroom-c.perpetual-controller-state.v1"
 LEGACY_LINEAGE_SCHEMA = "xinao.cleanroom-c.perpetual-lineage-state.v1"
 LEGACY_TURN_SCHEMA = "xinao.cleanroom-c.perpetual-turn-receipt.v1"
 LEGACY_PACKET_SCHEMA = "xinao.cleanroom-c.late-fusion-packet.v1"
+LEGACY_STOP_SCHEMA = "xinao.cleanroom-c.stop-request.v1"
+LEGACY_WAKE_SCHEMA = "xinao.cleanroom-c.wake-request.v1"
 
 _SCHEMA_FAMILIES = {
     RUN_SCHEMA: {
@@ -38,6 +42,8 @@ _SCHEMA_FAMILIES = {
         "lineage": LINEAGE_SCHEMA,
         "turn": TURN_SCHEMA,
         "packet": PACKET_SCHEMA,
+        "stop": STOP_SCHEMA,
+        "wake": WAKE_SCHEMA,
     },
     LEGACY_RUN_SCHEMA: {
         "run": LEGACY_RUN_SCHEMA,
@@ -45,6 +51,8 @@ _SCHEMA_FAMILIES = {
         "lineage": LEGACY_LINEAGE_SCHEMA,
         "turn": LEGACY_TURN_SCHEMA,
         "packet": LEGACY_PACKET_SCHEMA,
+        "stop": LEGACY_STOP_SCHEMA,
+        "wake": LEGACY_WAKE_SCHEMA,
     },
 }
 
@@ -2210,15 +2218,19 @@ def stop_runtime(args: argparse.Namespace) -> dict[str, Any]:
     runtime_root = select_runtime_root(args.runtime_root, require_current=True)
     pointer, state = load_current(runtime_root)
     run_dir = resolve_path(pointer["run_dir"])
+    config = read_json_object(run_dir / "run_config.json")
+    schemas = schema_family(config.get("schema"))
+    account_slot = validate_recovery_account_slot(config, expected=None)
     stop_path = run_dir / "STOP.json"
     if not stop_path.exists():
         atomic_write_json(
             stop_path,
             {
-                "schema": "xinao.cleanroom-c.stop-request.v1",
+                "schema": schemas["stop"],
                 "requested_at": now_iso(),
                 "reason": str(args.reason),
                 "scope": "current perpetual world-compute run",
+                "account_slot": account_slot,
             },
         )
     pid = state.get("pid") if state else pointer.get("controller_pid")
@@ -2256,6 +2268,8 @@ def wake_runtime(args: argparse.Namespace) -> dict[str, Any]:
     pointer, _ = load_current(runtime_root)
     run_dir = resolve_path(pointer["run_dir"])
     config = read_json_object(run_dir / "run_config.json")
+    schemas = schema_family(config.get("schema"))
+    account_slot = validate_recovery_account_slot(config, expected=None)
     valid_ids = {
         str(spec["lineage_id"]) for spec in [*config["branch_lineages"], config["root_lineage"]]
     }
@@ -2269,10 +2283,11 @@ def wake_runtime(args: argparse.Namespace) -> dict[str, Any]:
         if path.exists():
             raise PerpetualRuntimeError(f"WAKE_ALREADY_PENDING: {lineage_id}")
         payload = {
-            "schema": "xinao.cleanroom-c.wake-request.v1",
+            "schema": schemas["wake"],
             "requested_at": now_iso(),
             "lineage_id": lineage_id,
             "reason": args.reason,
+            "account_slot": account_slot,
         }
         atomic_write_json(path, payload)
         receipts.append({"lineage_id": lineage_id, "path": str(path)})

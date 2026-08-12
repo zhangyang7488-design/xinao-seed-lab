@@ -11,10 +11,12 @@ import pytest
 from services.xinao_perpetual_world_compute.controller import (
     LEGACY_PACKET_SCHEMA,
     LEGACY_RUN_SCHEMA,
+    LEGACY_STOP_SCHEMA,
     PACKET_SCHEMA,
     PARKED_LIFECYCLE_STATES,
     RUN_SCHEMA,
     TURN_SCHEMA,
+    WAKE_SCHEMA,
     PerpetualController,
     PerpetualRuntimeError,
     build_branch_initial_prompt,
@@ -36,6 +38,7 @@ from services.xinao_perpetual_world_compute.controller import (
     validate_account_slot,
     validate_lineage_runtime_repo,
     validate_recovery_account_slot,
+    wake_runtime,
 )
 
 
@@ -675,6 +678,21 @@ def test_stop_runtime_fails_closed_when_controller_or_child_survives(
         ),
         encoding="utf-8",
     )
+    (run_dir / "run_config.json").write_text(
+        json.dumps(
+            {
+                "schema": LEGACY_RUN_SCHEMA,
+                "account_slot": "C",
+                "run_id": "run-1",
+                "run_dir": str(run_dir),
+                "branch_lineages": [
+                    {"lineage_id": "world-01", "role": "independent_world"}
+                ],
+                "root_lineage": {"lineage_id": "root-main", "role": "late_fusion_root"},
+            }
+        ),
+        encoding="utf-8",
+    )
     controller_module = __import__(
         "services.xinao_perpetual_world_compute.controller", fromlist=["is_process_alive"]
     )
@@ -683,6 +701,45 @@ def test_stop_runtime_fails_closed_when_controller_or_child_survives(
     with pytest.raises(PerpetualRuntimeError, match="STOP_INCOMPLETE_ACTIVE_PROCESSES"):
         stop_runtime(args)
     assert (run_dir / "STOP.json").is_file()
+    stop_payload = json.loads((run_dir / "STOP.json").read_text(encoding="utf-8"))
+    assert stop_payload["schema"] == LEGACY_STOP_SCHEMA
+    assert stop_payload["account_slot"] == "C"
+    assert stop_payload["scope"] == "current perpetual world-compute run"
+
+
+def test_generic_a_wake_receipt_uses_account_neutral_schema(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    run_dir = runtime_root / "runs" / "run-a"
+    run_dir.mkdir(parents=True)
+    (runtime_root / "current.json").write_text(
+        json.dumps({"run_id": "run-a", "run_dir": str(run_dir)}), encoding="utf-8"
+    )
+    (run_dir / "run_config.json").write_text(
+        json.dumps(
+            {
+                "schema": RUN_SCHEMA,
+                "account_slot": "A",
+                "run_id": "run-a",
+                "run_dir": str(run_dir),
+                "branch_lineages": [
+                    {"lineage_id": "world-01", "role": "independent_world"}
+                ],
+                "root_lineage": {"lineage_id": "root-main", "role": "late_fusion_root"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    wake_runtime(
+        SimpleNamespace(runtime_root=runtime_root, lineage_id="world-01", reason="new reality")
+    )
+
+    wake_payload = json.loads(
+        (run_dir / "wake" / "world-01.json").read_text(encoding="utf-8")
+    )
+    assert wake_payload["schema"] == WAKE_SCHEMA
+    assert wake_payload["account_slot"] == "A"
+    assert "cleanroom-c" not in wake_payload["schema"]
 
 
 def test_execute_turn_streams_session_and_accepts_explicit_continue(
