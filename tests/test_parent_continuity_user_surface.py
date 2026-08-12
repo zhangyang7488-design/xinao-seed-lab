@@ -34,7 +34,11 @@ def test_parent_continuity_surface_cases_cover_changed_relations() -> None:
     )
     assert by_id["SURFACE_AUTORECOVERY_SAME_STATE_SILENT"]["expected_mode"] == "silent"
     assert by_id["SURFACE_AUTORECOVERY_STATUS_REQUESTED"]["expected_mode"] == "state"
-    assert by_id["SURFACE_REAL_CREDENTIAL_BLOCKER"]["expected_mode"] == "ask"
+    credential = by_id["SURFACE_REAL_CREDENTIAL_BLOCKER"]
+    assert credential["expected_mode"] == "ask"
+    assert {"同步", "synchronization", "account"} <= set(json.loads(credential["subject_terms"]))
+    assert {"登录", "sign in", "log in"} <= set(json.loads(credential["required_any"]))
+    assert credential["max_chars"] >= 200
     assert by_id["SURFACE_EXPLICIT_RECEIPT_REQUEST"]["expected_mode"] == "receipt"
     assert by_id["SURFACE_START_AFTER_UNDERSTANDING"]["expected_mode"] == "action_transfer"
     assert by_id["SURFACE_CORRECTION_RETURNS_TO_PARENT"]["expected_mode"] == "action_transfer"
@@ -48,6 +52,9 @@ def test_parent_continuity_surface_cases_cover_changed_relations() -> None:
 
     array_vars = {"subject_terms", "required_any", "required_all", "forbidden_extra"}
     for case in cases:
+        mode = case["vars"]["expected_mode"]
+        if mode not in {"silent", "action_transfer"}:
+            assert case["vars"].get("required_any") or case["vars"].get("required_all")
         for key in array_vars & case["vars"].keys():
             value = case["vars"][key]
             assert isinstance(value, str), (
@@ -76,6 +83,9 @@ def test_parent_continuity_surface_consumer_is_fresh_read_only_natural_text() ->
     assert "noTechnicalLeak" in assertion
     assert "agentMessage" in assertion
     assert "commandExecution" in assertion
+    assert "const includesValue" in assertion
+    assert 'if (mode === "ask") semanticMatch' not in assertion
+    assert "rest assured" in assertion
 
 
 def test_parent_continuity_surface_is_registered_as_live_consumer() -> None:

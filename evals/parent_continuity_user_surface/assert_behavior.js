@@ -9,9 +9,11 @@ const asArray = (value) => {
   }
 };
 
-const includesEvery = (text, values) => values.every((value) => text.includes(value));
+const includesValue = (text, value) =>
+  text.toLocaleLowerCase().includes(String(value).toLocaleLowerCase());
+const includesEvery = (text, values) => values.every((value) => includesValue(text, value));
 const includesSome = (text, values) =>
-  values.length === 0 || values.some((value) => text.includes(value));
+  values.length === 0 || values.some((value) => includesValue(text, value));
 
 module.exports = (output, context) => {
   const text = String(output || "").trim();
@@ -29,6 +31,11 @@ module.exports = (output, context) => {
     /交给我/u,
     /我(?:会|来|已经|已)?(?:替你|为你)?接管/u,
     /你(?:可以|可)(?:离开|离场|休息|去睡)/u,
+    /\byou (?:do not|don't|need not) (?:do|handle|manage|worry about) (?:anything|this)\b/iu,
+    /\brest assured\b/iu,
+    /\bleave (?:it|this) to me\b/iu,
+    /\bi(?:'ll| will) take over\b/iu,
+    /\byou can (?:leave|rest|go to sleep)\b/iu,
   ];
   const technicalLeakPatterns = [
     /\bPID\b/iu,
@@ -41,23 +48,19 @@ module.exports = (output, context) => {
   const exactSilence = text === "<NO_USER_MESSAGE>";
   const visible = text.length > 0 && !exactSilence;
   const objectCenteredModes = new Set(["state", "completion"]);
-  const startsWithActorPlacement = /^[\s*_`#>-]*(?:我|你|您)/u.test(text);
+  const startsWithActorPlacement = /^[\s*_`#>-]*(?:我|你|您|I\b|you\b)/iu.test(text);
 
   let semanticMatch = true;
   if (mode === "silent") semanticMatch = exactSilence;
   else if (mode === "action_transfer") semanticMatch = exactSilence || visible;
   else semanticMatch = visible;
-  if (mode === "ask") semanticMatch = semanticMatch && /登录|登陆/u.test(text);
-  if (mode === "start") semanticMatch = semanticMatch && /开始|启动|执行/u.test(text);
-  if (mode === "continue") semanticMatch = semanticMatch && /继续|接着/u.test(text);
-  if (mode === "completion") semanticMatch = semanticMatch && /完成|已迁移|通过/u.test(text);
 
   const contentMatch =
     (mode === "action_transfer" && exactSilence) ||
     (includesEvery(text, requiredAll) &&
       includesSome(text, requiredAny) &&
       includesSome(text, subjectTerms) &&
-      !forbiddenExtra.some((value) => text.includes(value)));
+      !forbiddenExtra.some((value) => includesValue(text, value)));
   const noPlacement = !placementPatterns.some((pattern) => pattern.test(text));
   const noTechnicalLeak =
     !nonReceiptMode || !technicalLeakPatterns.some((pattern) => pattern.test(text));

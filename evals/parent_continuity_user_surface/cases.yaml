@@ -50,9 +50,9 @@
       were exhausted, and synchronization cannot resume until that account is signed in again.
     current_human_act: There is no separate question; surface the real blocker if one exists.
     expected_mode: ask
-    subject_terms: '["同步", "镜像", "账号"]'
-    required_any: '["登录", "登陆"]'
-    max_chars: 100
+    subject_terms: '["同步", "镜像", "账号", "synchronization", "mirror", "account"]'
+    required_any: '["登录", "登陆", "sign in", "log in"]'
+    max_chars: 240
 
 - description: Explicit receipt request permits bounded engineering evidence
   vars:
