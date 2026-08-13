@@ -4,7 +4,7 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 120,
+  "declared_case_count": 124,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
     "smoke": "One fresh parent-frame admission case plus one Codex app-server capability canary; retired routing golds remain excluded.",
@@ -17,7 +17,8 @@
     "proactive": "All six mature-first live cases; routing facts are checked by their real engineering consumers, not the retired context suite.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
     "productivity": "Eight disposable-workspace trajectories that test evidence-delta reuse, action/non-action symmetry, classification reversal, necessary rigor, complete reference-behavior alignment, and decision-relevant process visibility.",
-    "subagent": "One fail-closed disposable native-Codex-subagent effect-owner/worker/consumer capability probe; not part of core or deep."
+    "subagent": "One fail-closed disposable native-Codex-subagent effect-owner/worker/consumer capability probe; not part of core or deep.",
+    "context": "Four deterministic context-runtime contract cases by default; live app-server and hook-sink evidence is a separate explicit mode, and contract success never permits a runtime behavior claim."
   },
   "live_profile_case_counts": {
     "capability": 1,
@@ -31,7 +32,8 @@
     "proactive": 6,
     "reuse": 4,
     "productivity": 8,
-    "subagent": 1
+    "subagent": 1,
+    "context": 4
   },
   "suites": [
     {
@@ -174,6 +176,26 @@
         "spawn identity in the parent raw trace",
         "completed child terminal for that same identity",
         "later nonce-bearing Owner consumer invocation"
+      ]
+    },
+    {
+      "id": "context_runtime_trajectory",
+      "kind": "deterministic_runtime_contract_with_explicit_live_mode",
+      "case_count": 4,
+      "runner": "scripts/run_behavior_regression.ps1 -Profile context",
+      "case_source": "evals/context_runtime_trajectory/run_context_runtime_trajectory.py",
+      "receipt_schema": "evals/context_runtime_trajectory/receipt.schema.json",
+      "default_evidence_mode": "contract",
+      "contract_claim_class": "context_contract_only",
+      "contract_runtime_claim_allowed": false,
+      "live_mode_requires_explicit_request": true,
+      "live_ineligible_claim_class": "context_live_ineligible",
+      "runtime_claim_requires": [
+        "explicit -ContextEvidenceMode live",
+        "real Codex app-server initialize, thread start or resume, turn start, and compact events",
+        "real installed-hook discovery and ordered hook-sink evidence",
+        "isolated S and B account homes and context stores",
+        "raw model and tool events supporting every behavioral assertion"
       ]
     }
   ],

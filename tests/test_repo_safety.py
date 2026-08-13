@@ -43,6 +43,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "carrier_identity.py",
     "codex_situation_hook.py",
     "context_fabric.py",
+    "context_runtime_completion.py",
     "codex_inner_profile_consumer.py",
     "codex_rollout_token_analyzer.py",
     "context_slice_manifest.py",
@@ -460,10 +461,14 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     assert "evals\\context_intent_alignment" not in runner
     assert "'deep', 'context', 'proactive'" not in runner
     assert '"context": False' in snapshot
+    assert '"context_runtime": profile == "context"' in snapshot
+    assert "context_runtime_trajectory" in runner
+    assert "ContextEvidenceMode" in runner
 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(encoding="utf-8")
-    assert "currently inventories 120" in readme
-    assert "-Profile context" not in readme
+    assert "currently inventories 124" in readme
+    assert "-Profile context" in readme
+    assert "context_contract_only" in readme
 
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
     assert "docs/tool_glue/GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md" in attributes
@@ -1412,6 +1417,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "mature_capability_recall_live" in live_ids
     assert "thin_localization_live" in live_ids
     assert "native_subagent_trajectory" in live_ids
+    assert "context_runtime_trajectory" in live_ids
     assert "external_reality_research" in live_ids
     assert "recursive_frame_reconstitution" in live_ids
     assert "parent_continuity_user_surface" in live_ids
@@ -1428,7 +1434,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "[int]$MaxErrorRetries = 1" in runner
     assert "'--filter-errors-only', $previousResult" in runner
     assert (
-        "@('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity')"
+        "@('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'context')"
         in runner
     )
     assert "$productiveFilters += @('--filter-pattern', $CasePattern)" in runner
@@ -1442,7 +1448,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 120
+    assert suite_count == catalog["declared_case_count"] == 124
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
@@ -1456,6 +1462,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         "reuse": 4,
         "productivity": 8,
         "subagent": 1,
+        "context": 4,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"

@@ -101,6 +101,15 @@
       "path": "evals/native_subagent_trajectory",
       "runner": "scripts/run_behavior_regression.ps1 -Profile subagent",
       "role": "fail_closed_disposable_native_codex_subagent_trace_capability_probe"
+    },
+    {
+      "id": "context_runtime_trajectory",
+      "path": "evals/context_runtime_trajectory",
+      "runner": "scripts/run_behavior_regression.ps1 -Profile context -ContextEvidenceMode live",
+      "contract_runner": "scripts/run_behavior_regression.ps1 -Profile context",
+      "role": "operation_isolated_s_b_context_runtime_contract_with_explicit_live_app_server_and_hook_sink_evidence",
+      "default_claim_class": "context_contract_only",
+      "contract_runtime_claim_allowed": false
     }
   ],
   "retired_compatibility_suites": [

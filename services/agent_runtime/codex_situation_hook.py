@@ -415,15 +415,19 @@ def handle_hook_event(
         contexts: list[str] = []
         if fabric:
             contexts.append(fabric)
-        try:
-            contexts.append(
-                render_checkpoint_context(
-                    _session_id(event.get("session_id")),
-                    store_root=store_root,
+        else:
+            # CurrentSituation is a migration/availability fallback.  Once the
+            # canonical Fabric can materialize this boundary, injecting both
+            # would create two competing "current" views in the same prompt.
+            try:
+                contexts.append(
+                    render_checkpoint_context(
+                        _session_id(event.get("session_id")),
+                        store_root=store_root,
+                    )
                 )
-            )
-        except (CurrentSituationError, OSError, SituationHookError):
-            pass
+            except (CurrentSituationError, OSError, SituationHookError):
+                pass
         try:
             contexts.append(render_runtime_context(event))
         except Exception:

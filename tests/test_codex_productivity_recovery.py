@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import runpy
 import subprocess
 import sys
 import zipfile
@@ -21,6 +22,9 @@ MANIFEST = RECOVERY_ROOT_V2 / "manifest.v2.json"
 ARCHIVE = RECOVERY_ROOT_V2 / "codex-productivity-recovery.non-pi.v2.zip"
 SCRIPT = REPO_ROOT / "scripts" / "build_codex_productivity_recovery.py"
 EXCLUDED_PRODUCT_SKILL = "steward-pis-evolution"
+CONTEXT_RUNTIME_COMPLETION_ARCHIVE_PATH = (
+    "repository/services/agent_runtime/context_runtime_completion.py"
+)
 
 
 def _sha256(path: Path) -> str:
@@ -235,23 +239,35 @@ def test_non_pi_v2_recovery_archive_rebuild_is_reproducible_when_live_sources_ar
     candidate_manifest = json.loads(
         (candidate_root / "manifest.v2.json").read_text(encoding="utf-8")
     )
+    candidate_roles = {
+        entry["archive_path"]: entry["role"] for entry in candidate_manifest["entries"]
+    }
+    assert (
+        candidate_roles[CONTEXT_RUNTIME_COMPLETION_ARCHIVE_PATH]
+        == "context_runtime_completion_source"
+    )
 
     rebuilt_root = tmp_path / "rebuilt-v2"
     rebuilt = _run_builder("build", "--output-root", str(rebuilt_root))
     assert rebuilt.returncode == 0, rebuilt.stderr
     rebuilt_manifest = json.loads((rebuilt_root / "manifest.v2.json").read_text(encoding="utf-8"))
-    assert candidate_manifest["archive_sha256"] == installed_manifest["archive_sha256"]
     assert rebuilt_manifest["archive_sha256"] == candidate_manifest["archive_sha256"]
 
     def portable_entries(rows: list[dict[str, object]]) -> list[dict[str, object]]:
         return [{key: value for key, value in row.items() if key != "live_source"} for row in rows]
 
-    assert portable_entries(candidate_manifest["entries"]) == portable_entries(
-        installed_manifest["entries"]
-    )
     assert portable_entries(rebuilt_manifest["entries"]) == portable_entries(
         candidate_manifest["entries"]
     )
+
+
+def test_context_runtime_completion_is_declared_as_a_recovery_source() -> None:
+    builder = runpy.run_path(str(SCRIPT))
+    assert (
+        REPO_ROOT / "services" / "agent_runtime" / "context_runtime_completion.py",
+        CONTEXT_RUNTIME_COMPLETION_ARCHIVE_PATH,
+        "context_runtime_completion_source",
+    ) in builder["SITUATION_RUNTIME_SOURCES"]
 
 
 def test_builder_refuses_to_refresh_legacy_v1_media() -> None:

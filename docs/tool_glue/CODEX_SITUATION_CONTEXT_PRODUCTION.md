@@ -2,41 +2,33 @@
 
 `SENTINEL:THIN_SITUATION_CONTEXT_PRODUCTION_V1`
 
-当前接入由薄情境观察与 S/B `Context Fabric` 第一版共同组成。它不声明已经制造持续主体，也不创建任务、路线、Owner、授权或完成状态。Context Fabric 的完整生产合同见 `S_CONTEXT_FABRIC_CURRENT.md`。
+当前接入由薄情境观察、`CurrentSituation` checkpoint 与 S/B `Context Fabric` 组成。它们都只提供受限、可失败的证据；不创建持续主体、任务、路线、Owner、授权、Stop 或完成状态。Fabric completion 合同见 `S_CONTEXT_FABRIC_CURRENT.md`。
 
-## 活动消费者
+## 当前消费者与兼容期
 
-- `UserPromptSubmit` 调用 `scripts/codex_situation_context_hook.py`。输出先保留短
-  `HUMAN_WORDS_BEFORE_ARTIFACTS_V2`，再按当前人话从 S/B 的 append-only conversation events 物化一份有 source event 的 bounded historical view；同 session 热尾优先，fresh session 才回退到同 carrier 热尾，跨 TUI 内容仍须由当前查询命中。最后附一份紧凑的机械
-  `RuntimeObservation`。观察描述 Hook 子进程、实际 cwd、Git 与活动规则文件；事件自报字段另行标记，未测得的权限和工具面保持 `UNKNOWN`。
-- `SessionStart(source=resume|compact)` 调用同一入口。它可从同一 S/B interaction world 读取 bounded recent/relevant conversation view，并读取当前 exact `session_id` 下已经显式写入的 provisional `CurrentSituation`。任一表面不存在、损坏、忙或过大就省略并继续；不得读取 task-run frontier 或恢复旧任务。
-- `Stop` 只保存当前 surfaced assistant message；`PreCompact` / `PostCompact` / `SessionEnd` 只追加生命周期边界。它们不 block、不自动续跑、不写 CurrentSituation；compact 后的模型上下文仍由 `SessionStart(source=compact)` 单点物化。
-- `scripts/manage_current_situation.py` 是唯一显式写入口。`NO_MATERIAL_CHANGE`
-  不落盘；`MATERIAL_REVISION` 以 generation/hash CAS 替换 current，并把被替换前像写入冷 revision receipt。模型输出、历史记录或文件存在本身不会自动调用它。
-  明确结束、换对象或被替代时用 `retire` 写 tombstone 和冷恢复回执；超过 7 天的
-  checkpoint 不再热注入，需要重新显式建立。
+- `UserPromptSubmit` 通过 `scripts/codex_situation_context_hook.py` 先保留 `HUMAN_WORDS_BEFORE_ARTIFACTS_V2`，然后由 Fabric hook 捕获当前 prompt 但在本次 readback 中排除它；加入有 source refs 的 bounded historical materialization，最后附机械 `RuntimeObservation`。观察只描述 hook child、cwd、Git 和活动规则文件；自报字段仍分开标记，未观测的权限/工具面保持 `UNKNOWN`。
+- `SessionStart` 由同一 Fabric hook 捕获、记录 session-lineage node，并在 `resume|compact` 时尝试加入 bounded Fabric view。只有 Fabric 无法形成该视图时，才回退读取当前 exact `session_id` 下已经显式写入的 provisional `CurrentSituation`；不会双重注入两个 current view。任一可选表面忙、损坏、过大或不满足策略时均省略并继续。
+- `Stop` 捕获 surfaced assistant message，并只对当前闭合 round 运行有界 structural producer；`PreCompact` 仅捕获边界；`PostCompact` 与 `SessionEnd` 捕获边界后只运行该边界的 structural segment/current-seed producer。完整历史 replay 只能由显式 manager/recovery 操作执行，不能进入 3–5 秒 hook 热路径。没有 hook 会自动写 CurrentSituation、推断语义纠偏、恢复 task frontier、续跑旧工作，或让 lineage node 授权 continuation。
 
-S/B 两个账号载体通过共享的 `hooks.json`、`config.toml` 与 S 源码消费同一实现；只有账户凭证、session 与产品强制绑定的账户状态隔离。
+兼容期内，热消费者走 `render_hook_context()`/`render_materialized_context()`；公共 `rehydrate_context()` 是独立、mount-checked、持久化 materialization API，返回 `continuation_authorized=false`，不是当前 hook 的第二条自动续跑通道。
 
-## 权力边界
+S/B 两个账号载体共享 S 源码、`hooks.json` 与 `config.toml`；仅账户凭证、session 和产品强制绑定的账户状态分槽。未知 `CODEX_HOME`、`E:\CODEX_CLEANROOM` cwd、CodexA/C、新仓库 Sol 和研究 session 都不得 mount 或继承 S/B Fabric 历史。
 
-- CurrentSituation 始终 `provisional=true`、`authority=false`，只是一份当前世界的交接投影。
-- checkpoint 是会被下一次模型调用看见的明文上下文；禁止写入 token、密码、API key、
-  cookie 或其他秘密。它继承本机目录 ACL，不是跨 Windows 用户的秘密保险箱。
-- session identity 只接受规范小写 UUID；session 目录或 current 文件的 link/redirect
-  被拒绝，避免一个名字读取另一个 session。
-- 当前用户整句话和 live facts 可立即替换 checkpoint；checkpoint 不能授权行动、证明完成或证明自主 world revision。
-- RuntimeObservation 只报告机械事实。它不能从 cwd、仓库、文件名或状态生成任务。
-- Context Fabric 的 raw user/assistant event 是发生证据；semantic projection、correction edge 和 materialized context 都是可重建、`authority=false`、`instruction_source=false` 的读取投影。疑似秘密只保留 hash/长度，tool output 不自动进入 store。
-- Context Fabric 的 mount policy 只允许 S/B `CODEX_HOME`；unknown body 与 `E:\CODEX_CLEANROOM` cwd fail closed。CodexA/C、新仓库 Sol 与 fresh research session 不继承该历史。
-- 旧 `session_start_continuity_pointer_v1.ps1`、binder、restore 与 Stop gate 继续作为冷恢复材料；新的 `resume|compact` reader 不消费它们，也不恢复其生命周期语义。
+## CurrentSituation 的独立边界
 
-## 生产采用与回滚
+`scripts/manage_current_situation.py` 是唯一显式写入口。`NO_MATERIAL_CHANGE` 不落盘；`MATERIAL_REVISION` 以 generation/projection-hash CAS 替换 current，并把 before/after 与 transition 写入冷 revision receipt；明确结束、换对象或被替代时 `retire` 写 tombstone 与冷回执。超过七天的 checkpoint 不再热注入。
 
-正式采用需要同时成立：S 提交可定位、S/B `hooks/list` 发现并信任全部具名
-Hook、直接 JSON-stdio readback 正确、event chain/SQLite readback 正确、fresh S/B carrier 能从上一 session 恢复精确标记、讨论负例不出生工具动作、明确行动仍可被识别、cleanroom negative mount 为空，以及 recovery v2 能从精确源重建当前载体。
+CurrentSituation 始终 `provisional=true`、`authority=false`，并且不是 Fabric event/projection 的 canonical source。Fabric 事件、structural projection、correction、lineage 与 materialization 同样是 `authority=false`、`instruction_source=false` 的证据读取。Fabric 成功时它是唯一历史 materialization；CurrentSituation 只作迁移/故障 fallback。两者都不能互相升级、从文件/历史/模型输出自动写入，或压过当前整句话和 live facts。
 
-紧急隔离先设置 `CODEX_CONTEXT_FABRIC_DISABLE=1`；完整回滚再恢复采用前的共享
-`hooks.json`、`config.toml` 与 S 仓提交。旧 `user_prompt_zero_beat_v1.ps1` 保持原字节，可重新取得唯一活动 UserPromptSubmit 消费者身份。删除或停用 Context Fabric 不影响普通 Codex 工作；CurrentSituation 冷 revision 也不会被热读取。
+## 安全与恢复边界
 
-当前工程完成只可声称：机械本地现实进入真实 S/B 消费者；admitted surfaced conversation 可 append-only 保存、按需重构；显式 checkpoint 能在 resume/compact 边界被 exact-session 读取。长期纠偏负担下降、自主修订和“同一个认识者”仍由后续真实轨迹验证。
+- checkpoint 是会被模型看见的本地明文上下文，禁止 token、密码、API key、cookie 等秘密；会话 ID 只接受规范小写 UUID，session/current 文件和目录拒绝 link/redirect。
+- Fabric 对 secret-like surfaced text 只留 hash/长度；tool output 默认不作为文本进入 store。已识别完成 tool surface 只形成 hash-only typed artifact；exact blob 仅限明确 allowlisted sanitizer 的小型非秘密输出。
+- 捕获/读取/观察全都 fail-open：可选状态出错不能压制 L0 或阻断用户 turn。紧急隔离使用 `CODEX_CONTEXT_FABRIC_DISABLE=1`；完整配置回退须恢复已采用前的共享 `hooks.json`、`config.toml` 与 S 提交，而不是改写 append-only evidence。
+- v1 Fabric store 需要显式 `migrate` 才可进入 `s.context_runtime.complete.v1`。迁移前像必须放在 live root 外、ACL 已先应用并回读的 S/B recovery sibling；迁移会在改变源库前重开并严格校验该前像。`restore-preimage` 可把它恢复到一个新/空 legacy target；current snapshot 的 `restore` 也只接受新/空且非链接 target。两种恢复都拒绝 source root 链接与 manifest 路径逃逸，先在同父目录 staging 校验，最后写 completion marker 并原子改名；它们仍不是外部 rollback anchor。
+
+## 诚实采用口径
+
+当前可声明的是：completion implementation 提供显式迁移、canonical/derived 分层、hash-only tool artifact、有界 trigger-scoped structural producers、原子 projection/run receipt、规范 UTC 的 bitemporal correction、受限 session-lineage、source-pinned materialize/rehydrate API，以及 staged snapshot/restore；这些局部谓词由仓库测试覆盖。每次用户纠偏会先作为原始事件留下；只有显式、source-linked 的 replacement/correction admission 才把它提升为当前语义关系，运行时不会靠“纠正”等关键词自行猜测。
+
+尚不可把上述实现写成已通过的实际 fresh/compact/resume S/B consumer 行为，也不可声称 CurrentSituation 自动修订、自动恢复旧父活动、长期减少用户解释/纠偏负担，或形成“同一个持续认识者”。当前 verifier/restore 的 trigger、meta、derived-tamper、source-link 与 manifest-containment 回归已闭合，但它们只证明本地 tamper-evidence 与 staged recovery；防同账户/管理员改写、外部 rollback 检测和消费者恢复仍不成立。这些结论仍需 installed hook 的 fresh consumer readback 和后续真实轨迹验证。

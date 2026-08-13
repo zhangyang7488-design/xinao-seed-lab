@@ -26,6 +26,10 @@ def main() -> int:
         event = json.loads(raw)
         if not isinstance(event, dict):
             raise ValueError("hook input must be an object")
+        # Bind mount admission to the hook child's mechanically observed cwd as
+        # well as the event-reported cwd.  Direct unit callers can omit this
+        # private field; the installed consumer never does.
+        event["_context_fabric_actual_cwd"] = str(Path.cwd())
         payload = handle_hook_event(event, context_fabric_enabled=True)
     except Exception:
         payload = {"continue": True}

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/schemas/context-runtime-trajectory-receipt.v1.json",
+  "title": "S/B context runtime trajectory receipt",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "mode",
+    "evidence_level",
+    "claim_class",
+    "status",
+    "runtime_claim_allowed",
+    "operation_root",
+    "cases",
+    "summary",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s.context_runtime_trajectory_receipt.v1"
+    },
+    "mode": {
+      "enum": ["contract", "live"]
+    },
+    "evidence_level": {
+      "enum": ["deterministic_contract", "live_app_server_and_hook_sink"]
+    },
+    "claim_class": {
+      "enum": ["context_contract_only", "context_live_ineligible"]
+    },
+    "status": {
+      "enum": ["passed", "failed", "ineligible"]
+    },
+    "runtime_claim_allowed": {
+      "type": "boolean"
+    },
+    "operation_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "case_id",
+          "status",
+          "evidence_level",
+          "runtime_claim_allowed",
+          "assertions",
+          "failed_assertions",
+          "evidence"
+        ]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["selected", "passed", "failed", "ineligible"]
+    },
+    "claim_boundary": {
+      "type": "object",
+      "required": ["proves", "does_not_prove"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"mode": {"const": "contract"}}
+      },
+      "then": {
+        "properties": {
+          "evidence_level": {"const": "deterministic_contract"},
+          "claim_class": {"const": "context_contract_only"},
+          "runtime_claim_allowed": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"status": {"const": "ineligible"}}
+      },
+      "then": {
+        "properties": {
+          "claim_class": {"const": "context_live_ineligible"},
+          "runtime_claim_allowed": {"const": false}
+        }
+      }
+    }
+  ]
+}

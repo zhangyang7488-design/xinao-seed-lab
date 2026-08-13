@@ -128,6 +128,11 @@ SITUATION_RUNTIME_SOURCES = (
         "context_fabric_runtime_source",
     ),
     (
+        REPO_ROOT / "services" / "agent_runtime" / "context_runtime_completion.py",
+        "repository/services/agent_runtime/context_runtime_completion.py",
+        "context_runtime_completion_source",
+    ),
+    (
         REPO_ROOT / "services" / "agent_runtime" / "codex_situation_hook.py",
         "repository/services/agent_runtime/codex_situation_hook.py",
         "situation_hook_adapter",
@@ -161,6 +166,16 @@ SITUATION_RUNTIME_SOURCES = (
         REPO_ROOT / "docs" / "tool_glue" / "S_CONTEXT_FABRIC_CURRENT.md",
         "contracts/S_CONTEXT_FABRIC_CURRENT.md",
         "context_fabric_contract",
+    ),
+    (
+        REPO_ROOT / "evals" / "context_runtime_trajectory" / "run_context_runtime_trajectory.py",
+        "repository/evals/context_runtime_trajectory/run_context_runtime_trajectory.py",
+        "context_runtime_trajectory_harness",
+    ),
+    (
+        REPO_ROOT / "evals" / "context_runtime_trajectory" / "receipt.schema.json",
+        "repository/evals/context_runtime_trajectory/receipt.schema.json",
+        "context_runtime_trajectory_receipt_schema",
     ),
 )
 

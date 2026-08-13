@@ -255,7 +255,13 @@ def test_rollout_import_uses_only_surfaced_item_events_and_is_idempotent(tmp_pat
             "timestamp": "2026-08-12T16:00:00Z",
             "ordinal": 0,
             "type": "session_meta",
-            "payload": {"id": SESSION, "cwd": r"E:\XINAO_RESEARCH_WORKSPACES\S"},
+            "payload": {
+                "id": SESSION,
+                "session_id": SESSION,
+                "cwd": r"E:\XINAO_RESEARCH_WORKSPACES\S",
+                "source": "cli",
+                "thread_source": "user",
+            },
         },
         {
             "timestamp": "2026-08-12T16:00:01Z",
@@ -293,6 +299,7 @@ def test_rollout_import_uses_only_surfaced_item_events_and_is_idempotent(tmp_pat
                 "item": {
                     "type": "AgentMessage",
                     "id": "assistant-one",
+                    "phase": "final_answer",
                     "content": [{"type": "Text", "text": "真正助手消息"}],
                 },
             },

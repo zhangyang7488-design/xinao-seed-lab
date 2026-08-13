@@ -1,13 +1,31 @@
 [CmdletBinding()]
 param(
     [string]$Root = 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric',
+    [switch]$AllowRecoveryRoot,
     [switch]$Apply
 )
 
 $ErrorActionPreference = 'Stop'
 $expectedRoot = 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric'
 $resolved = (Resolve-Path -LiteralPath $Root).Path.TrimEnd('\')
-if (-not [string]::Equals($resolved, $expectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+$expectedParent = Split-Path -Parent $expectedRoot
+$expectedLeaf = Split-Path -Leaf $expectedRoot
+$recoveryPattern = '^' + [regex]::Escape($expectedLeaf) + '\.(?:pre-migration|snapshot|restore)-[A-Za-z0-9._-]+$'
+$isProductionRoot = [string]::Equals(
+    $resolved,
+    $expectedRoot,
+    [System.StringComparison]::OrdinalIgnoreCase
+)
+$isRecoveryRoot = (
+    $AllowRecoveryRoot -and
+    [string]::Equals(
+        (Split-Path -Parent $resolved),
+        $expectedParent,
+        [System.StringComparison]::OrdinalIgnoreCase
+    ) -and
+    (Split-Path -Leaf $resolved) -match $recoveryPattern
+)
+if (-not ($isProductionRoot -or $isRecoveryRoot)) {
     throw "Refusing ACL operation outside the exact S Context Fabric root: $resolved"
 }
 $item = Get-Item -LiteralPath $resolved -Force

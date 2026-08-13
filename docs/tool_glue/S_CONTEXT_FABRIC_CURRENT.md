@@ -1,218 +1,106 @@
 # S Continuous Context Runtime — Current Production Contract
 
-Status: first production slice, 2026-08-13
+Status: completion implementation present; hot-consumer adoption remains a separately verified claim, 2026-08-13
 Source brief: `C:\Users\xx363\Desktop\持续上下文运行时.txt`
 Source SHA256: `D5D42CCECE491CD3937ACA940733B92A72F3F54C08BC3F73138A6E8F006BFC62`
 
-## Consumer result
+## Contract and feature level
 
-A fresh or compacted S/B Codex carrier can reconstruct a bounded working view
-from the same persistent human--S interaction world. The user does not have to
-turn each correction into a new rule or repeat the causal history behind it.
-The runtime preserves exact surfaced conversation events and treats every
-compact, identity, correction edge, and hot context as a rebuildable
-projection.
+`Context Fabric` is one local, S/B-only, event-sourced evidence store. Its canonical schema remains `s.context_fabric.v1`; its completion feature level is `s.context_runtime.complete.v1`. New initialization creates both levels. A legacy v1 database is intentionally not upgraded by initialization, a hook, or ordinary read: it must be migrated explicitly. This prevents an optional continuity read from silently changing a live store.
 
-This is continuity evidence, not an autonomous subject, task source, authority,
-or continuation command. Current user words, current live authority, and
-mechanical reality remain outside and above retrieved history.
+The runtime reconstructs a bounded, source-linked historical working view. It is not a subject, task source, route selector, Owner, authorization, Stop decision, completion proof, or continuation command. Current user words, live authority, and mechanical reality remain above all retrieved material.
 
-## Current implementation
+## Data classes and provenance
 
-| Layer | Current carrier | Property |
+| Class | Carrier | Contract |
 |---|---|---|
-| Canonical conversation events | `context_fabric.sqlite3/events` | append-only triggers, exact UTF-8, idempotent source key, per-event hash chain |
-| Deterministic lexical index | `event_terms` | local Latin tokens plus Chinese character n-grams; no model/network dependency |
-| Versioned projections | `projections` + `projection_sources` | exact source event IDs and source-span hash; append a new version, never overwrite |
-| Correction/scope graph | `relations` | `corrects`, `supersedes`, `refines`, `continues`, `contradicts`, `scopes`; non-authoritative |
-| Working view | `render_materialized_context()` | same-session hot tail first, then same-carrier fallback, query-relevant raw, active projections, and correction/scope edges |
-| Existing live state | `CurrentSituation` + `RuntimeObservation` | separately rendered and combined by the hook; neither is promoted to event truth |
+| Canonical occurrence evidence | `events`, `event_terms`, event-parent/artifact bindings | append-only, idempotent source/turn identity, exact admitted UTF-8 or withheld secret placeholder, linear event hash chain |
+| Canonical typed tool receipt | `artifacts` and optional content-addressed blobs | ordinary tool surfaces are hash-only; only an explicit allowlisted sanitizer may retain a bounded, non-secret exact blob |
+| Derived state | projections, relations, producer runs/metadata, lineage nodes, materializations | append-only and hash-verifiable, source-linked, non-authoritative, rebuildable from canonical evidence plus explicit specs |
+| Recovery copy | snapshot database, manifest, exact admitted blobs | pinned prefix copy, independently verified before restore; not a new authority source |
 
-Source and consumer entrypoints:
+SQLite plus its WAL/SHM are one storage implementation, not separate truths. Canonical rows never update/delete. `verify` checks the event chain. `verify-full` checks the exact current schema/meta and append-only triggers, SQLite/FK integrity, event/index/association identities, projection/relation/producer/lineage/materialization provenance, and the complete admitted CAS inventory. It is tamper-evident validation, not cryptographic immutability or an external rollback anchor.
 
-- `services/agent_runtime/context_fabric.py`
-- `services/agent_runtime/codex_situation_hook.py`
-- `scripts/codex_situation_context_hook.py`
-- `scripts/manage_context_fabric.py`
+## Explicit migration
 
-Default state root:
+Run migration only with an intentional target and a new/empty non-link backup directory. In production the backup directory must be an ACL-protected sibling outside the live root, and its ACL must be read back before migration. The migration snapshots the v1 preimage first, reopens and strictly verifies that recovery copy, stores its manifest hash, adds completion tables/metadata, backfills only derived metadata, and runs `verify-full` while proving that the canonical event count and hash tip did not change. It is dry-runnable and idempotent; unknown/future feature levels fail closed.
 
-```text
-D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\
-    context_fabric.sqlite3
-    context_fabric.sqlite3-wal
-    context_fabric.sqlite3-shm
+```powershell
+uv run python scripts/manage_context_fabric.py migrate --dry-run
+uv run python scripts/manage_context_fabric.py migrate `
+  --backup-root <new-empty-pre-migration-snapshot-directory>
+uv run python scripts/manage_context_fabric.py verify-full
+uv run python scripts/manage_context_fabric.py restore-preimage `
+  --snapshot-dir <pre-migration-snapshot-directory> `
+  --target-dir <absent-or-empty-legacy-restore-directory> `
+  --expected-manifest-sha256 <manifest-sha256>
 ```
 
-The installed root has inheritance disabled and grants full control only to
-the current Windows user, `SYSTEM`, and local `Administrators`; database and
-snapshot children inherit that exact ACL. This is a machine deployment fact,
-not a portable guarantee, so recovery/install readback must inspect the target
-ACL. Re-enabling parent inheritance is the permission rollback.
+This is a schema/evidence transition, not evidence that a fresh carrier has been correctly rehydrated in the installed product.
 
-SQLite is the canonical event store in this slice. Surfaced user/assistant
-messages also have a cross-source turn identity, so a later rollout backfill
-does not duplicate an event already captured by the live hook. WAL is a
-mechanical part of the same database, not another truth source. `PRAGMA
-quick_check`, replay of the hash chain, exact event lookup, and rebuildable
-indexes are the recovery readbacks.
+## Admission and safety
 
-## Mount and admission policy
+Only the S/B homes mount the shared `s-b-engineering-body`; an unknown home or a clean-room cwd (`E:\CODEX_CLEANROOM`) fails closed. The installed JSON adapter also binds admission to its mechanically observed cwd, not just the event's reported cwd. There is no auto-discovery or history inheritance into CodexA/C, the clean-room body, a Sol, or a research session.
 
-The policy is implemented by `evaluate_mount()` and guarded by negative tests;
-it is not a conversational reminder.
+Admitted user/assistant surfaced text is exact unless secret-like, in which case only a SHA256 and character count are retained and indexed bytes are withheld. New hook metadata stores the normalized cwd only as a digest; legacy v1 rows remain immutable and can still contain the cwd captured by the old hook. The installed hooks continuously admit surfaced dialogue and lifecycle boundaries. `import-rollout` is a separate incremental recovery/backfill consumer: it admits strict surfaced messages and a small recognized set of completed tool item types, pins its committed prefix, and refuses rewrites, gaps, malformed complete records, links, or session escapes. It is not an installed daemon or an app-server subscriber. Tool calls, reasoning, developer wrappers, incomplete tool results, and arbitrary tool bodies are rejected or ignored. Recognized tool surfaces become typed, hash-only artifacts plus an empty tool event with safe metadata. No tool body may reach materialization through this route.
 
-Allowed `CODEX_HOME` identities:
+The state is local plaintext protected by the runtime ACL; it is not an encrypted vault and does not protect against the current account, Administrators, SYSTEM, disk compromise, or an authorized export. Store paths, session paths, blobs, snapshot sources, manifest members, and restore targets reject path escapes and links/reparse redirects; restore refuses a non-empty/live target. Current account credentials, tokens, passwords, API keys, cookies, and similar secrets are never admissible context.
 
-```text
-C:\Users\xx363\.codex                         -> s-primary
-C:\Users\xx363\.codex-s-hardmode-account-b  -> s-account-b
-```
+## Projection, correction, and temporal semantics
 
-Both are carriers of one `s-b-engineering-body` interaction world. Events keep
-their carrier identity for provenance while reconstruction may use the shared
-world. Unknown homes fail closed. A cwd under `E:\CODEX_CLEANROOM` also fails
-closed even if an S/B environment was launched incorrectly.
+Explicit projections retain their exact source event IDs and source-span hash. Completion adds three deterministic structural producers:
 
-There is no auto-discovery, auto-mount, or fallback into CodexA/C, the cleanroom
-body, a new-repository Sol, or a fresh research branch. Those consumers have no
-Context Fabric hook entry. Any future handoff out of S is an explicit export of
-selected event IDs/material only; it is not retrieval or mount inheritance.
+- `s.context_runtime.closed_round@v1` creates a structural envelope only for a closed surfaced user/assistant turn; it does not infer a new fact.
+- `s.context_runtime.lineage_segment@v1` creates a bounded structural `activity_compact` only at an observed `PostCompact` or `SessionEnd` boundary; it records event kinds and source refs but does not infer a human activity, parent, goal, or open frontier.
+- `s.context_runtime.current_seed@v1` creates a source-tip seed describing the canonical boundary; it is not a task or an understanding.
 
-## Capture contract
+Producer run ID, version, configuration hash, exact event-tip hash, and output refs are recorded in the same SQLite transaction as every automatic projection. A failed run therefore commits neither its output nor its completed receipt; `verify-full` also checks both directions between automatic projection metadata and run outputs. The installed hook runs only a trigger-scoped bounded producer after a captured `Stop`, `PostCompact`, or `SessionEnd`; it never rescans full history on the 3–5 second hook path. Full replay/backfill remains the explicit `produce` manager operation. Producers do not process an open current prompt before that prompt's retrieval boundary.
 
-The hook records only surfaced messages and lifecycle boundaries:
+`correct --spec-file` records an explicit `corrects` relation and bitemporal metadata: recorded/as-of event boundary plus a declared effective interval (`valid_from`/`valid_to` or event bounds) and temporal basis. Supplied instants require an explicit timezone and are normalized to canonical UTC before identity hashing, comparison, and verification; equivalent offset spellings therefore have the same ordering semantics. Materialization can render current or historical views without rewriting old evidence. A correction suppresses the prior projection/evidence only in the selected effective view; explicit event drill-down and earlier `as_of` views remain available. Every surfaced user correction is preserved as raw evidence by the normal hook, but semantic adoption still requires an explicit source-linked replacement projection plus correction write. The runtime does not guess that relation from words such as “纠正”.
 
-| Hook | Stored event | Model context effect |
-|---|---|---|
-| `UserPromptSubmit` | exact user message | current message is excluded; related prior evidence may be returned |
-| `Stop` | `last_assistant_message` | none; it never blocks or auto-continues |
-| `SessionStart` | carrier boundary | `resume`/`compact` may receive a bounded view; startup does not revive work |
-| `PreCompact` / `PostCompact` | compaction boundary | none; immediate compact re-entry remains owned by `SessionStart(source=compact)` |
-| `SessionEnd` | carrier boundary | none |
+## Session lineage and working views
 
-Rollout backfill is an explicit, idempotent CLI operation. The importer consumes
-only `event_msg/item_completed` `UserMessage` and `AgentMessage` records from an
-allowlisted S/B sessions root. It ignores injected developer/user wrappers,
-reasoning, tool calls, tool results, and encrypted product state. The transcript
-format is treated as a versioned best-effort import surface, not a stable hook
-dependency.
+Each captured `SessionStart` writes a lineage node. A `compact` node becomes `resolved` only when the runtime actually observes an earlier same-carrier, same-session `PostCompact` boundary; its evidence quality is `same_session_ordered`. Codex 0.147 does not expose an exact resume-parent locator to this hook, so `resume` remains `unresolved` and creates no inferred continuation edge. An explicit cross-session branch parent must resolve to an existing node on the same carrier. Session identity cannot be inferred from chronology, cwd, lexical similarity, or a matching UUID on another carrier.
 
-## Secret and authority admission
+`materialize_context()` renders a bounded view pinned to an event tip, optional `as_of_event_id`, optional effective time, query hash, session/carrier, source refs, and lineage status. The active hook uses its compatibility `render_hook_context()` path, which captures the lifecycle event, records lineage, and renders a non-persistent bounded materialization. The public `rehydrate_context()` API separately makes a persisted, mount-checked materialization and sets `continuation_authorized=false`; it is not itself the installed hook's continuation mechanism.
 
-“Lossless” applies to admitted surfaced conversation, not credential material.
-A message matching known credential/token/private-key patterns is represented
-by its SHA256 and character count; its bytes are not stored or indexed. Tool
-output is not imported in this slice. Derived projection text has a write-time
-secret gate.
+The current prompt is excluded from its own retrieval boundary, including from a producer run made after capture. An unresolved fresh session does not receive a parallel TUI tail merely because it shares a carrier; cross-session material requires query-relevant evidence. These are implementation/test predicates, not proof that a real fresh/compact/resume product flow has been accepted.
 
-The store remains local plaintext. The narrowed ACL prevents ordinary local
-users from reading it, but it does not protect against the current account,
-Administrators, SYSTEM, disk compromise, or a deliberately authorized export.
+Every rendered view carries `authority=false`, `instruction_source=false`, `completion_claim_allowed=false`, and `current_prompt_included=false`.
 
-Every returned working view carries:
+## Snapshot and restore
 
-```json
-{
-  "authority": false,
-  "instruction_source": false,
-  "completion_claim_allowed": false,
-  "current_prompt_included": false
-}
-```
+`snapshot` creates a new/empty, non-link directory containing a SQLite backup, only the exact blobs named by that database, and `snapshot.v2.json`. The manifest pins feature level, database SHA256, canonical event count/tip, and artifact inventory. It is a consistent prefix: later source appends do not change it.
 
-Retrieval cannot select a parent, task, owner, route, Stop state, account,
-payment, or external effect. A 201-day-old instruction remains historical
-evidence. Current authority is not inferred from event recency or lexical score.
+`restore` first rejects occupied/live targets, then checks source-root and manifest-member containment, database/blob hashes, and the full source database. It copies into a same-parent hidden staging directory, verifies the staged store and canonical count/tip, writes `restore.complete.v1.json` last, and only then atomically renames the staging directory to the absent/empty target. It never overwrites a live target. A successful restore proves only its current local readbacks, not hook re-enablement, task selection, or consumer recovery.
 
-## Projection and correction semantics
+## CLI
 
-A projection is appended with a semantic key, version, temporal scope, status,
-aliases, exact source events, and a source-span hash. A newer version may name
-the older projection it supersedes. The old projection and all raw evidence
-remain available. Replaying an identical projection or relation specification
-is idempotent; a material semantic change appends a new projection version.
-
-Correction lineage is explicit rather than an in-place memory edit. A typical
-shape is:
-
-```text
-old assistant/user event
-    <- corrects - user correction event
-    -> current scoped semantic projection
-```
-
-Historical experiment `arm C` and current launcher/account-slot `C` therefore
-remain different scoped identities even when both are lexically retrieved.
-
-## Operations
-
-All repository Python commands use the declared `uv run` environment:
+All repository commands use `uv run`:
 
 ```powershell
 uv run python scripts/manage_context_fabric.py initialize
-
+uv run python scripts/manage_context_fabric.py migrate --dry-run
 uv run python scripts/manage_context_fabric.py import-rollout `
-  --codex-home C:\Users\xx363\.codex `
-  --rollout <exact-s-rollout.jsonl>
-
+  --codex-home C:\Users\xx363\.codex --rollout <exact-s-rollout.jsonl>
+uv run python scripts/manage_context_fabric.py project --spec-file <projection.json>
+uv run python scripts/manage_context_fabric.py relate --spec-file <relation.json>
+uv run python scripts/manage_context_fabric.py correct --spec-file <correction.json>
+uv run python scripts/manage_context_fabric.py produce --through-seq <event-seq>
 uv run python scripts/manage_context_fabric.py inspect --query "C并发研究" `
-  --session-id <current-session-uuid> --carrier-id s-primary
-uv run python scripts/manage_context_fabric.py event --event-id <event-id>
-uv run python scripts/manage_context_fabric.py inventory
-uv run python scripts/manage_context_fabric.py verify
-uv run python scripts/manage_context_fabric.py snapshot `
-  --output-dir <new-empty-snapshot-directory>
-
-pwsh -NoProfile -NonInteractive -File scripts/Protect-SContextFabricState.ps1
-pwsh -NoProfile -NonInteractive -File scripts/Protect-SContextFabricState.ps1 -Apply
+  --session-id <canonical-session-uuid> --carrier-id s-primary
+uv run python scripts/manage_context_fabric.py lineage --session-id <canonical-session-uuid>
+uv run python scripts/manage_context_fabric.py verify-full
+uv run python scripts/manage_context_fabric.py snapshot --output-dir <new-empty-snapshot-dir>
+uv run python scripts/manage_context_fabric.py restore `
+  --snapshot-dir <snapshot-dir> --target-dir <absent-or-empty-staging-dir> `
+  --expected-manifest-sha256 <manifest-sha256>
 ```
 
-`project --spec-file` and `relate --spec-file` are explicit engineering
-operations. They do not run automatically inside the hook.
+`project`, `relate`, and `correct` are explicit engineering writes. The normal hook does not infer their semantic content. The ACL helper remains audit-only without `-Apply` and must be read back against its exact target.
 
-The ACL helper is audit-only unless `-Apply` is supplied. It refuses every
-target except the exact production root, rejects links/reparse points, and
-requires a readback containing only the current Windows user, `SYSTEM`, and
-local `Administrators`.
+## CurrentSituation compatibility and unproven claims
 
-`snapshot` uses SQLite's online backup API, then replays the copied event chain
-and writes `snapshot.v1.json` with the database hash, event count, chain tip,
-and integrity result. The snapshot contains raw admitted conversation, inherits
-the local S runtime directory's filesystem protection, and is not an encrypted
-vault. It is deliberately not folded into a generic code-recovery archive or
-exported across bodies.
+`CurrentSituation` remains a separate, exact-session, provisional checkpoint with its own explicit `initialize`/CAS `apply`/`retire` lifecycle. It is not canonical Context Fabric evidence and is not automatically written from events or projections. During migration/availability fallback, `SessionStart(source=resume|compact)` may use its bounded checkpoint only when Fabric produced no materialization; the hook does not inject two competing current views. Neither surface creates a task or authority.
 
-## Failure and recovery
-
-The hook does not initialize schemas, import rollouts, call a model, create an
-embedding, or wait on a daemon. Missing/corrupt/busy Context Fabric state is
-omitted and the existing human-words-first L0 continues. `Stop` never returns a
-blocking decision. A failed optional capture cannot suppress a user turn.
-
-Recovery order:
-
-1. disable capture with `CODEX_CONTEXT_FABRIC_DISABLE=1` if immediate isolation is required;
-2. create an online `snapshot` when the live database remains readable;
-3. otherwise preserve the database/WAL/SHM exact bytes before repair;
-4. run `verify` and SQLite integrity readback on the live store and snapshot;
-5. restore from a verified exact snapshot or re-import allowlisted rollout sources;
-6. rebuild projections/indexes from canonical events before re-enabling hot use.
-
-Do not “repair” a broken chain by updating or deleting rows. Compensating facts
-and projection versions append; canonical history does not mutate.
-
-## Deliberately deferred
-
-The first slice does not claim automatic semantic understanding, perfect
-compaction, embedding/vector quality, a graph database, automatic
-CurrentSituation writes, legal erasure of append-only backups, or measured
-longitudinal reduction of user burden. Multi-level local/activity compacts and
-semantic clusters are supported as versioned projection types but remain
-explicit until fresh behavior evidence justifies an automatic producer.
-
-The acceptance suite proves engineering predicates only: body admission,
-append-only/idempotent capture, secret withholding, importer filtering, Chinese
-short-phrase reconstruction, correction edges, bounded non-authority context,
-same-session hot-tail isolation, concurrent chain integrity, fail-open hooks,
-fresh S/B carrier reconstruction, and cleanroom denial.
+The completion implementation and local tests establish explicit migration, full current-schema verification, bounded materialization, lineage classification, contained staged restore, and negative-security predicates including extended-path clean-room denial, DB-busy fail-open, cursor corruption, concurrent deduplication, trigger/meta/derived tamper, snapshot-root links, and manifest path escape. This still does **not** establish cryptographic immutability, detection of a separately valid older snapshot without an external tip anchor, installed live S/B-hook acceptance across actual fresh/compact/resume windows, automatic CurrentSituation revision, autonomous world revision, a persistent subject, or measured long-term reduction in user repetition/correction burden. Those require live consumer and longitudinal behavioral evidence.

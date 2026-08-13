@@ -49,3 +49,21 @@ def test_acl_script_source_is_bounded_and_apply_is_explicit() -> None:
     assert "($_.Rights -band $fullControl) -eq $fullControl" in text
     assert "deny_count = $denyRules.Count" in text
     assert "$denyRules.Count -eq 0" in text
+
+
+def test_acl_script_recovery_opt_in_remains_exact_sibling_only(tmp_path: Path) -> None:
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "[switch]$AllowRecoveryRoot" in text
+    assert "pre-migration|snapshot|restore" in text
+    command = [
+        powershell_executable(),
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        str(SCRIPT),
+        "-Root",
+        str(tmp_path),
+        "-AllowRecoveryRoot",
+    ]
+    completed = subprocess.run(command, capture_output=True, check=False)
+    assert completed.returncode != 0

@@ -13,16 +13,23 @@ if str(REPO_ROOT) not in sys.path:
 
 from services.agent_runtime.context_fabric import (  # noqa: E402
     DEFAULT_CONTEXT_FABRIC_ROOT,
+    append_correction,
     append_projection,
     append_relation,
     create_snapshot,
     evaluate_mount,
     import_codex_rollout,
     initialize_context_fabric,
+    materialize_context,
+    migrate_context_fabric,
     read_event,
-    render_materialized_context,
+    read_session_lineage,
+    restore_migration_preimage,
+    restore_snapshot,
+    run_projection_producers,
     search_events,
     store_inventory,
+    verify_context_fabric,
     verify_event_chain,
 )
 
@@ -49,6 +56,9 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("initialize")
+    migrate = subparsers.add_parser("migrate")
+    migrate.add_argument("--backup-root", type=Path)
+    migrate.add_argument("--dry-run", action="store_true")
 
     importer = subparsers.add_parser("import-rollout")
     importer.add_argument("--codex-home", type=Path, required=True)
@@ -59,6 +69,13 @@ def _parser() -> argparse.ArgumentParser:
 
     relate = subparsers.add_parser("relate")
     relate.add_argument("--spec-file", type=Path, required=True)
+
+    correct = subparsers.add_parser("correct")
+    correct.add_argument("--spec-file", type=Path, required=True)
+
+    produce = subparsers.add_parser("produce")
+    produce.add_argument("--through-seq", type=int)
+    produce.add_argument("--trigger-event-id", default="")
 
     inspect = subparsers.add_parser("inspect")
     inspect.add_argument("--query", default="")
@@ -79,8 +96,20 @@ def _parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("inventory")
     subparsers.add_parser("verify")
+    subparsers.add_parser("verify-full")
     snapshot = subparsers.add_parser("snapshot")
     snapshot.add_argument("--output-dir", type=Path, required=True)
+    restore = subparsers.add_parser("restore")
+    restore.add_argument("--snapshot-dir", type=Path, required=True)
+    restore.add_argument("--target-dir", type=Path, required=True)
+    restore.add_argument("--expected-manifest-sha256", default="")
+    restore_preimage = subparsers.add_parser("restore-preimage")
+    restore_preimage.add_argument("--snapshot-dir", type=Path, required=True)
+    restore_preimage.add_argument("--target-dir", type=Path, required=True)
+    restore_preimage.add_argument("--expected-manifest-sha256", default="")
+    lineage = subparsers.add_parser("lineage")
+    lineage.add_argument("--session-id", required=True)
+    lineage.add_argument("--carrier-id", default="")
     return parser
 
 
@@ -90,6 +119,12 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "initialize":
         result: object = initialize_context_fabric(args.store_root)
+    elif args.command == "migrate":
+        result = migrate_context_fabric(
+            args.store_root,
+            backup_root=args.backup_root,
+            dry_run=args.dry_run,
+        )
     elif args.command == "import-rollout":
         result = import_codex_rollout(
             args.rollout,
@@ -100,17 +135,24 @@ def main(argv: list[str] | None = None) -> int:
         result = append_projection(_json_object(args.spec_file), root=args.store_root)
     elif args.command == "relate":
         result = append_relation(_json_object(args.spec_file), root=args.store_root)
+    elif args.command == "correct":
+        result = append_correction(_json_object(args.spec_file), root=args.store_root)
+    elif args.command == "produce":
+        result = run_projection_producers(
+            root=args.store_root,
+            through_seq=args.through_seq,
+            trigger_event_id=args.trigger_event_id,
+        )
     elif args.command == "inspect":
-        result = {
-            "context": render_materialized_context(
-                query=args.query or None,
-                root=args.store_root,
-                session_id=args.session_id,
-                carrier_id=args.carrier_id,
-                max_chars=args.max_chars,
-            ),
-            "authority": False,
-        }
+        materialized = materialize_context(
+            query=args.query or None,
+            root=args.store_root,
+            session_id=args.session_id,
+            carrier_id=args.carrier_id,
+            max_chars=args.max_chars,
+            persist=False,
+        )
+        result = {**materialized, "context": materialized["rendered_context"]}
     elif args.command == "event":
         result = read_event(args.event_id, root=args.store_root)
     elif args.command == "search":
@@ -128,6 +170,25 @@ def main(argv: list[str] | None = None) -> int:
         result = store_inventory(args.store_root)
     elif args.command == "snapshot":
         result = create_snapshot(args.output_dir, root=args.store_root)
+    elif args.command == "restore":
+        result = restore_snapshot(
+            args.snapshot_dir,
+            args.target_dir,
+            expected_manifest_sha256=args.expected_manifest_sha256,
+            require_empty=True,
+        )
+    elif args.command == "restore-preimage":
+        result = restore_migration_preimage(
+            args.snapshot_dir,
+            args.target_dir,
+            expected_manifest_sha256=args.expected_manifest_sha256,
+        )
+    elif args.command == "lineage":
+        result = read_session_lineage(
+            args.session_id, carrier_id=args.carrier_id, root=args.store_root
+        )
+    elif args.command == "verify-full":
+        result = verify_context_fabric(args.store_root)
     else:
         result = verify_event_chain(args.store_root)
     sys.stdout.write(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n")

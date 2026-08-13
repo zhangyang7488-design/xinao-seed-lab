@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 CONTEXT_FABRIC_VERSION = "s.context_fabric.v1"
+CONTEXT_RUNTIME_FEATURE_LEVEL = "s.context_runtime.complete.v1"
 EVENT_VERSION = "s.context_event.v1"
 PROJECTION_VERSION = "s.context_projection.v1"
 RELATION_VERSION = "s.context_relation.v1"
@@ -69,6 +70,7 @@ _MAX_LEXICAL_CHARS = 65_536
 _MAX_OCCURRED_AT_CHARS = 128
 _MAX_QUERY_TERMS = 96
 _DEFAULT_CONTEXT_CHARS = 3_200
+_MAX_EXACT_ARTIFACT_BYTES = 262_144
 _MESSAGE_KINDS = frozenset({"user_message", "assistant_message"})
 _PROJECTION_KINDS = frozenset(
     {
@@ -139,11 +141,78 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def _canonical_utc_instant(value: object, *, field: str, allow_empty: bool = True) -> str:
+    text = str(value or "").strip()
+    if not text:
+        if allow_empty:
+            return ""
+        raise ContextFabricError(f"{field} is required")
+    candidate = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError as exc:
+        raise ContextFabricError(f"{field} is not a valid ISO-8601 instant") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ContextFabricError(f"{field} requires an explicit timezone")
+    normalized = parsed.astimezone(timezone.utc)
+    rendered = normalized.isoformat(timespec="microseconds").replace("+00:00", "Z")
+    return rendered.replace(".000000Z", "Z")
+
+
+def _validate_temporal_event_interval(
+    connection: sqlite3.Connection,
+    *,
+    from_event_id: str,
+    to_event_id: str,
+    field: str,
+) -> tuple[int | None, int | None]:
+    """Require referenced event boundaries to exist and form an open interval."""
+
+    sequences: list[int | None] = []
+    for label, event_id in (("from", from_event_id), ("to", to_event_id)):
+        if not event_id:
+            sequences.append(None)
+            continue
+        row = connection.execute("SELECT seq FROM events WHERE event_id=?", (event_id,)).fetchone()
+        if row is None:
+            raise ContextFabricError(f"{field} {label} event does not exist")
+        sequences.append(int(row["seq"]))
+    from_seq, to_seq = sequences
+    if from_seq is not None and to_seq is not None and to_seq <= from_seq:
+        raise ContextFabricError(f"{field} to event must be after from event")
+    return from_seq, to_seq
+
+
 def _normalized_windows_path(value: object) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
+    # ntpath does not remove Win32 extended-length prefixes.  Leaving them in
+    # place makes ``\\?\E:\CODEX_CLEANROOM`` compare unequal to the denied
+    # ``E:\CODEX_CLEANROOM`` root even though both names address the same
+    # object.  Normalize the prefix before any allow/deny comparison.
+    if text.startswith("\\\\?\\UNC\\"):
+        text = "\\\\" + text[8:]
+    elif text.startswith("\\\\?\\"):
+        text = text[4:]
     return ntpath.normcase(ntpath.abspath(text)).rstrip("\\/")
+
+
+def _final_windows_path(value: object) -> str:
+    """Return the final local path when it exists, otherwise its lexical form."""
+
+    normalized = _normalized_windows_path(value)
+    if not normalized:
+        return ""
+    try:
+        candidate = Path(str(value or "").strip())
+        if candidate.exists():
+            return _normalized_windows_path(candidate.resolve(strict=True))
+    except (OSError, RuntimeError):
+        # A mount decision must remain fail-closed against known denied lexical
+        # roots even when Windows refuses a final-path lookup.
+        pass
+    return normalized
 
 
 def _under_windows_root(value: str, root: str) -> bool:
@@ -164,17 +233,22 @@ def evaluate_mount(
         return MountDecision(False, "explicitly_disabled")
     raw_allowed = DEFAULT_ALLOWED_CODEX_HOMES if allowed_homes is None else allowed_homes
     normalized_allowed = {
-        _normalized_windows_path(path): carrier for path, carrier in raw_allowed.items()
+        _final_windows_path(path): carrier for path, carrier in raw_allowed.items()
     }
-    home = _normalized_windows_path(env.get("CODEX_HOME"))
+    home = _final_windows_path(env.get("CODEX_HOME"))
     carrier = normalized_allowed.get(home)
     if not carrier:
         return MountDecision(False, "codex_home_not_in_s_b_allowlist")
-    cwd = _normalized_windows_path(event.get("cwd"))
+    cwd = _final_windows_path(event.get("cwd"))
+    actual_cwd = _final_windows_path(event.get("_context_fabric_actual_cwd"))
     for denied in denied_cwd_roots:
         denied_root = _normalized_windows_path(denied)
         if cwd and denied_root and _under_windows_root(cwd, denied_root):
             return MountDecision(False, "cwd_is_cleanroom_or_research_body")
+        if actual_cwd and denied_root and _under_windows_root(actual_cwd, denied_root):
+            return MountDecision(False, "actual_cwd_is_cleanroom_or_research_body")
+    if actual_cwd and (not cwd or actual_cwd != cwd):
+        return MountDecision(False, "reported_cwd_does_not_match_hook_process")
     return MountDecision(True, "s_b_body_allowlist_match", BODY_ID, carrier, WORLD_ID)
 
 
@@ -194,6 +268,27 @@ def _validate_store_root(root: Path, *, create: bool) -> tuple[Path, Path]:
             raise ContextFabricError("context fabric state cannot live under cleanroom")
     if candidate.exists() and _path_is_link(candidate):
         raise ContextFabricError("context fabric root cannot be a link or junction")
+    # A non-link leaf can still sit below a junction.  Walk every existing
+    # ancestor so a caller cannot redirect a nominally safe state path through
+    # a reparse point.
+    for ancestor in (candidate, *candidate.parents):
+        if ancestor.exists() and _path_is_link(ancestor):
+            raise ContextFabricError("context fabric path cannot traverse a link or junction")
+    # Resolve the nearest existing ancestor before creating a prospective leaf.
+    # This catches 8.3 aliases and other final-name aliases without first
+    # materializing a state directory below a denied body.
+    nearest = candidate
+    missing_parts: list[str] = []
+    while not nearest.exists() and nearest.parent != nearest:
+        missing_parts.append(nearest.name)
+        nearest = nearest.parent
+    if nearest.exists():
+        prospective = nearest.resolve(strict=True).joinpath(*reversed(missing_parts))
+        normalized_prospective = _normalized_windows_path(prospective)
+        for denied in DEFAULT_DENIED_CWD_ROOTS:
+            denied_root = _final_windows_path(denied)
+            if normalized_prospective and _under_windows_root(normalized_prospective, denied_root):
+                raise ContextFabricError("context fabric state resolves under cleanroom")
     if create:
         candidate.mkdir(parents=True, exist_ok=True)
     if not candidate.is_dir():
@@ -228,6 +323,37 @@ def _connect(root: Path, *, create: bool) -> sqlite3.Connection:
         if row is None or row["value"] != CONTEXT_FABRIC_VERSION:
             connection.close()
             raise ContextFabricUnavailable("unsupported or incomplete context fabric schema")
+        feature = connection.execute(
+            "SELECT value FROM fabric_meta WHERE key='feature_level'"
+        ).fetchone()
+        if feature is None or feature["value"] != CONTEXT_RUNTIME_FEATURE_LEVEL:
+            connection.close()
+            raise ContextFabricUnavailable(
+                "explicit context fabric migration required before this operation"
+            )
+    return connection
+
+
+def _connect_read_compatible(root: Path) -> sqlite3.Connection:
+    """Open the immutable v1 event surface without authorizing legacy writes."""
+
+    _, database = _validate_store_root(root, create=False)
+    if not database.is_file():
+        raise ContextFabricUnavailable("context fabric is not initialized")
+    connection = sqlite3.connect(database, timeout=1.2)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    connection.execute("PRAGMA busy_timeout=1200")
+    try:
+        row = connection.execute(
+            "SELECT value FROM fabric_meta WHERE key='schema_version'"
+        ).fetchone()
+    except sqlite3.Error as exc:
+        connection.close()
+        raise ContextFabricUnavailable("unsupported or incomplete context fabric schema") from exc
+    if row is None or row["value"] != CONTEXT_FABRIC_VERSION:
+        connection.close()
+        raise ContextFabricUnavailable("unsupported or incomplete context fabric schema")
     return connection
 
 
@@ -341,17 +467,285 @@ COMMIT;
 """
 
 
+_RUNTIME_EXTENSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    migration_id TEXT NOT NULL UNIQUE,
+    from_version TEXT NOT NULL,
+    to_feature_level TEXT NOT NULL,
+    pre_event_count INTEGER NOT NULL,
+    pre_tip_event_hash TEXT NOT NULL,
+    backup_manifest_sha256 TEXT NOT NULL,
+    applied_at_unix_ns INTEGER NOT NULL,
+    migration_hash TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    artifact_id TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL,
+    byte_count INTEGER NOT NULL,
+    storage_kind TEXT NOT NULL,
+    blob_relpath TEXT NOT NULL,
+    source_kind TEXT NOT NULL,
+    source_locator TEXT NOT NULL,
+    source_record_sha256 TEXT NOT NULL,
+    source_key TEXT NOT NULL UNIQUE,
+    metadata_json TEXT NOT NULL,
+    artifact_hash TEXT NOT NULL UNIQUE,
+    created_at_unix_ns INTEGER NOT NULL,
+    authority INTEGER NOT NULL CHECK(authority = 0)
+);
+CREATE INDEX IF NOT EXISTS artifacts_content_sha256
+ON artifacts(content_sha256, storage_kind);
+CREATE TABLE IF NOT EXISTS event_artifacts (
+    event_id TEXT NOT NULL REFERENCES events(event_id),
+    artifact_id TEXT NOT NULL REFERENCES artifacts(artifact_id),
+    role TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    PRIMARY KEY(event_id, artifact_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS event_parents (
+    event_id TEXT NOT NULL REFERENCES events(event_id),
+    parent_event_id TEXT NOT NULL REFERENCES events(event_id),
+    relation TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    PRIMARY KEY(event_id, parent_event_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS event_source_refs (
+    event_id TEXT NOT NULL REFERENCES events(event_id),
+    source_kind TEXT NOT NULL,
+    source_locator TEXT NOT NULL,
+    source_record_sha256 TEXT NOT NULL,
+    source_key TEXT NOT NULL UNIQUE,
+    source_hash TEXT NOT NULL UNIQUE,
+    PRIMARY KEY(event_id, source_key)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS projection_runs (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL UNIQUE,
+    producer_id TEXT NOT NULL,
+    producer_version TEXT NOT NULL,
+    config_sha256 TEXT NOT NULL,
+    input_from_seq INTEGER NOT NULL,
+    input_to_seq INTEGER NOT NULL,
+    input_tip_hash TEXT NOT NULL,
+    trigger_event_id TEXT NOT NULL,
+    input_identity_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    output_refs_json TEXT NOT NULL,
+    run_hash TEXT NOT NULL UNIQUE,
+    created_at_unix_ns INTEGER NOT NULL,
+    authority INTEGER NOT NULL CHECK(authority = 0)
+);
+CREATE TABLE IF NOT EXISTS projection_metadata (
+    projection_id TEXT PRIMARY KEY REFERENCES projections(projection_id),
+    run_id TEXT NOT NULL,
+    producer_id TEXT NOT NULL,
+    producer_version TEXT NOT NULL,
+    config_sha256 TEXT NOT NULL,
+    automatic INTEGER NOT NULL CHECK(automatic IN (0,1)),
+    scope_key TEXT NOT NULL,
+    recorded_after_event_seq INTEGER NOT NULL,
+    recorded_after_event_id TEXT NOT NULL,
+    recorded_after_event_hash TEXT NOT NULL,
+    valid_from_event_id TEXT NOT NULL,
+    valid_from_at TEXT NOT NULL,
+    valid_to_event_id TEXT NOT NULL,
+    valid_to_at TEXT NOT NULL,
+    temporal_basis TEXT NOT NULL,
+    metadata_hash TEXT NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS events_carrier_session_seq
+ON events(carrier_id, session_id, seq DESC);
+CREATE INDEX IF NOT EXISTS projections_kind_key_seq
+ON projections(kind, semantic_key, seq DESC);
+CREATE INDEX IF NOT EXISTS projection_metadata_producer_scope
+ON projection_metadata(producer_id, scope_key, projection_id);
+CREATE INDEX IF NOT EXISTS projection_metadata_run
+ON projection_metadata(run_id, projection_id);
+CREATE TABLE IF NOT EXISTS relation_metadata (
+    relation_id TEXT PRIMARY KEY REFERENCES relations(relation_id),
+    scope_key TEXT NOT NULL,
+    prior_ref TEXT NOT NULL,
+    replacement_ref TEXT NOT NULL,
+    effective_from_event_id TEXT NOT NULL,
+    effective_from_at TEXT NOT NULL,
+    effective_to_event_id TEXT NOT NULL,
+    effective_to_at TEXT NOT NULL,
+    temporal_basis TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    metadata_hash TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS lineage_nodes (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id TEXT NOT NULL UNIQUE,
+    session_id TEXT NOT NULL,
+    carrier_id TEXT NOT NULL,
+    source_label TEXT NOT NULL,
+    source_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+    predecessor_event_id TEXT NOT NULL,
+    parent_session_id TEXT NOT NULL,
+    transcript_locator_sha256 TEXT NOT NULL,
+    lineage_status TEXT NOT NULL,
+    evidence_quality TEXT NOT NULL,
+    node_hash TEXT NOT NULL UNIQUE,
+    created_at_unix_ns INTEGER NOT NULL,
+    authority INTEGER NOT NULL CHECK(authority = 0)
+);
+CREATE TABLE IF NOT EXISTS lineage_edges (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    edge_id TEXT NOT NULL UNIQUE,
+    parent_node_id TEXT NOT NULL REFERENCES lineage_nodes(node_id),
+    child_node_id TEXT NOT NULL REFERENCES lineage_nodes(node_id),
+    relation TEXT NOT NULL,
+    source_event_id TEXT NOT NULL REFERENCES events(event_id),
+    evidence_basis TEXT NOT NULL,
+    edge_hash TEXT NOT NULL UNIQUE,
+    authority INTEGER NOT NULL CHECK(authority = 0)
+);
+CREATE TABLE IF NOT EXISTS materializations (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    materialization_id TEXT NOT NULL UNIQUE,
+    input_tip_seq INTEGER NOT NULL,
+    input_tip_hash TEXT NOT NULL,
+    as_of_seq INTEGER NOT NULL,
+    valid_at TEXT NOT NULL,
+    query_sha256 TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    carrier_id TEXT NOT NULL,
+    exclude_event_id TEXT NOT NULL,
+    lineage_status TEXT NOT NULL,
+    retrieval_scope TEXT NOT NULL,
+    rendered_context TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL,
+    source_refs_json TEXT NOT NULL,
+    created_at_unix_ns INTEGER NOT NULL,
+    authority INTEGER NOT NULL CHECK(authority = 0),
+    instruction_source INTEGER NOT NULL CHECK(instruction_source = 0),
+    current_prompt_included INTEGER NOT NULL CHECK(current_prompt_included = 0)
+);
+CREATE TABLE IF NOT EXISTS materialization_sources (
+    materialization_id TEXT NOT NULL REFERENCES materializations(materialization_id),
+    source_ref TEXT NOT NULL,
+    role TEXT NOT NULL,
+    source_order INTEGER NOT NULL,
+    PRIMARY KEY(materialization_id, source_ref)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS rollout_cursors (
+    carrier_id TEXT NOT NULL,
+    relative_locator TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    session_meta_sha256 TEXT NOT NULL,
+    next_byte_offset INTEGER NOT NULL,
+    next_physical_ordinal INTEGER NOT NULL,
+    committed_through_ordinal INTEGER NOT NULL,
+    last_record_start INTEGER NOT NULL,
+    last_record_sha256 TEXT NOT NULL,
+    committed_prefix_sha256 TEXT NOT NULL,
+    admitted_count INTEGER NOT NULL,
+    updated_at_unix_ns INTEGER NOT NULL,
+    PRIMARY KEY(carrier_id, relative_locator)
+) WITHOUT ROWID;
+
+CREATE TRIGGER IF NOT EXISTS artifacts_no_update BEFORE UPDATE ON artifacts
+BEGIN SELECT RAISE(ABORT, 'artifacts are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS artifacts_no_delete BEFORE DELETE ON artifacts
+BEGIN SELECT RAISE(ABORT, 'artifacts are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS event_artifacts_no_update BEFORE UPDATE ON event_artifacts
+BEGIN SELECT RAISE(ABORT, 'event artifacts are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS event_artifacts_no_delete BEFORE DELETE ON event_artifacts
+BEGIN SELECT RAISE(ABORT, 'event artifacts are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS event_parents_no_update BEFORE UPDATE ON event_parents
+BEGIN SELECT RAISE(ABORT, 'event parents are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS event_parents_no_delete BEFORE DELETE ON event_parents
+BEGIN SELECT RAISE(ABORT, 'event parents are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS event_source_refs_no_update BEFORE UPDATE ON event_source_refs
+BEGIN SELECT RAISE(ABORT, 'event source refs are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS event_source_refs_no_delete BEFORE DELETE ON event_source_refs
+BEGIN SELECT RAISE(ABORT, 'event source refs are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS projection_runs_no_update BEFORE UPDATE ON projection_runs
+BEGIN SELECT RAISE(ABORT, 'projection runs are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS projection_runs_no_delete BEFORE DELETE ON projection_runs
+BEGIN SELECT RAISE(ABORT, 'projection runs are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS projection_metadata_no_update BEFORE UPDATE ON projection_metadata
+BEGIN SELECT RAISE(ABORT, 'projection metadata is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS projection_metadata_no_delete BEFORE DELETE ON projection_metadata
+BEGIN SELECT RAISE(ABORT, 'projection metadata is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS relation_metadata_no_update BEFORE UPDATE ON relation_metadata
+BEGIN SELECT RAISE(ABORT, 'relation metadata is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS relation_metadata_no_delete BEFORE DELETE ON relation_metadata
+BEGIN SELECT RAISE(ABORT, 'relation metadata is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS lineage_nodes_no_update BEFORE UPDATE ON lineage_nodes
+BEGIN SELECT RAISE(ABORT, 'lineage nodes are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS lineage_nodes_no_delete BEFORE DELETE ON lineage_nodes
+BEGIN SELECT RAISE(ABORT, 'lineage nodes are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS lineage_edges_no_update BEFORE UPDATE ON lineage_edges
+BEGIN SELECT RAISE(ABORT, 'lineage edges are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS lineage_edges_no_delete BEFORE DELETE ON lineage_edges
+BEGIN SELECT RAISE(ABORT, 'lineage edges are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS materializations_no_update BEFORE UPDATE ON materializations
+BEGIN SELECT RAISE(ABORT, 'materializations are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS materializations_no_delete BEFORE DELETE ON materializations
+BEGIN SELECT RAISE(ABORT, 'materializations are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS materialization_sources_no_update
+BEFORE UPDATE ON materialization_sources
+BEGIN SELECT RAISE(ABORT, 'materialization sources are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS materialization_sources_no_delete
+BEFORE DELETE ON materialization_sources
+BEGIN SELECT RAISE(ABORT, 'materialization sources are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS schema_migrations_no_update BEFORE UPDATE ON schema_migrations
+BEGIN SELECT RAISE(ABORT, 'schema migrations are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS schema_migrations_no_delete BEFORE DELETE ON schema_migrations
+BEGIN SELECT RAISE(ABORT, 'schema migrations are append-only'); END;
+"""
+
+
 def initialize_context_fabric(root: Path = DEFAULT_CONTEXT_FABRIC_ROOT) -> dict[str, object]:
+    _, database = _validate_store_root(root, create=True)
+    if database.exists():
+        probe = sqlite3.connect(database, timeout=1.2)
+        probe.row_factory = sqlite3.Row
+        try:
+            schema = probe.execute(
+                "SELECT value FROM fabric_meta WHERE key='schema_version'"
+            ).fetchone()
+            feature = probe.execute(
+                "SELECT value FROM fabric_meta WHERE key='feature_level'"
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise ContextFabricUnavailable(
+                "unsupported or incomplete context fabric schema"
+            ) from exc
+        finally:
+            probe.close()
+        if schema is None or schema["value"] != CONTEXT_FABRIC_VERSION:
+            raise ContextFabricUnavailable("unsupported or incomplete context fabric schema")
+        if feature is None or feature["value"] != CONTEXT_RUNTIME_FEATURE_LEVEL:
+            raise ContextFabricUnavailable(
+                "explicit context fabric migration required before initialization"
+            )
     connection = _connect(root, create=True)
     try:
         connection.executescript(_SCHEMA)
+        connection.executescript("BEGIN IMMEDIATE;\n" + _RUNTIME_EXTENSION_SCHEMA)
+        connection.execute(
+            "INSERT OR IGNORE INTO fabric_meta(key,value) VALUES ('feature_level',?)",
+            (CONTEXT_RUNTIME_FEATURE_LEVEL,),
+        )
+        connection.commit()
         quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()
     if quick_check != "ok":
         raise ContextFabricError(f"context fabric quick_check failed: {quick_check}")
     return {
         "schema_version": CONTEXT_FABRIC_VERSION,
+        "feature_level": CONTEXT_RUNTIME_FEATURE_LEVEL,
         "root": str(Path(root).resolve()),
         "world_id": WORLD_ID,
         "authority": False,
@@ -467,6 +861,8 @@ def _append_event(
     source_record_sha256: str,
     source_key: str,
     metadata: Mapping[str, object],
+    parent_event_ids: Sequence[str] = (),
+    artifact_ids: Sequence[str] = (),
     environ: Mapping[str, str] | None = None,
 ) -> CaptureResult:
     if not isinstance(raw_text, str) or len(raw_text) > _MAX_RAW_CHARS:
@@ -480,7 +876,12 @@ def _append_event(
     speaker = _bounded_id(speaker, "speaker")
     source_kind = _bounded_id(source_kind, "source_kind")
     authority_class = _bounded_id(authority_class, "authority_class")
-    metadata_json = _canonical_bytes(dict(metadata)).decode("utf-8")
+    parents = sorted(dict.fromkeys(str(item) for item in parent_event_ids))
+    artifacts = sorted(dict.fromkeys(str(item) for item in artifact_ids))
+    metadata_value = dict(metadata)
+    metadata_value["parent_event_ids"] = parents
+    metadata_value["artifact_ids"] = artifacts
+    metadata_json = _canonical_bytes(metadata_value).decode("utf-8")
     if len(metadata_json.encode("utf-8")) > _MAX_METADATA_BYTES:
         raise ContextFabricError("event metadata exceeds the bounded capture limit")
     raw_bytes = raw_text.encode("utf-8")
@@ -495,6 +896,15 @@ def _append_event(
         stored_text = raw_text
         raw_storage = "exact_utf8"
     stored_bytes = stored_text.encode("utf-8")
+    source_locator = str(source_locator)
+    source_record_sha256 = str(source_record_sha256)
+    source_key = str(source_key)
+    if not source_key or len(source_key) > 2_048 or _secret_like(source_key, environ=environ):
+        raise ContextFabricError("event source_key is empty, oversized, or secret-like")
+    if _secret_like(source_locator, environ=environ):
+        raise ContextFabricError("event source locator resembles a secret")
+    if source_record_sha256 and not re.fullmatch(r"[0-9a-f]{64}", source_record_sha256):
+        raise ContextFabricError("event source_record_sha256 is invalid")
     event_id = "evt_" + _sha256_text(source_key)
     captured_at_unix_ns = time.time_ns()
     base: dict[str, object] = {
@@ -513,20 +923,82 @@ def _append_event(
         "raw_storage": raw_storage,
         "authority_class": authority_class,
         "source_kind": source_kind,
-        "source_locator": str(source_locator)[:1_024],
-        "source_record_sha256": str(source_record_sha256),
+        "source_locator": source_locator[:1_024],
+        "source_record_sha256": source_record_sha256,
         "source_key": source_key,
         "metadata_json": metadata_json,
     }
     connection = _connect(root, create=False)
     try:
         connection.execute("BEGIN IMMEDIATE")
+        source_identity = {
+            "source_kind": source_kind,
+            "source_locator": source_locator[:1_024],
+            "source_record_sha256": source_record_sha256,
+            "source_key": source_key,
+        }
+
+        def bind_source(event_id_value: str) -> None:
+            source_hash = _sha256_bytes(
+                _canonical_bytes({**source_identity, "event_id": event_id_value})
+            )
+            inserted = connection.execute(
+                "INSERT OR IGNORE INTO event_source_refs("
+                "event_id,source_kind,source_locator,source_record_sha256,source_key,source_hash"
+                ") VALUES (?,?,?,?,?,?)",
+                (
+                    event_id_value,
+                    source_identity["source_kind"],
+                    source_identity["source_locator"],
+                    source_identity["source_record_sha256"],
+                    source_identity["source_key"],
+                    source_hash,
+                ),
+            )
+            if inserted.rowcount == 0:
+                existing_source = connection.execute(
+                    "SELECT * FROM event_source_refs WHERE source_key=?", (source_key,)
+                ).fetchone()
+                if existing_source is None or any(
+                    existing_source[key] != value
+                    for key, value in {
+                        "event_id": event_id_value,
+                        **source_identity,
+                        "source_hash": source_hash,
+                    }.items()
+                ):
+                    raise ContextFabricError("event source key is bound to another identity")
+
         duplicate = connection.execute(
-            "SELECT seq, event_id, event_hash, raw_storage FROM events WHERE source_key=?",
+            "SELECT * FROM events WHERE source_key=?",
             (source_key,),
         ).fetchone()
         if duplicate is not None:
-            connection.rollback()
+            replay_fields = (
+                "schema_version",
+                "world_id",
+                "body_id",
+                "carrier_id",
+                "session_id",
+                "turn_id",
+                "event_kind",
+                "speaker",
+                "raw_sha256",
+                "stored_text_sha256",
+                "raw_storage",
+                "authority_class",
+                "source_kind",
+                "source_locator",
+                "source_record_sha256",
+                "source_key",
+                "metadata_json",
+            )
+            if any(duplicate[field] != base[field] for field in replay_fields):
+                raise ContextFabricError(
+                    "event source key was replayed with a different event identity"
+                )
+            bind_source(str(duplicate["event_id"]))
+            connection.commit()
             return CaptureResult(
                 "duplicate",
                 duplicate["event_id"],
@@ -542,7 +1014,8 @@ def _append_event(
                 (carrier_id, session_id, turn_id, event_kind, raw_sha256),
             ).fetchone()
             if duplicate is not None:
-                connection.rollback()
+                bind_source(str(duplicate["event_id"]))
+                connection.commit()
                 return CaptureResult(
                     "duplicate",
                     duplicate["event_id"],
@@ -567,10 +1040,36 @@ def _append_event(
         cursor = connection.execute(
             f"INSERT INTO events({','.join(columns)}) VALUES ({placeholders})", values
         )
+        for order, parent_event_id in enumerate(parents):
+            if (
+                connection.execute(
+                    "SELECT 1 FROM events WHERE event_id=?", (parent_event_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ContextFabricError(f"event parent does not exist: {parent_event_id}")
+            connection.execute(
+                "INSERT INTO event_parents(event_id,parent_event_id,relation,ordinal) "
+                "VALUES (?,?,?,?)",
+                (event_id, parent_event_id, "causal_parent", order),
+            )
+        for order, artifact_id in enumerate(artifacts):
+            if (
+                connection.execute(
+                    "SELECT 1 FROM artifacts WHERE artifact_id=?", (artifact_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ContextFabricError(f"event artifact does not exist: {artifact_id}")
+            connection.execute(
+                "INSERT INTO event_artifacts(event_id,artifact_id,role,ordinal) VALUES (?,?,?,?)",
+                (event_id, artifact_id, "evidence", order),
+            )
         for term in lexical_terms(stored_text):
             connection.execute(
                 "INSERT INTO event_terms(event_id, term) VALUES (?, ?)", (event_id, term)
             )
+        bind_source(event_id)
         connection.commit()
         return CaptureResult("appended", event_id, event_hash, int(cursor.lastrowid), raw_storage)
     except Exception:
@@ -582,13 +1081,20 @@ def _append_event(
 
 def _safe_hook_metadata(event: Mapping[str, object]) -> dict[str, object]:
     result: dict[str, object] = {}
-    for key in ("hook_event_name", "source", "trigger", "model", "permission_mode", "cwd"):
+    for key in ("hook_event_name", "source", "trigger", "model", "permission_mode"):
         value = event.get(key)
         if isinstance(value, (str, int, bool)) and len(str(value)) <= 2_048:
             result[key] = value
+    cwd = event.get("cwd")
+    if isinstance(cwd, str) and cwd:
+        result["cwd_sha256"] = _sha256_text(_normalized_windows_path(cwd))
     transcript_path = event.get("transcript_path")
     if isinstance(transcript_path, str) and transcript_path:
         result["transcript_path_sha256"] = _sha256_text(_normalized_windows_path(transcript_path))
+    if isinstance(event.get("stop_hook_active"), bool):
+        result["stop_hook_active"] = bool(event["stop_hook_active"])
+    if event.get("reason") == "other":
+        result["reason"] = "other"
     return result
 
 
@@ -652,6 +1158,19 @@ def capture_hook_event(
             "capture_nonce": time.time_ns(),
         }
     source_key = "hook:" + _sha256_bytes(_canonical_bytes(source_key_material))
+    parent_event_ids: list[str] = []
+    if event_name == "PostCompact" and turn_id:
+        connection = _connect(root, create=False)
+        try:
+            precompact = connection.execute(
+                "SELECT event_id FROM events WHERE carrier_id=? AND session_id=? "
+                "AND turn_id=? AND event_kind='pre_compact' ORDER BY seq DESC LIMIT 1",
+                (decision.carrier_id, session_id, turn_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if precompact is not None:
+            parent_event_ids.append(str(precompact["event_id"]))
     return _append_event(
         root=root,
         carrier_id=decision.carrier_id,
@@ -667,6 +1186,7 @@ def capture_hook_event(
         source_record_sha256=_sha256_bytes(_canonical_bytes(_safe_hook_metadata(event))),
         source_key=source_key,
         metadata=_safe_hook_metadata(event),
+        parent_event_ids=parent_event_ids,
         environ=os.environ if environ is None else environ,
     )
 
@@ -682,6 +1202,14 @@ def read_event(event_id: str, *, root: Path = DEFAULT_CONTEXT_FABRIC_ROOT) -> di
     connection = _connect(root, create=False)
     try:
         row = connection.execute("SELECT * FROM events WHERE event_id=?", (event_id,)).fetchone()
+        parents = connection.execute(
+            "SELECT parent_event_id FROM event_parents WHERE event_id=? ORDER BY ordinal",
+            (event_id,),
+        ).fetchall()
+        artifacts = connection.execute(
+            "SELECT artifact_id FROM event_artifacts WHERE event_id=? ORDER BY ordinal",
+            (event_id,),
+        ).fetchall()
     finally:
         connection.close()
     if row is None:
@@ -689,11 +1217,15 @@ def read_event(event_id: str, *, root: Path = DEFAULT_CONTEXT_FABRIC_ROOT) -> di
     result = dict(row)
     result["raw_text"] = _event_text(row)
     result["metadata"] = json.loads(result.pop("metadata_json"))
+    result["parent_event_ids"] = [item["parent_event_id"] for item in parents]
+    result["artifact_ids"] = [item["artifact_id"] for item in artifacts]
     return result
 
 
 def verify_event_chain(root: Path = DEFAULT_CONTEXT_FABRIC_ROOT) -> dict[str, object]:
-    connection = _connect(root, create=False)
+    # This intentionally remains the one read-compatible operation for a
+    # legacy v1 store.  Writers and the hook still require explicit migration.
+    connection = _connect_read_compatible(root)
     try:
         rows = connection.execute("SELECT * FROM events ORDER BY seq").fetchall()
         quick_check = connection.execute("PRAGMA quick_check").fetchone()[0]
@@ -719,7 +1251,7 @@ def verify_event_chain(root: Path = DEFAULT_CONTEXT_FABRIC_ROOT) -> dict[str, ob
     }
 
 
-def create_snapshot(
+def _create_snapshot_v1(
     output_root: Path,
     *,
     root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
@@ -766,7 +1298,10 @@ def create_snapshot(
 
 
 def append_projection(
-    spec: Mapping[str, object], *, root: Path = DEFAULT_CONTEXT_FABRIC_ROOT
+    spec: Mapping[str, object],
+    *,
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+    _connection: sqlite3.Connection | None = None,
 ) -> dict[str, object]:
     kind = str(spec.get("kind") or "")
     if kind not in _PROJECTION_KINDS:
@@ -791,6 +1326,9 @@ def append_projection(
     if _secret_like(producer, environ=os.environ):
         raise ContextFabricError("projection producer resembles a secret")
     supersedes = str(spec.get("supersedes_projection_id") or "")
+    scope_key = str(spec.get("scope_key") or semantic_key)
+    if not scope_key or len(scope_key) > 512 or _secret_like(scope_key, environ=os.environ):
+        raise ContextFabricError("projection scope_key is empty, oversized, or secret-like")
     source_ids_value = spec.get("source_event_ids")
     if not isinstance(source_ids_value, Sequence) or isinstance(source_ids_value, (str, bytes)):
         raise ContextFabricError("projection source_event_ids must be an array")
@@ -805,9 +1343,23 @@ def append_projection(
         raise ContextFabricError("projection content exceeds the bounded limit")
     if _secret_like(content_json, environ=os.environ):
         raise ContextFabricError("projection content resembles a secret")
-    connection = _connect(root, create=False)
+    valid_from_at = _canonical_utc_instant(spec.get("valid_from"), field="projection valid_from")
+    valid_to_at = _canonical_utc_instant(spec.get("valid_to"), field="projection valid_to")
+    if valid_from_at and valid_to_at and valid_to_at <= valid_from_at:
+        raise ContextFabricError("projection valid_to must be after valid_from")
+    valid_from_event_id = str(spec.get("valid_from_event_id") or "")
+    valid_to_event_id = str(spec.get("valid_to_event_id") or "")
+    connection = _connect(root, create=False) if _connection is None else _connection
+    owns_transaction = _connection is None
     try:
-        connection.execute("BEGIN IMMEDIATE")
+        if owns_transaction:
+            connection.execute("BEGIN IMMEDIATE")
+        _validate_temporal_event_interval(
+            connection,
+            from_event_id=valid_from_event_id,
+            to_event_id=valid_to_event_id,
+            field="projection temporal interval",
+        )
         placeholders = ",".join("?" for _ in source_ids)
         rows = connection.execute(
             f"SELECT event_id, event_hash FROM events WHERE event_id IN ({placeholders})",
@@ -819,18 +1371,28 @@ def append_projection(
             raise ContextFabricError(f"projection source events are missing: {missing}")
         if supersedes:
             old = connection.execute(
-                "SELECT kind, semantic_key FROM projections WHERE projection_id=?", (supersedes,)
+                "SELECT p.kind,p.semantic_key,pm.scope_key FROM projections p "
+                "JOIN projection_metadata pm ON pm.projection_id=p.projection_id "
+                "WHERE p.projection_id=?",
+                (supersedes,),
             ).fetchone()
-            if old is None or old["kind"] != kind or old["semantic_key"] != semantic_key:
+            if (
+                old is None
+                or old["kind"] != kind
+                or old["semantic_key"] != semantic_key
+                or old["scope_key"] != scope_key
+            ):
                 raise ContextFabricError("supersedes projection identity mismatch")
         source_span = [{"event_id": item, "event_hash": by_id[item]} for item in source_ids]
         source_span_sha256 = _sha256_bytes(_canonical_bytes(source_span))
         aliases_json = _canonical_bytes(aliases).decode("utf-8")
         content_sha256 = _sha256_text(content_json)
         latest = connection.execute(
-            "SELECT * FROM projections WHERE kind=? AND semantic_key=? "
-            "ORDER BY version DESC LIMIT 1",
-            (kind, semantic_key),
+            "SELECT p.* FROM projections p JOIN projection_metadata pm "
+            "ON pm.projection_id=p.projection_id "
+            "WHERE p.kind=? AND p.semantic_key=? AND pm.scope_key=? "
+            "ORDER BY p.version DESC LIMIT 1",
+            (kind, semantic_key, scope_key),
         ).fetchone()
         if (
             latest is not None
@@ -842,7 +1404,8 @@ def append_projection(
             and latest["source_span_sha256"] == source_span_sha256
             and latest["supersedes_projection_id"] == supersedes
         ):
-            connection.rollback()
+            if owns_transaction:
+                connection.rollback()
             return {
                 "projection_id": latest["projection_id"],
                 "seq": int(latest["seq"]),
@@ -851,7 +1414,11 @@ def append_projection(
                 "status": "duplicate",
                 "authority": False,
             }
-        version = int(latest["version"] + 1) if latest is not None else 1
+        latest_version = connection.execute(
+            "SELECT MAX(version) AS version FROM projections WHERE kind=? AND semantic_key=?",
+            (kind, semantic_key),
+        ).fetchone()
+        version = int(latest_version["version"] or 0) + 1
         identity = {
             "kind": kind,
             "semantic_key": semantic_key,
@@ -894,7 +1461,61 @@ def append_projection(
                 "INSERT INTO projection_sources(projection_id,event_id,source_order) VALUES (?,?,?)",
                 (projection_id, event_id, order),
             )
-        connection.commit()
+        recorded = connection.execute(
+            "SELECT seq,event_id,event_hash FROM events ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
+        if recorded is None:
+            raise ContextFabricError("projection cannot be recorded without an event tip")
+        producer_id = str(spec.get("producer_id") or producer)[:256]
+        producer_version = str(spec.get("producer_version") or "v1")[:128]
+        config_sha256 = str(spec.get("config_sha256") or _sha256_text(producer_id))
+        if not re.fullmatch(r"[0-9a-f]{64}", config_sha256):
+            raise ContextFabricError("projection producer config_sha256 is invalid")
+        metadata_identity = {
+            "projection_id": projection_id,
+            "run_id": str(spec.get("run_id") or ""),
+            "producer_id": producer_id,
+            "producer_version": producer_version,
+            "config_sha256": config_sha256,
+            "automatic": bool(spec.get("automatic", False)),
+            "scope_key": scope_key,
+            "recorded_after_event_seq": int(recorded["seq"]),
+            "recorded_after_event_id": recorded["event_id"],
+            "recorded_after_event_hash": recorded["event_hash"],
+            "valid_from_event_id": valid_from_event_id,
+            "valid_from_at": valid_from_at,
+            "valid_to_event_id": valid_to_event_id,
+            "valid_to_at": valid_to_at,
+            "temporal_basis": str(spec.get("temporal_basis") or "recorded_event_order"),
+        }
+        connection.execute(
+            "INSERT INTO projection_metadata("
+            "projection_id,run_id,producer_id,producer_version,config_sha256,automatic,"
+            "scope_key,recorded_after_event_seq,recorded_after_event_id,"
+            "recorded_after_event_hash,valid_from_event_id,valid_from_at,"
+            "valid_to_event_id,valid_to_at,temporal_basis,metadata_hash"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                projection_id,
+                metadata_identity["run_id"],
+                producer_id,
+                producer_version,
+                config_sha256,
+                int(metadata_identity["automatic"]),
+                metadata_identity["scope_key"],
+                metadata_identity["recorded_after_event_seq"],
+                metadata_identity["recorded_after_event_id"],
+                metadata_identity["recorded_after_event_hash"],
+                metadata_identity["valid_from_event_id"],
+                metadata_identity["valid_from_at"],
+                metadata_identity["valid_to_event_id"],
+                metadata_identity["valid_to_at"],
+                metadata_identity["temporal_basis"],
+                _sha256_bytes(_canonical_bytes(metadata_identity)),
+            ),
+        )
+        if owns_transaction:
+            connection.commit()
         return {
             "projection_id": projection_id,
             "seq": int(cursor.lastrowid),
@@ -904,10 +1525,12 @@ def append_projection(
             "authority": False,
         }
     except Exception:
-        connection.rollback()
+        if owns_transaction:
+            connection.rollback()
         raise
     finally:
-        connection.close()
+        if owns_transaction:
+            connection.close()
 
 
 def append_relation(
@@ -977,6 +1600,44 @@ def append_relation(
                 temporal_scope,
                 note,
                 time.time_ns(),
+            ),
+        )
+        effective_from_at = _canonical_utc_instant(
+            spec.get("effective_from_at"), field="relation effective_from_at"
+        )
+        effective_to_at = _canonical_utc_instant(
+            spec.get("effective_to_at"), field="relation effective_to_at"
+        )
+        if effective_from_at and effective_to_at and effective_to_at <= effective_from_at:
+            raise ContextFabricError("relation effective_to_at must be after effective_from_at")
+        effective_from_event_id = str(spec.get("effective_from_event_id") or source_event_id)
+        effective_to_event_id = str(spec.get("effective_to_event_id") or "")
+        _validate_temporal_event_interval(
+            connection,
+            from_event_id=effective_from_event_id,
+            to_event_id=effective_to_event_id,
+            field="relation temporal interval",
+        )
+        relation_metadata_identity = {
+            "relation_id": relation_id,
+            "scope_key": str(spec.get("scope_key") or temporal_scope),
+            "prior_ref": from_ref,
+            "replacement_ref": to_ref,
+            "effective_from_event_id": effective_from_event_id,
+            "effective_from_at": effective_from_at,
+            "effective_to_event_id": effective_to_event_id,
+            "effective_to_at": effective_to_at,
+            "temporal_basis": str(spec.get("temporal_basis") or "explicit_relation_event_order"),
+            "direction": str(spec.get("direction") or "prior_to_replacement"),
+        }
+        connection.execute(
+            "INSERT INTO relation_metadata("
+            "relation_id,scope_key,prior_ref,replacement_ref,effective_from_event_id,"
+            "effective_from_at,effective_to_event_id,effective_to_at,temporal_basis,"
+            "direction,metadata_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                *relation_metadata_identity.values(),
+                _sha256_bytes(_canonical_bytes(relation_metadata_identity)),
             ),
         )
         connection.commit()
@@ -1050,7 +1711,7 @@ def _active_projections(connection: sqlite3.Connection) -> list[dict[str, object
     return result
 
 
-def render_materialized_context(
+def _render_materialized_context_v1(
     *,
     query: str | None,
     root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
@@ -1259,9 +1920,67 @@ def render_hook_context(
         environ=environ,
         allowed_homes=allowed_homes,
     )
-    query = event.get("prompt") if event.get("hook_event_name") == "UserPromptSubmit" else None
+    event_name = str(event.get("hook_event_name") or "")
+    if captured is not None and event_name == "SessionStart":
+        predecessor_event_id = ""
+        if event.get("source") in {"compact", "resume"}:
+            connection = _connect(root, create=False)
+            try:
+                if event.get("source") == "compact":
+                    predecessor = connection.execute(
+                        "SELECT event_id FROM events WHERE session_id=? AND carrier_id=? "
+                        "AND event_kind='post_compact' AND seq<? ORDER BY seq DESC LIMIT 1",
+                        (
+                            str(event.get("session_id") or ""),
+                            decision.carrier_id or "",
+                            captured.seq,
+                        ),
+                    ).fetchone()
+                else:
+                    # The product surface currently supplies no exact resume
+                    # parent locator.  Keep resume unresolved instead of
+                    # inferring continuity from chronology alone.
+                    predecessor = None
+            finally:
+                connection.close()
+            if predecessor is not None:
+                predecessor_event_id = str(predecessor["event_id"])
+        record_session_lineage(
+            {
+                "carrier_id": decision.carrier_id or "",
+                "session_id": str(event.get("session_id") or ""),
+                "source": str(event.get("source") or "startup"),
+                "transcript_locator_sha256": str(
+                    _safe_hook_metadata(event).get("transcript_path_sha256") or ""
+                ),
+            },
+            source_event_id=captured.event_id,
+            predecessor_event_id=predecessor_event_id,
+            root=root,
+        )
+    if captured is not None:
+        producer_ids: list[str] = []
+        if event_name == "Stop":
+            producer_ids = ["s.context_runtime.closed_round"]
+        elif event_name in {"PostCompact", "SessionEnd"}:
+            producer_ids = [
+                "s.context_runtime.lineage_segment",
+                "s.context_runtime.current_seed",
+            ]
+        if producer_ids:
+            # A trigger-scoped run touches only this closed turn or lifecycle
+            # boundary.  Full replay remains an explicit manager/recovery
+            # operation and is never performed inside the 3–5s hook path.
+            run_projection_producers(
+                root=root,
+                trigger_event_id=captured.event_id,
+                producer_ids=producer_ids,
+            )
+    query = event.get("prompt") if event_name == "UserPromptSubmit" else None
     context = ""
-    if event.get("hook_event_name") in {"UserPromptSubmit", "SessionStart"}:
+    if event_name == "UserPromptSubmit" or (
+        event_name == "SessionStart" and event.get("source") in {"resume", "compact"}
+    ):
         context = render_materialized_context(
             query=query if isinstance(query, str) else None,
             root=root,
@@ -1306,7 +2025,7 @@ def _surface_text(item: Mapping[str, object]) -> str:
     return "\n".join(parts)
 
 
-def import_codex_rollout(
+def _import_codex_rollout_v1(
     rollout_path: Path,
     *,
     carrier_home: Path,
@@ -1437,12 +2156,199 @@ def import_codex_rollout(
     }
 
 
+# Completion APIs are implemented in one lazily imported extension so the
+# first-slice module remains the stable import surface for S/B consumers.
+def migrate_context_fabric(
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+    *,
+    target_version: str = CONTEXT_RUNTIME_FEATURE_LEVEL,
+    backup_root: Path | None = None,
+    dry_run: bool = False,
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import migrate_context_fabric as impl
+
+    return impl(
+        root,
+        target_version=target_version,
+        backup_root=backup_root,
+        dry_run=dry_run,
+    )
+
+
+def admit_artifact(content: bytes | str | None, **kwargs: object) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import admit_artifact as impl
+
+    return impl(content, **kwargs)
+
+
+def append_context_event(
+    spec: Mapping[str, object],
+    *,
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+    environ: Mapping[str, str] | None = None,
+) -> CaptureResult:
+    from services.agent_runtime.context_runtime_completion import append_context_event as impl
+
+    return impl(spec, root=root, environ=environ)
+
+
+def run_projection_producers(**kwargs: object) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import run_projection_producers as impl
+
+    return impl(**kwargs)
+
+
+def append_correction(
+    spec: Mapping[str, object], *, root: Path = DEFAULT_CONTEXT_FABRIC_ROOT
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import append_correction as impl
+
+    return impl(spec, root=root)
+
+
+def record_session_lineage(
+    event: Mapping[str, object],
+    *,
+    source_event_id: str,
+    predecessor_event_id: str = "",
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import record_session_lineage as impl
+
+    return impl(
+        event,
+        source_event_id=source_event_id,
+        predecessor_event_id=predecessor_event_id,
+        root=root,
+    )
+
+
+def read_session_lineage(
+    session_id: str,
+    *,
+    carrier_id: str = "",
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import read_session_lineage as impl
+
+    return impl(session_id, carrier_id=carrier_id, root=root)
+
+
+def materialize_context(**kwargs: object) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import materialize_context as impl
+
+    return impl(**kwargs)
+
+
+def rehydrate_context(event: Mapping[str, object], **kwargs: object) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import rehydrate_context as impl
+
+    return impl(event, **kwargs)
+
+
+def verify_context_fabric(
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import verify_context_fabric as impl
+
+    return impl(root)
+
+
+def restore_snapshot(
+    snapshot_root: Path,
+    target_root: Path,
+    *,
+    expected_manifest_sha256: str = "",
+    require_empty: bool = True,
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import restore_snapshot as impl
+
+    return impl(
+        snapshot_root,
+        target_root,
+        expected_manifest_sha256=expected_manifest_sha256,
+        require_empty=require_empty,
+    )
+
+
+def create_snapshot(
+    output_root: Path,
+    *,
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import create_snapshot as impl
+
+    return impl(output_root, root=root)
+
+
+def import_codex_rollout(
+    rollout_path: Path,
+    *,
+    carrier_home: Path,
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+    allowed_homes: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import import_codex_rollout as impl
+
+    return impl(
+        rollout_path,
+        carrier_home=carrier_home,
+        root=root,
+        allowed_homes=allowed_homes,
+    )
+
+
+def render_materialized_context(
+    *,
+    query: str | None,
+    root: Path = DEFAULT_CONTEXT_FABRIC_ROOT,
+    exclude_event_id: str = "",
+    session_id: str = "",
+    carrier_id: str = "",
+    max_chars: int = _DEFAULT_CONTEXT_CHARS,
+) -> str:
+    result = materialize_context(
+        query=query,
+        root=root,
+        exclude_event_id=exclude_event_id,
+        session_id=session_id,
+        carrier_id=carrier_id,
+        max_chars=max_chars,
+        persist=True,
+    )
+    return str(result["rendered_context"]) if result["source_refs"] else ""
+
+
+def restore_migration_preimage(
+    snapshot_root: Path,
+    target_root: Path,
+    *,
+    expected_manifest_sha256: str = "",
+) -> dict[str, object]:
+    from services.agent_runtime.context_runtime_completion import (
+        restore_migration_preimage as impl,
+    )
+
+    return impl(
+        snapshot_root,
+        target_root,
+        expected_manifest_sha256=expected_manifest_sha256,
+    )
+
+
 def store_inventory(root: Path = DEFAULT_CONTEXT_FABRIC_ROOT) -> dict[str, object]:
     connection = _connect(root, create=False)
     try:
         counts = {
             table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-            for table in ("events", "projections", "relations")
+            for table in (
+                "events",
+                "projections",
+                "relations",
+                "artifacts",
+                "lineage_nodes",
+                "materializations",
+            )
         }
         by_carrier = {
             row["carrier_id"]: int(row["count"])
@@ -1459,6 +2365,7 @@ def store_inventory(root: Path = DEFAULT_CONTEXT_FABRIC_ROOT) -> dict[str, objec
         connection.close()
     return {
         "schema_version": CONTEXT_FABRIC_VERSION,
+        "feature_level": CONTEXT_RUNTIME_FEATURE_LEVEL,
         **counts,
         "events_by_carrier": by_carrier,
         "secret_like_events_withheld": withheld,
@@ -1471,6 +2378,7 @@ def store_inventory(root: Path = DEFAULT_CONTEXT_FABRIC_ROOT) -> dict[str, objec
 __all__ = [
     "BODY_ID",
     "CONTEXT_FABRIC_VERSION",
+    "CONTEXT_RUNTIME_FEATURE_LEVEL",
     "CaptureResult",
     "ContextFabricError",
     "ContextFabricUnavailable",
@@ -1479,6 +2387,9 @@ __all__ = [
     "MATERIALIZED_CONTEXT_VERSION",
     "MountDecision",
     "WORLD_ID",
+    "admit_artifact",
+    "append_context_event",
+    "append_correction",
     "append_projection",
     "append_relation",
     "capture_hook_event",
@@ -1487,10 +2398,18 @@ __all__ = [
     "import_codex_rollout",
     "initialize_context_fabric",
     "lexical_terms",
+    "materialize_context",
+    "migrate_context_fabric",
     "read_event",
+    "read_session_lineage",
+    "record_session_lineage",
+    "rehydrate_context",
     "render_hook_context",
     "render_materialized_context",
+    "restore_snapshot",
+    "run_projection_producers",
     "search_events",
     "store_inventory",
     "verify_event_chain",
+    "verify_context_fabric",
 ]

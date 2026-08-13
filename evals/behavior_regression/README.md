@@ -1,7 +1,7 @@
 # Local behavior regression
 
 This is a bounded S engineering capability, not a research platform, scheduler,
-authority source, or completion gate. The catalog currently inventories 120
+authority source, or completion gate. The catalog currently inventories 124
 declared live and reusable specifications. XINAO domain research and economic evidence
 belong to `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`.
 
@@ -29,7 +29,12 @@ The active profiles are:
   underlying action executed;
 - `subagent`: one fail-closed disposable native-Codex-subagent capability
   probe, excluded from ordinary `core` and `deep` runs; it cannot claim a
-  runtime pass until the raw parent trace includes the child's terminal state.
+  runtime pass until the raw parent trace includes the child's terminal state;
+- `context`: four operation-isolated deterministic context-runtime contracts.
+  The default receipt is `context_contract_only` and cannot support a runtime
+  behavior claim. Live app-server plus installed-hook evidence is only attempted
+  when `-ContextEvidenceMode live` is explicitly supplied; an ineligible live
+  attempt remains a typed non-claim rather than falling back to contract proof.
 
 Promptfoo failures may enter the D-drive candidate inbox with provenance, but
 they never rewrite instructions, memory, Skills, or authority automatically.
@@ -44,4 +49,6 @@ Each run writes operation-scoped raw output and a compact summary under D.
 .\scripts\run_behavior_regression.ps1 -Profile proactive -FailedFrom D:\path\result.json
 .\scripts\run_behavior_regression.ps1 -Profile surface -MaxConcurrency 1 -MaxErrorRetries 0
 .\scripts\run_behavior_regression.ps1 -Profile subagent -MaxConcurrency 1 -MaxErrorRetries 0
+.\scripts\run_behavior_regression.ps1 -Profile context
+.\scripts\run_behavior_regression.ps1 -Profile context -ContextEvidenceMode live
 ```

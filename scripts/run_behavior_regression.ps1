@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'subagent')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'subagent', 'context')]
     [string]$Profile = 'smoke',
+    [ValidateSet('contract', 'live')]
+    [string]$ContextEvidenceMode = 'contract',
     [string]$Domain,
     [string]$CasePattern,
     [string]$FailedFrom,
@@ -12,7 +14,16 @@ param(
     [switch]$PreflightOnly,
     [switch]$List,
     [string]$RuntimeRoot = $(if ($env:XINAO_RUNTIME_ROOT) { $env:XINAO_RUNTIME_ROOT } else { 'D:\XINAO_RESEARCH_RUNTIME' }),
-    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' })
+    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }),
+    [string]$ContextSCodexHome = $(
+        if ($env:XINAO_S_CODEX_HOME) { $env:XINAO_S_CODEX_HOME }
+        else { Join-Path $HOME '.codex' }
+    ),
+    [string]$ContextBCodexHome = $(
+        if ($env:XINAO_B_CODEX_HOME) { $env:XINAO_B_CODEX_HOME }
+        else { Join-Path $HOME '.codex-s-hardmode-account-b' }
+    ),
+    [string]$ContextHookSink = $env:XINAO_CONTEXT_HOOK_SINK
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,11 +37,27 @@ if ($List) {
     $catalog | ConvertTo-Json -Depth 10
     return
 }
+if ($Profile -ne 'context' -and $PSBoundParameters.ContainsKey('ContextEvidenceMode')) {
+    throw 'ContextEvidenceMode applies only to -Profile context.'
+}
+if ($Profile -eq 'context') {
+    # This trajectory owns one isolated operation root. Parallelism and retries would
+    # invalidate its ordered evidence, so the profile hardens both values regardless
+    # of the shared runner defaults.
+    $MaxConcurrency = 1
+    $MaxErrorRetries = 0
+}
+$runRuntimeTrajectory = $Profile -eq 'context'
+$contextHarnessSource = Join-Path $repoRoot `
+    'evals\context_runtime_trajectory\run_context_runtime_trajectory.py'
+if ($runRuntimeTrajectory -and -not (Test-Path -LiteralPath $contextHarnessSource -PathType Leaf)) {
+    throw "Context runtime trajectory harness is missing: $contextHarnessSource"
+}
 if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
     throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity')) {
-    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, reconstitution, surface, or productivity.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'context')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, reconstitution, surface, productivity, or context.'
 }
 if ($FailedFrom -and $Profile -ne 'proactive') {
     throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
@@ -203,6 +230,9 @@ $promptfooLogs = Join-Path $promptfooState 'logs'
 $promptfooCache = Join-Path $promptfooState 'cache'
 $tempRoot = Join-Path $outputRoot 'tmp'
 $summaryPath = Join-Path $outputRoot 'summary.json'
+$contextOperationRoot = Join-Path $outputRoot 'context-runtime-trajectory-operation'
+$contextReceiptPath = Join-Path $outputRoot 'context-runtime-trajectory.receipt.json'
+$contextConsolePath = Join-Path $outputRoot 'context-runtime-trajectory.console.log'
 $startedAt = Get-Date
 $needsThinWorkspace = $Profile -in @('core', 'deep', 'reuse')
 $thinWorkspace = Join-Path $outputRoot 'thin-localization-workspace'
@@ -228,6 +258,7 @@ $snapshotArguments = @(
     '--repo-root', $repoRoot,
     '--output-root', $outputRoot,
     '--profile', $Profile,
+    '--context-evidence-mode', $ContextEvidenceMode,
     '--codex-home', $CodexHome
 )
 if ($Domain) { $snapshotArguments += @('--domain', $Domain) }
@@ -411,6 +442,114 @@ function Get-PromptfooResultSummary {
         model_outputs_observed = $modelOutputsObserved
         runtime_pass_claim_eligible = ($runtimeClaimDenials.Count -eq 0)
         runtime_claim_denial_reasons = @($runtimeClaimDenials)
+    }
+}
+
+function Get-ContextRuntimeTrajectorySummary {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ReceiptPath,
+        [Parameter(Mandatory)]
+        [ValidateSet('contract', 'live')]
+        [string]$ExpectedMode,
+        [Parameter(Mandatory)]
+        [int]$ExitCode
+    )
+
+    if (-not (Test-Path -LiteralPath $ReceiptPath -PathType Leaf)) {
+        throw "Context runtime trajectory receipt is missing: $ReceiptPath"
+    }
+    $receipt = Get-Content -LiteralPath $ReceiptPath -Raw | ConvertFrom-Json
+    if ($receipt.schema_version -ne 's.context_runtime_trajectory_receipt.v1') {
+        throw "Context runtime trajectory receipt version drift: $($receipt.schema_version)"
+    }
+    if ($receipt.mode -ne $ExpectedMode) {
+        throw "Context runtime trajectory mode drift: expected $ExpectedMode, got $($receipt.mode)"
+    }
+    $expectedEvidenceLevel = if ($ExpectedMode -eq 'contract') {
+        'deterministic_contract'
+    }
+    else {
+        'live_app_server_and_hook_sink'
+    }
+    if ($receipt.evidence_level -ne $expectedEvidenceLevel) {
+        throw "Context runtime trajectory evidence drift: expected $expectedEvidenceLevel, got $($receipt.evidence_level)"
+    }
+    $expectedClaimClass = if ($ExpectedMode -eq 'contract') {
+        'context_contract_only'
+    }
+    else {
+        'context_live_ineligible'
+    }
+    if ($receipt.claim_class -ne $expectedClaimClass) {
+        throw "Context runtime trajectory claim-class drift: expected $expectedClaimClass, got $($receipt.claim_class)"
+    }
+    if ($null -eq $receipt.summary -or $null -eq $receipt.summary.ineligible) {
+        throw 'Context runtime trajectory receipt lacks the typed summary counts.'
+    }
+    $selected = [int]$receipt.summary.selected
+    $passed = [int]$receipt.summary.passed
+    $failed = [int]$receipt.summary.failed
+    $ineligible = [int]$receipt.summary.ineligible
+    if ($selected -ne @($receipt.cases).Count) {
+        throw 'Context runtime trajectory selected count does not match its case receipts.'
+    }
+    if ($ExpectedMode -eq 'contract') {
+        if ($receipt.runtime_claim_allowed -ne $false) {
+            throw 'A deterministic context contract cannot permit a runtime behavior claim.'
+        }
+        if ($ineligible -ne 0) {
+            throw 'A completed deterministic context contract cannot contain live-ineligible rows.'
+        }
+    }
+    elseif ($receipt.runtime_claim_allowed -ne $true) {
+        if ($receipt.status -ne 'ineligible' -or $ineligible -lt 1) {
+            throw 'A denied live context receipt must be typed ineligible.'
+        }
+    }
+    if ($ExitCode -eq 0 -and $receipt.status -ne 'passed') {
+        throw 'Context runtime trajectory returned exit 0 without a passed receipt.'
+    }
+    if ($ExitCode -eq 3 -and ($ExpectedMode -ne 'live' -or $receipt.status -ne 'ineligible')) {
+        throw 'Only a typed live-ineligible context receipt may return exit 3.'
+    }
+    if ($ExitCode -notin @(0, 1, 2, 3)) {
+        throw "Context runtime trajectory returned an unknown exit code: $ExitCode"
+    }
+    $runtimeClaimDenials = @()
+    if ($ExpectedMode -eq 'contract') { $runtimeClaimDenials += 'context_contract_only' }
+    if ($ExitCode -ne 0) { $runtimeClaimDenials += "nonzero_exit:$ExitCode" }
+    if ($failed -gt 0) { $runtimeClaimDenials += 'failed_cases' }
+    if ($ineligible -gt 0) { $runtimeClaimDenials += 'context_live_ineligible' }
+    if ($receipt.runtime_claim_allowed -ne $true) {
+        $runtimeClaimDenials += [string]$receipt.claim_class
+    }
+    return [ordered]@{
+        suite = 'context_runtime_trajectory'
+        ran = $true
+        mode = [string]$receipt.mode
+        evidence_level = [string]$receipt.evidence_level
+        claim_class = [string]$receipt.claim_class
+        status = [string]$receipt.status
+        exit_code = $ExitCode
+        receipt = $ReceiptPath
+        operation_root = [string]$receipt.operation_root
+        selected = $selected
+        successes = $passed
+        failures = $failed
+        errors = 0
+        ineligible = $ineligible
+        case_ids = @($receipt.cases | ForEach-Object { [string]$_.case_id })
+        runtime_claim_allowed = [bool]$receipt.runtime_claim_allowed
+        runtime_pass_claim_eligible = (
+            $ExpectedMode -eq 'live' -and
+            $ExitCode -eq 0 -and
+            $receipt.status -eq 'passed' -and
+            $receipt.runtime_claim_allowed -eq $true
+        )
+        runtime_claim_denial_reasons = @($runtimeClaimDenials | Select-Object -Unique)
+        summary = $receipt.summary
+        claim_boundary = $receipt.claim_boundary
     }
 }
 
@@ -705,6 +844,45 @@ if ($runStatic) {
         role = 'static_assertion_tests'
     }
 }
+if ($runRuntimeTrajectory) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\context_runtime_trajectory')
+        role = 'context_runtime_trajectory_eval'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_context_runtime_trajectory_harness.py')
+        role = 'context_runtime_trajectory_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'services\__init__.py')
+        role = 'services_package_marker'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'services\agent_runtime\__init__.py')
+        role = 'agent_runtime_package_marker'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'services\agent_runtime\context_fabric.py')
+        role = 'context_fabric_runtime'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot `
+            'services\agent_runtime\context_runtime_completion.py')
+        role = 'context_runtime_completion'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'services\agent_runtime\codex_situation_hook.py')
+        role = 'context_runtime_fail_open_consumer'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'services\agent_runtime\current_situation.py')
+        role = 'current_situation_compatibility_consumer'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'services\agent_runtime\runtime_observation.py')
+        role = 'runtime_observation_consumer'
+    }
+}
 if ($runIntent -or $runExternalReality -or $runReconstitution -or $runUserSurface -or $runProductiveAction) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $CodexHome 'AGENTS.md')
@@ -838,6 +1016,15 @@ $sourceManifest = New-BehaviorSourceManifest `
     -Inputs $runtimeSourceInputs `
     -OutputPath $sourceManifestPath
 $suiteRuns = @()
+$contextRuntimeResult = [ordered]@{
+    suite = 'context_runtime_trajectory'
+    ran = $false
+    mode = $ContextEvidenceMode
+    exit_code = 0
+    receipt = $contextReceiptPath
+    runtime_pass_claim_eligible = $false
+    runtime_claim_denial_reasons = @('not_run')
+}
 $preflightResult = [ordered]@{ ran = $false; exit_code = 0; log = $null; tests = @() }
 $staticResult = [ordered]@{ ran = $false; exit_code = 0; log = $null }
 $overallExit = 0
@@ -878,6 +1065,9 @@ try {
     if ($runProductiveAction) {
         $preflightTests += 'tests/test_productive_action_trajectory.py'
     }
+    if ($runRuntimeTrajectory) {
+        $preflightTests += 'tests/test_context_runtime_trajectory_harness.py'
+    }
     $preflightResult.tests = $preflightTests
     Push-Location $rawSnapshotRoot
     try {
@@ -892,6 +1082,53 @@ try {
     if ($preflightResult.exit_code -ne 0) {
         $overallExit = 1
         $infrastructureError = 'Behavior regression deterministic preflight failed; no model call was made.'
+    }
+
+    if ($overallExit -eq 0 -and $runRuntimeTrajectory -and -not $PreflightOnly) {
+        $contextHarness = Join-Path $executionRoot `
+            'evals\context_runtime_trajectory\run_context_runtime_trajectory.py'
+        if (-not (Test-Path -LiteralPath $contextHarness -PathType Leaf)) {
+            throw "Frozen context runtime trajectory harness is missing: $contextHarness"
+        }
+        $contextArguments = @(
+            'run', '--project', $repoRoot, 'python', $contextHarness,
+            '--mode', $ContextEvidenceMode,
+            '--operation-root', $contextOperationRoot,
+            '--output', $contextReceiptPath
+        )
+        if ($CasePattern) {
+            $contextArguments += @('--case-pattern', $CasePattern)
+        }
+        if ($ContextEvidenceMode -eq 'live') {
+            $contextArguments += @(
+                '--codex-path', $codexBinary,
+                '--s-codex-home', $ContextSCodexHome,
+                '--b-codex-home', $ContextBCodexHome,
+                '--working-dir', $repoRoot
+            )
+            if (-not [string]::IsNullOrWhiteSpace($ContextHookSink)) {
+                $contextArguments += @('--hook-sink', $ContextHookSink)
+            }
+        }
+        Push-Location $executionRoot
+        try {
+            $contextConsole = & uv @contextArguments 2>&1
+            $contextExit = $LASTEXITCODE
+        }
+        finally {
+            Pop-Location
+        }
+        $contextConsole | Set-Content -LiteralPath $contextConsolePath -Encoding utf8NoBOM
+        $contextRuntimeResult = Get-ContextRuntimeTrajectorySummary `
+            -ReceiptPath $contextReceiptPath `
+            -ExpectedMode $ContextEvidenceMode `
+            -ExitCode $contextExit
+        if ($contextExit -ne 0) {
+            $overallExit = $contextExit
+            if ($contextExit -eq 2) {
+                $infrastructureError = 'Context runtime trajectory infrastructure failed; inspect its typed receipt.'
+            }
+        }
     }
 
     if ($overallExit -eq 0 -and $runStatic -and -not $PreflightOnly) {
@@ -1146,20 +1383,37 @@ catch {
 }
 
 $totals = [ordered]@{
-    successes = [int](($suiteRuns | ForEach-Object { [int]$_.successes } | Measure-Object -Sum).Sum)
-    failures = [int](($suiteRuns | ForEach-Object { [int]$_.failures } | Measure-Object -Sum).Sum)
-    errors = [int](($suiteRuns | ForEach-Object { [int]$_.errors } | Measure-Object -Sum).Sum)
+    successes = [int](($suiteRuns | ForEach-Object { [int]$_.successes } | Measure-Object -Sum).Sum) +
+        $(if ($contextRuntimeResult.ran) { [int]$contextRuntimeResult.successes } else { 0 })
+    failures = [int](($suiteRuns | ForEach-Object { [int]$_.failures } | Measure-Object -Sum).Sum) +
+        $(if ($contextRuntimeResult.ran) { [int]$contextRuntimeResult.failures } else { 0 })
+    errors = [int](($suiteRuns | ForEach-Object { [int]$_.errors } | Measure-Object -Sum).Sum) +
+        $(if ($contextRuntimeResult.ran) { [int]$contextRuntimeResult.errors } else { 0 })
+    ineligible = $(
+        if ($contextRuntimeResult.ran) { [int]$contextRuntimeResult.ineligible } else { 0 }
+    )
 }
 $modelOutputsObserved = [int](
     ($suiteRuns | ForEach-Object { [int]$_.model_outputs_observed } | Measure-Object -Sum).Sum
 )
 $runtimeClaimDenials = @()
-if ($PreflightOnly) { $runtimeClaimDenials += 'preflight_only' }
-if ($suiteRuns.Count -eq 0) { $runtimeClaimDenials += 'no_model_suite_ran' }
-if ($modelOutputsObserved -eq 0) { $runtimeClaimDenials += 'zero_model_output' }
-foreach ($suite in $suiteRuns) {
-    if ($suite.runtime_pass_claim_eligible -ne $true) {
-        $runtimeClaimDenials += "suite_not_eligible:$($suite.suite)"
+if ($runRuntimeTrajectory) {
+    if ($PreflightOnly) { $runtimeClaimDenials += 'preflight_only' }
+    if ($contextRuntimeResult.ran -ne $true) {
+        $runtimeClaimDenials += 'context_runtime_trajectory_not_run'
+    }
+    else {
+        $runtimeClaimDenials += @($contextRuntimeResult.runtime_claim_denial_reasons)
+    }
+}
+else {
+    if ($PreflightOnly) { $runtimeClaimDenials += 'preflight_only' }
+    if ($suiteRuns.Count -eq 0) { $runtimeClaimDenials += 'no_model_suite_ran' }
+    if ($modelOutputsObserved -eq 0) { $runtimeClaimDenials += 'zero_model_output' }
+    foreach ($suite in $suiteRuns) {
+        if ($suite.runtime_pass_claim_eligible -ne $true) {
+            $runtimeClaimDenials += "suite_not_eligible:$($suite.suite)"
+        }
     }
 }
 if ($overallExit -ne 0) { $runtimeClaimDenials += "run_exit:$overallExit" }
@@ -1171,6 +1425,7 @@ $summary = [ordered]@{
     schema_version = 'xinao.behavior_regression_run.v1'
     run_id = $runId
     profile = $Profile
+    context_evidence_mode = $ContextEvidenceMode
     domain = $Domain
     case_pattern = $CasePattern
     failed_from = $FailedFrom
@@ -1209,6 +1464,7 @@ $summary = [ordered]@{
     live_source_manifest_error_advisory = $liveSourceManifestError
     deterministic_preflight = $preflightResult
     static_validation = $staticResult
+    context_runtime_trajectory = $contextRuntimeResult
     suites = $suiteRuns
     totals = $totals
     model_outputs_observed = $modelOutputsObserved

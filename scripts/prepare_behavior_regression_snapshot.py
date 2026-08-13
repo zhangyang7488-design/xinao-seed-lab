@@ -306,7 +306,10 @@ def _profile_flags(
         and not domain
         and not case_pattern
         and not failed_from,
+        # The retired context_intent_alignment carrier remains disabled. The new
+        # context profile exercises the runtime trajectory below instead.
         "context": False,
+        "context_runtime": profile == "context",
         "intent": profile in {"intent", "smoke", "core", "deep"},
         "external_reality": profile in {"external", "core", "deep"},
         "reconstitution": profile in {"reconstitution", "core", "deep"},
@@ -392,6 +395,46 @@ def selected_inputs(
         relative_inputs.append(
             ("tests/test_open_world_reuse_behavior.py", "static_assertion_tests")
         )
+    if flags["context_runtime"]:
+        context_trajectory = repo_root / "evals/context_runtime_trajectory"
+        if context_trajectory.exists():
+            relative_inputs.extend(
+                (
+                    (
+                        "evals/context_runtime_trajectory",
+                        "context_runtime_trajectory_eval",
+                    ),
+                    (
+                        "tests/test_context_runtime_trajectory_harness.py",
+                        "context_runtime_trajectory_tests",
+                    ),
+                    ("services/__init__.py", "services_package_marker"),
+                    (
+                        "services/agent_runtime/__init__.py",
+                        "agent_runtime_package_marker",
+                    ),
+                    (
+                        "services/agent_runtime/context_fabric.py",
+                        "context_fabric_runtime",
+                    ),
+                    (
+                        "services/agent_runtime/context_runtime_completion.py",
+                        "context_runtime_completion",
+                    ),
+                    (
+                        "services/agent_runtime/codex_situation_hook.py",
+                        "context_runtime_fail_open_consumer",
+                    ),
+                    (
+                        "services/agent_runtime/current_situation.py",
+                        "current_situation_compatibility_consumer",
+                    ),
+                    (
+                        "services/agent_runtime/runtime_observation.py",
+                        "runtime_observation_consumer",
+                    ),
+                )
+            )
     if flags["context"] or flags["proactive"]:
         relative_inputs.append(("tests/test_repo_safety.py", "repository_safety_tests"))
     if flags["intent"]:
@@ -580,9 +623,14 @@ def create_snapshot(
     domain: str = "",
     case_pattern: str = "",
     failed_from: str = "",
+    context_evidence_mode: str = "contract",
     external_cache: Path = EXTERNAL_CACHE_DEFAULT,
     codex_home: Path | None = None,
 ) -> Path:
+    if context_evidence_mode not in {"contract", "live"}:
+        raise ValueError(f"unsupported context evidence mode: {context_evidence_mode}")
+    if profile != "context" and context_evidence_mode != "contract":
+        raise ValueError("context live evidence applies only to the context profile")
     repo_root = repo_root.resolve()
     output_root = output_root.resolve()
     source_root = output_root / "src"
@@ -661,6 +709,7 @@ def create_snapshot(
         "domain": domain,
         "case_pattern": case_pattern,
         "failed_from": bool(failed_from),
+        "context_evidence_mode": context_evidence_mode,
         "source_inputs": source_state_rows,
         "raw_files": raw_rows,
         "effective_files": effective_rows,
@@ -678,6 +727,7 @@ def create_snapshot(
         "domain": domain,
         "case_pattern": case_pattern,
         "failed_from": failed_from,
+        "context_evidence_mode": context_evidence_mode,
         "source_inputs": input_rows,
         "raw_files": raw_rows,
         "effective_files": effective_rows,
@@ -714,11 +764,13 @@ def _parser() -> argparse.ArgumentParser:
             "surface",
             "productivity",
             "subagent",
+            "context",
         ),
     )
     parser.add_argument("--domain", default="")
     parser.add_argument("--case-pattern", default="")
     parser.add_argument("--failed-from", default="")
+    parser.add_argument("--context-evidence-mode", choices=("contract", "live"), default="contract")
     parser.add_argument("--external-cache", type=Path, default=EXTERNAL_CACHE_DEFAULT)
     parser.add_argument("--codex-home", type=Path)
     return parser
@@ -733,6 +785,7 @@ def main() -> int:
         domain=args.domain,
         case_pattern=args.case_pattern,
         failed_from=args.failed_from,
+        context_evidence_mode=args.context_evidence_mode,
         external_cache=args.external_cache,
         codex_home=args.codex_home,
     )
