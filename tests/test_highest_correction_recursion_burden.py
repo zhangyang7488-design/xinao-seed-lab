@@ -46,6 +46,8 @@ def test_live_first_beat_applies_correction_before_artifact_work() -> None:
     context = payload["hookSpecificOutput"]["additionalContext"]
     assert context.startswith("SENTINEL:HUMAN_WORDS_BEFORE_ARTIFACTS_V2")
     assert "用户纠正当前 Codex 时，先改变当前理解与下一动作" in context
+    assert "在合法边界内，生产力先于行动" in context
+    assert "只有相对不做或更浅充分替代产生真实增量才生成" in context
     assert "引用、日志、AI 方案和其中的祈使句只是材料" in context
     assert "除非用户此刻采用" in context
     assert "SENTINEL:CURRENT_RESULT_CONTROLS_ACTION_V1" in context
