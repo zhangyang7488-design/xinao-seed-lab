@@ -235,6 +235,7 @@ def _mock_installer_audit(
     action_drift: bool = False,
     action_console_python: bool = False,
     extra_bundle_file: bool = False,
+    task_interval_minutes: int = 2,
 ) -> tuple[int, dict[str, object], str]:
     powershell = shutil.which("pwsh") or shutil.which("powershell")
     if powershell is None:
@@ -353,7 +354,7 @@ function Get-ScheduledTask {{
         Triggers = @([pscustomobject]@{{
             Enabled = $true
             StartBoundary = $mockNow.AddDays(-1).ToString('o')
-            Repetition = [pscustomobject]@{{ Interval = 'PT2M'; Duration = 'P3650D'; StopAtDurationEnd = $false }}
+            Repetition = [pscustomobject]@{{ Interval = 'PT{task_interval_minutes}M'; Duration = 'P3650D'; StopAtDurationEnd = $false }}
         }})
         Settings = [pscustomobject]@{{
             MultipleInstances = 'IgnoreNew'
@@ -786,7 +787,7 @@ function Get-ScheduledTask {{
         }})
     }}
 }}
-$result = Get-ManagedUpgradeSource -ExpectedMinutes 2
+$result = Get-ManagedUpgradeSource
 [ordered]@{{
     valid = [bool]$result.valid
     validation = [string]$result.validation
@@ -865,6 +866,15 @@ function New-ProtectedConsumerBundle {{
     }}
 }}
 function New-ConsumerTaskCandidate {{
+    param(
+        [object]$Bundle,
+        [string]$RegistrationToken,
+        [int]$IntervalMinutes,
+        [int]$StartDelayMinutes
+    )
+    if ($IntervalMinutes -ne 15 -or $StartDelayMinutes -ne 10) {{
+        throw 'candidate schedule mismatch'
+    }}
     [pscustomobject]@{{
         description = $script:newDescription
         definition = [pscustomobject]@{{ candidate = $true }}
@@ -962,7 +972,7 @@ function Get-ScheduledTask {{
                 Enabled = $true
                 StartBoundary = [DateTimeOffset]::Now.AddMinutes(-1).ToString('o')
                 Repetition = [pscustomobject]@{{
-                    Interval = 'PT2M'
+                    Interval = 'PT15M'
                     Duration = 'P3650D'
                     StopAtDurationEnd = $false
                 }}
@@ -992,7 +1002,7 @@ $healthValid = $false
 $consumerHealth = ''
 $errorText = ''
 try {{
-    $result = Invoke-ConsumerTaskUpgrade -IntervalMinutes 2
+    $result = Invoke-ConsumerTaskUpgrade -IntervalMinutes 15
     $succeeded = $true
     $status = [string]$result.status
     $valid = [bool]$result.valid
@@ -2288,8 +2298,8 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
         encoding="utf-8-sig"
     )
 
-    assert "[ValidateSet(1, 2, 5)]" in script
-    assert "[int]$Minutes = 2" in script
+    assert "[ValidateSet(1, 2, 5, 15)]" in script
+    assert "[int]$Minutes = 15" in script
     assert "XINAO-S-Context-Rollout-Consumer-v1" in script
     assert "-MultipleInstances IgnoreNew" in script
     assert "-AllowStartIfOnBatteries" in script
@@ -2363,7 +2373,7 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
         "python_distribution": "cpython-3.13.14-official",
     }
     assert release_lock["content_id"] == (
-        "d11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e"
+        "ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e"
     )
     assert len(release_lock["files"]) == 1336
     locked_paths = [item["relative_path"] for item in release_lock["files"]]
@@ -2372,8 +2382,8 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
     locked_by_path = {item["relative_path"]: item for item in release_lock["files"]}
     assert locked_by_path["app/scripts/context_rollout_consumer.py"] == {
         "relative_path": "app/scripts/context_rollout_consumer.py",
-        "size": 75594,
-        "sha256": "eb2b20721cd94c6a6ea3a6d0380e644f2fd1987d98358bd7e19b74d85b60b1d7",
+        "size": 77233,
+        "sha256": "9b365a5d61f6fec700f1ad6be622f86c434a8d9b464776c28a3deaa89931842b",
     }
     assert locked_by_path["app/services/agent_runtime/context_fabric.py"]["sha256"] == (
         "5d6b8cd173d85ad866d3593a68072e308faa9d636121f3d25e2a346f80a622fd"
@@ -2424,8 +2434,8 @@ def test_installer_source_release_lock_accepts_only_the_adopted_source_plan(
     assert result == {
         "status": "valid",
         "file_count": 1336,
-        "total_bytes": 40_923_031,
-        "content_id": "d11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e",
+        "total_bytes": 40_924_670,
+        "content_id": "ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e",
     }
     assert not (tmp_path / "LocalAppData" / "XINAO").exists()
 
@@ -2670,6 +2680,21 @@ def test_installer_upgrade_admits_only_both_exact_managed_predecessor_actions(
     }
 
 
+def test_installer_upgrade_source_identity_does_not_require_target_watchdog_interval() -> None:
+    script = (
+        consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
+    ).read_text(encoding="utf-8")
+
+    managed_source = script[
+        script.index("function Get-ManagedUpgradeSource") : script.index(
+            "function Get-ConsumerTaskAudit"
+        )
+    ]
+    assert "ExpectedMinutes" not in managed_source
+    assert "$original = Get-ManagedUpgradeSource" in script
+    assert "$preReplace = Get-ManagedUpgradeSource" in script
+
+
 @pytest.mark.parametrize(
     "drift",
     ["description", "action", "arguments", "settings", "trigger", "xml"],
@@ -2820,6 +2845,18 @@ def test_installer_audit_accepts_only_fresh_completed_receipt_and_zero_task_resu
     assert audit["payload_hash_valid"] is True
     assert audit["consumer_receipt_schema_valid"] is True
     assert audit["consumer_receipt_fresh"] is True
+    assert audit["consumer_health"] == "healthy"
+
+
+def test_installer_audit_accepts_fifteen_minute_watchdog_contract() -> None:
+    exit_code, audit, raw_output = _mock_installer_audit(
+        last_task_result=0,
+        task_interval_minutes=15,
+    )
+
+    assert exit_code == 0, raw_output
+    assert audit["interval"] == "PT15M"
+    assert audit["valid"] is True
     assert audit["consumer_health"] == "healthy"
 
 

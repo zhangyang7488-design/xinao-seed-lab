@@ -6,12 +6,12 @@
     "release": "2026-08-13",
     "python_distribution": "cpython-3.13.14-official"
   },
-  "content_id": "d11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e",
+  "content_id": "ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e",
   "files": [
     {
       "relative_path": "app/scripts/context_rollout_consumer.py",
-      "size": 75594,
-      "sha256": "eb2b20721cd94c6a6ea3a6d0380e644f2fd1987d98358bd7e19b74d85b60b1d7"
+      "size": 77233,
+      "sha256": "9b365a5d61f6fec700f1ad6be622f86c434a8d9b464776c28a3deaa89931842b"
     },
     {
       "relative_path": "app/services/__init__.py",

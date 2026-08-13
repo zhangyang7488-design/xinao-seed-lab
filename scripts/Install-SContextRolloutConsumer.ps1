@@ -4,8 +4,8 @@ param(
     [switch]$Upgrade,
     [switch]$Remove,
     [switch]$Audit,
-    [ValidateSet(1, 2, 5)]
-    [int]$Minutes = 2
+    [ValidateSet(1, 2, 5, 15)]
+    [int]$Minutes = 15
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,8 +26,8 @@ $expectedPresentationRuntimeRootHashes = @(
 )
 $officialPythonSha256 = 'ef8f51028ac5329641985112f8efb1c2d4c47c86b8011ddf7e6fae21e2b4e5a1'
 $officialPythonwSha256 = '95225ed035643523e8c586c11981e276541dce4949eb35cf8cf5741c824249d4'
-$expectedBundleLockSha256 = '1441a54b9b379dee88a837d82530d3c003d1799119437ed8210f81a68fb75d8a'
-$expectedBundleContentId = 'd11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e'
+$expectedBundleLockSha256 = '3448f1db0532cb515c04fe7f25c67175a8be63babb2e139d2d07d9e3c67429c3'
+$expectedBundleContentId = 'ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e'
 $expectedBundleFileCount = 1336
 $managedUpgradeSourceContentId = '882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823'
 $managedUpgradeSourceManifestSha256 = 'db7516e59cdf11ecef3a1b25e88b709136f29da9fd49aba0c53b1137ea5e51b0'
@@ -60,7 +60,7 @@ $managedUpgradeSourceRequiredPaths = @(
 $directLockedFileHashes = [ordered]@{
     'python/python.exe' = $officialPythonSha256
     'python/pythonw.exe' = $officialPythonwSha256
-    'app/scripts/context_rollout_consumer.py' = 'eb2b20721cd94c6a6ea3a6d0380e644f2fd1987d98358bd7e19b74d85b60b1d7'
+    'app/scripts/context_rollout_consumer.py' = '9b365a5d61f6fec700f1ad6be622f86c434a8d9b464776c28a3deaa89931842b'
 }
 $bundleBoundary = [Environment]::ExpandEnvironmentVariables('%LOCALAPPDATA%')
 if ([string]::IsNullOrWhiteSpace($bundleBoundary) -or -not [System.IO.Path]::IsPathRooted($bundleBoundary)) {
@@ -1098,7 +1098,6 @@ function Get-NormalizedManagedPredecessorXmlSha256 {
 }
 
 function Get-ManagedUpgradeSource {
-    param([int]$ExpectedMinutes)
 
     $result = [ordered]@{
         valid = $false
@@ -1303,11 +1302,12 @@ function Get-ConsumerTaskAudit {
     } else {
         ''
     }
-    $allowedIntervals = @('PT1M', 'PT2M', 'PT5M')
+    $allowedIntervals = @('PT1M', 'PT2M', 'PT5M', 'PT15M')
     $healthIntervalMinutes = switch ($intervalText) {
         'PT1M' { 1 }
         'PT2M' { 2 }
         'PT5M' { 5 }
+        'PT15M' { 15 }
         default { 0 }
     }
     $consumerReceiptStatus = 'absent'
@@ -2024,7 +2024,7 @@ function Test-OwnedUpgradeReplacement {
 function Invoke-ConsumerTaskUpgradeCore {
     param([int]$IntervalMinutes)
 
-    $original = Get-ManagedUpgradeSource -ExpectedMinutes $IntervalMinutes
+    $original = Get-ManagedUpgradeSource
     if (-not $original.valid) {
         throw "Refusing upgrade because the existing task is not the exact managed predecessor ($($original.validation))."
     }
@@ -2037,7 +2037,7 @@ function Invoke-ConsumerTaskUpgradeCore {
         -IntervalMinutes $IntervalMinutes `
         -StartDelayMinutes 10
 
-    $preReplace = Get-ManagedUpgradeSource -ExpectedMinutes $IntervalMinutes
+    $preReplace = Get-ManagedUpgradeSource
     if (-not $preReplace.valid -or
         -not [string]::Equals(
             [string]$preReplace.task_xml,
@@ -2138,7 +2138,7 @@ function Invoke-ConsumerTaskUpgradeCore {
             catch {
                 throw "Scheduled Task upgrade rollback registration failed: $($_.Exception.Message)"
             }
-            $restored = Get-ManagedUpgradeSource -ExpectedMinutes $IntervalMinutes
+            $restored = Get-ManagedUpgradeSource
             if (-not $restored.valid -or
                 -not [string]::Equals(
                     [string]$restored.task_xml,

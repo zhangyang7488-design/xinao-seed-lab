@@ -1,6 +1,6 @@
 # S Continuous Context Runtime — Current Production Contract
 
-Status: completion implementation, S/B hot hooks, and protected automatic rollout consumer adopted, 2026-08-13
+Status: completion implementation, S/B hot hooks, and protected hybrid event/watchdog consumer adopted, 2026-08-13
 Source brief: `C:\Users\xx363\Desktop\持续上下文运行时.txt`
 Source SHA256: `D5D42CCECE491CD3937ACA940733B92A72F3F54C08BC3F73138A6E8F006BFC62`
 
@@ -44,7 +44,9 @@ Only the S/B homes mount the shared `s-b-engineering-body`; an unknown home or a
 
 Admitted user/assistant surfaced text is exact unless secret-like, in which case only a SHA256 and character count are retained and indexed bytes are withheld. New hook metadata stores the normalized cwd only as a digest; legacy v1 rows remain immutable and can still contain the cwd captured by the old hook. The installed hooks continuously admit surfaced dialogue and lifecycle boundaries. `import-rollout` is the strict incremental recovery/backfill admission API: it admits surfaced messages and a small recognized set of completed tool item types, pins its committed prefix, and refuses rewrites, gaps, malformed complete records, links, or session escapes. Tool calls, reasoning, developer wrappers, incomplete tool results, and arbitrary tool bodies are rejected or ignored. Recognized tool surfaces become typed, hash-only artifacts plus an empty tool event with safe metadata. No tool body may reach materialization through this route.
 
-The installed `XINAO-S-Context-Rollout-Consumer-v1` Scheduled Task invokes a one-shot consumer every two minutes with `IgnoreNew`; it is not a daemon and is not an app-server subscriber. The task runs only from a content-addressed bundle under the current user's protected LocalAppData. Its adopted 1,332-file release lock pins the complete Python distribution and the five application sources before bundle creation or Task registration; the Task action, principal, trigger, settings, payload hashes/ACL, `LastTaskResult`, and bounded secret-safe receipt are independently audited. Discovery inventories both exact S/B homes but seeds only bounded current root rollouts; unchanged history is not opened, growth is promoted, committed prefixes are rechecked on a bounded cadence, failures are isolated with durable retry/quarantine, and canonical SQLite cursors remain the imported-offset authority.
+The installed `XINAO-S-Context-Rollout-Consumer-v1` Scheduled Task is a one-shot, event-woken consumer with `IgnoreNew`; it is not a daemon and is not tied to one TUI process. Mounted `SessionStart`, `Stop`, `PostCompact`, and `SessionEnd` hooks request a hidden on-demand run after their synchronous Fabric work, while a perpetual-world controller requests one only after its state file has been atomically committed. Neither hot path opens rollout history. A growing rollout gets up to two bounded stable-observation retries inside the same background invocation. A 15-minute repeating trigger remains only as `StartWhenAvailable` recovery for a missed wake, process crash, or integrity cadence; ordinary surfaced dialogue is still admitted synchronously and does not wait for that watchdog.
+
+The task runs only from a content-addressed bundle under the current user's protected LocalAppData. Its adopted 1,336-file release lock pins the complete Python distribution and the nine application sources before bundle creation or Task registration; the Task action, principal, trigger, settings, payload hashes/ACL, `LastTaskResult`, and bounded secret-safe receipts are independently audited. Discovery inventories both exact S/B homes but seeds only bounded current root rollouts; unchanged history is not opened, growth is promoted, committed prefixes are rechecked on a bounded cadence, failures are isolated with durable retry/quarantine, and canonical SQLite cursors remain the imported-offset authority.
 
 The state is local plaintext protected by the runtime ACL; it is not an encrypted vault and does not protect against the current account, Administrators, SYSTEM, disk compromise, or an authorized export. Store paths, session paths, blobs, snapshot sources, manifest members, and restore targets reject path escapes and links/reparse redirects; restore refuses a non-empty/live target. Current account credentials, tokens, passwords, API keys, cookies, and similar secrets are never admissible context.
 
@@ -108,6 +110,7 @@ uv run python scripts/manage_context_fabric.py restore `
   --snapshot-dir <snapshot-dir> --target-dir <absent-or-empty-staging-dir> `
   --expected-manifest-sha256 <manifest-sha256>
 powershell.exe -NoProfile -File scripts/Install-SContextRolloutConsumer.ps1 -Audit
+powershell.exe -NoProfile -File scripts/Install-SContextRolloutConsumer.ps1 -Upgrade -Minutes 15
 ```
 
 `project`, `relate`, and `correct` are explicit engineering writes. The normal hook does not infer their semantic content. The ACL helper remains audit-only without `-Apply` and must be read back against its exact target.
