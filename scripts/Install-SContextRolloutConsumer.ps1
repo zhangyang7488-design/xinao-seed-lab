@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$Apply,
+    [switch]$Upgrade,
     [switch]$Remove,
     [switch]$Audit,
     [ValidateSet(1, 2, 5)]
@@ -28,6 +29,11 @@ $officialPythonwSha256 = '95225ed035643523e8c586c11981e276541dce4949eb35cf8cf574
 $expectedBundleLockSha256 = '1441a54b9b379dee88a837d82530d3c003d1799119437ed8210f81a68fb75d8a'
 $expectedBundleContentId = 'd11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e'
 $expectedBundleFileCount = 1336
+$managedUpgradeSourceContentId = '882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823'
+$managedUpgradeSourceManifestSha256 = 'db7516e59cdf11ecef3a1b25e88b709136f29da9fd49aba0c53b1137ea5e51b0'
+$managedUpgradeSourceFileCount = 1332
+$managedUpgradeSourceNormalizedXmlSha256 = '6230ff8ef337769d49161c90d48207ed868aff5cf8b2d9e73f1fd5f161522e56'
+$upgradeMutexName = 'Local\XINAO.S.ContextRolloutConsumer.Upgrade.v1'
 $bundleLockSchema = 's.context_rollout_consumer.bundle_lock.v1'
 $requiredLockedFilePaths = @(
     'python/python.exe',
@@ -41,6 +47,15 @@ $requiredLockedFilePaths = @(
     'app/services/agent_runtime/presentation_observer.py'
     'app/services/agent_runtime/presentation_delivery.py'
     'app/services/agent_runtime/presentation_lock.py'
+)
+$managedUpgradeSourceRequiredPaths = @(
+    'python/python.exe',
+    'python/pythonw.exe',
+    'app/scripts/context_rollout_consumer.py',
+    'app/services/__init__.py',
+    'app/services/agent_runtime/__init__.py',
+    'app/services/agent_runtime/context_fabric.py',
+    'app/services/agent_runtime/context_runtime_completion.py'
 )
 $directLockedFileHashes = [ordered]@{
     'python/python.exe' = $officialPythonSha256
@@ -56,9 +71,9 @@ $descriptionPrefix = 'XINAO S context rollout consumer v1; registration='
 $bundleManifestName = 'manifest.json'
 $bundleManifestSchema = 's.context_rollout_consumer.bundle.v1'
 $expectedRepetitionDuration = [System.Xml.XmlConvert]::ToString((New-TimeSpan -Days 3650))
-$requestedActions = @($Apply, $Remove, $Audit).Where({ $_ }).Count
+$requestedActions = @($Apply, $Upgrade, $Remove, $Audit).Where({ $_ }).Count
 if ($requestedActions -gt 1) {
-    throw 'Choose only one of -Apply, -Remove, or -Audit.'
+    throw 'Choose only one of -Apply, -Upgrade, -Remove, or -Audit.'
 }
 if ($requestedActions -eq 0) {
     $Audit = $true
@@ -702,7 +717,9 @@ function Test-BundlePayload {
     param(
         [string]$BundleRoot,
         [string]$ExpectedContentId,
-        [string]$ExpectedManifestSha256
+        [string]$ExpectedManifestSha256,
+        [string[]]$RequiredPaths = $requiredLockedFilePaths,
+        [Nullable[int]]$ExpectedFileCount = $null
     )
     $result = [ordered]@{
         valid = $false
@@ -757,7 +774,9 @@ function Test-BundlePayload {
             -not [string]::Equals([string]$manifest.content_id, $ExpectedContentId, [System.StringComparison]::Ordinal) -or
             $manifest.files -isnot [System.Array] -or @($manifest.files).Count -lt 6 -or
             @($manifest.files).Count -gt 20000 -or $manifest.authority -isnot [bool] -or
-            $manifest.authority -ne $false) {
+            $manifest.authority -ne $false -or
+            ($null -ne $ExpectedFileCount -and
+                @($manifest.files).Count -ne [int]$ExpectedFileCount)) {
             return $result
         }
         $result.validation = 'manifest_schema_valid'
@@ -781,20 +800,8 @@ function Test-BundlePayload {
                 })
         }
         $result.validation = 'manifest_records_valid'
-        $requiredPaths = @(
-            'python/python.exe',
-            'python/pythonw.exe',
-            'app/scripts/context_rollout_consumer.py',
-            'app/services/__init__.py',
-            'app/services/agent_runtime/__init__.py',
-            'app/services/agent_runtime/context_fabric.py',
-            'app/services/agent_runtime/context_runtime_completion.py',
-            'app/services/agent_runtime/presentation_reducer.py',
-            'app/services/agent_runtime/presentation_observer.py',
-            'app/services/agent_runtime/presentation_delivery.py',
-            'app/services/agent_runtime/presentation_lock.py'
-        )
-        if (@($requiredPaths | Where-Object { -not $manifestPaths.Contains($_) }).Count -ne 0 -or
+        if ($null -eq $RequiredPaths -or @($RequiredPaths).Count -lt 1 -or
+            @($RequiredPaths | Where-Object { -not $manifestPaths.Contains($_) }).Count -ne 0 -or
             -not [string]::Equals(
                 (Get-BundleContentId @($manifestRecords)),
                 $ExpectedContentId,
@@ -1012,6 +1019,181 @@ function New-ProtectedConsumerBundle {
     }
 }
 
+function New-ConsumerTaskCandidate {
+    param(
+        [object]$Bundle,
+        [string]$RegistrationToken,
+        [int]$IntervalMinutes,
+        [ValidateRange(1, 10)]
+        [int]$StartDelayMinutes = 1
+    )
+    if ($RegistrationToken -notmatch '^[0-9a-f]{32}$') {
+        throw 'Consumer task registration token is invalid.'
+    }
+    $identity = Get-CurrentIdentityName
+    $registeredAt = [DateTimeOffset]::UtcNow.ToString('o')
+    $description = "$descriptionPrefix$RegistrationToken;registered_at=$registeredAt;content_id=$($Bundle.content_id);manifest_sha256=$($Bundle.manifest_sha256)"
+    $action = New-ScheduledTaskAction `
+        -Execute $Bundle.validation.action_python_path `
+        -Argument $Bundle.validation.arguments `
+        -WorkingDirectory $Bundle.validation.working_directory
+    $trigger = New-ScheduledTaskTrigger `
+        -Once `
+        -At (Get-Date).AddMinutes($StartDelayMinutes) `
+        -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
+        -RepetitionDuration (New-TimeSpan -Days 3650)
+    $trigger.Repetition.StopAtDurationEnd = $false
+    $settings = New-ScheduledTaskSettingsSet `
+        -MultipleInstances IgnoreNew `
+        -StartWhenAvailable `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId $identity `
+        -LogonType Interactive `
+        -RunLevel Limited
+    $definition = New-ScheduledTask `
+        -Action $action `
+        -Trigger $trigger `
+        -Settings $settings `
+        -Principal $principal `
+        -Description $description
+    return [pscustomobject][ordered]@{
+        description = $description
+        registered_at = $registeredAt
+        definition = $definition
+    }
+}
+
+function Get-NormalizedManagedPredecessorXmlSha256 {
+    param(
+        [string]$TaskXml,
+        [object]$BundleValidation
+    )
+    if ([string]::IsNullOrWhiteSpace($TaskXml)) {
+        return ''
+    }
+    $consolePath = [string]$BundleValidation.python_path
+    $windowlessPath = [string]$BundleValidation.action_python_path
+    $consoleCount = [regex]::Matches(
+        $TaskXml,
+        [regex]::Escape($consolePath),
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    ).Count
+    $windowlessCount = [regex]::Matches(
+        $TaskXml,
+        [regex]::Escape($windowlessPath),
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    ).Count
+    if ($consoleCount + $windowlessCount -ne 1) {
+        return ''
+    }
+    $actionToken = '{XINAO_MANAGED_PYTHON_ACTION}'
+    $normalized = $TaskXml.Replace($consolePath, $actionToken).Replace(
+        $windowlessPath,
+        $actionToken
+    )
+    return Get-BytesSha256 ([System.Text.UTF8Encoding]::new($false).GetBytes($normalized))
+}
+
+function Get-ManagedUpgradeSource {
+    param([int]$ExpectedMinutes)
+
+    $result = [ordered]@{
+        valid = $false
+        validation = 'not_validated'
+        task_xml = ''
+        task_description = ''
+        action_variant = ''
+        content_id = ''
+        manifest_sha256 = ''
+    }
+    $task = Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
+    if ($null -eq $task) {
+        $result.validation = 'task_absent'
+        return [pscustomobject]$result
+    }
+
+    $description = [string]$task.Description
+    $descriptionPattern = '^' + [regex]::Escape($descriptionPrefix) +
+        '(?<token>[0-9a-f]{32});content_id=(?<content>[0-9a-f]{64});manifest_sha256=(?<manifest>[0-9a-f]{64})$'
+    $descriptionMatch = [regex]::Match($description, $descriptionPattern)
+    if (-not $descriptionMatch.Success -or
+        -not [string]::Equals(
+            $descriptionMatch.Groups['content'].Value,
+            $managedUpgradeSourceContentId,
+            [System.StringComparison]::Ordinal
+        ) -or
+        -not [string]::Equals(
+            $descriptionMatch.Groups['manifest'].Value,
+            $managedUpgradeSourceManifestSha256,
+            [System.StringComparison]::Ordinal
+        )) {
+        $result.validation = 'predecessor_description_invalid'
+        return [pscustomobject]$result
+    }
+    $bundleRoot = Join-Path $bundleBase $managedUpgradeSourceContentId
+    $bundleValidation = Test-BundlePayload `
+        $bundleRoot `
+        $managedUpgradeSourceContentId `
+        $managedUpgradeSourceManifestSha256 `
+        -RequiredPaths $managedUpgradeSourceRequiredPaths `
+        -ExpectedFileCount $managedUpgradeSourceFileCount
+    if (-not $bundleValidation.valid) {
+        $result.validation = 'predecessor_bundle_invalid'
+        return [pscustomobject]$result
+    }
+
+    $action = @($task.Actions)
+    $actionVariant = if ($action.Count -eq 1 -and
+        (Test-OrdinalPathEqual $action[0].Execute ([string]$bundleValidation.action_python_path))) {
+        'windowless_python'
+    } elseif ($action.Count -eq 1 -and
+        (Test-OrdinalPathEqual $action[0].Execute ([string]$bundleValidation.python_path))) {
+        'console_python'
+    } else {
+        ''
+    }
+    $contractValid = -not [string]::IsNullOrEmpty($actionVariant) -and
+        [string]::Equals(
+            [string]$task.State,
+            'Ready',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    if (-not $contractValid) {
+        $result.validation = 'predecessor_task_contract_invalid'
+        return [pscustomobject]$result
+    }
+    $taskXml = [string](Export-ScheduledTask `
+            -TaskName $taskName `
+            -TaskPath $taskPath `
+            -ErrorAction Stop)
+    if ([string]::IsNullOrWhiteSpace($taskXml)) {
+        $result.validation = 'predecessor_export_invalid'
+        return [pscustomobject]$result
+    }
+    $normalizedXmlSha256 = Get-NormalizedManagedPredecessorXmlSha256 `
+        $taskXml `
+        $bundleValidation
+    if (-not [string]::Equals(
+            $normalizedXmlSha256,
+            $managedUpgradeSourceNormalizedXmlSha256,
+            [System.StringComparison]::Ordinal
+        )) {
+        $result.validation = 'predecessor_xml_identity_invalid'
+        return [pscustomobject]$result
+    }
+    $result.valid = $true
+    $result.validation = 'managed_predecessor_valid'
+    $result.task_xml = $taskXml
+    $result.task_description = $description
+    $result.action_variant = $actionVariant
+    $result.content_id = $managedUpgradeSourceContentId
+    $result.manifest_sha256 = $managedUpgradeSourceManifestSha256
+    return [pscustomobject]$result
+}
+
 function Get-ConsumerTaskAudit {
     param(
         [Nullable[int]]$ExpectedMinutes,
@@ -1036,7 +1218,8 @@ function Get-ConsumerTaskAudit {
     $trigger = @($task.Triggers)
     $description = [string]$task.Description
     $descriptionPattern = '^' + [regex]::Escape($descriptionPrefix) +
-        '(?<token>[0-9a-f]{32});content_id=(?<content>[0-9a-f]{64});manifest_sha256=(?<manifest>[0-9a-f]{64})$'
+        '(?<token>[0-9a-f]{32});registered_at=(?<registered>[^;]+);content_id=' +
+        '(?<content>[0-9a-f]{64});manifest_sha256=(?<manifest>[0-9a-f]{64})$'
     $descriptionMatch = [regex]::Match($description, $descriptionPattern)
     $descriptionToken = if ($descriptionMatch.Success) {
         $descriptionMatch.Groups['token'].Value
@@ -1053,6 +1236,15 @@ function Get-ConsumerTaskAudit {
     } else {
         ''
     }
+    $descriptionRegisteredAtText = if ($descriptionMatch.Success) {
+        $descriptionMatch.Groups['registered'].Value
+    } else {
+        ''
+    }
+    $descriptionRegisteredAt = ConvertTo-StrictReceiptTimestamp $descriptionRegisteredAtText
+    $descriptionRegistrationValid = $null -ne $descriptionRegisteredAt -and
+        $descriptionRegisteredAt.Year -ge 2025 -and
+        $descriptionRegisteredAt -le [DateTimeOffset]::Now.AddMinutes(2)
     $expectedBundleRoot = if ($descriptionMatch.Success) {
         Join-Path $bundleBase $descriptionContentId
     } else {
@@ -1359,6 +1551,9 @@ function Get-ConsumerTaskAudit {
                 $freshnessBudget = New-TimeSpan -Minutes (5 + (2 * $healthIntervalMinutes))
                 $consumerReceiptFresh = $finishedAt -ge $auditNow.Subtract($freshnessBudget) -and
                     $finishedAt -le $auditNow.AddMinutes(2) -and
+                    $descriptionRegistrationValid -and
+                    $lastRunAt -ge $descriptionRegisteredAt -and
+                    $finishedAt -ge $descriptionRegisteredAt -and
                     $taskHasRun -and
                     $finishedAt -ge $lastRunAt.Subtract((New-TimeSpan -Minutes 1)) -and
                     $finishedAt -le $lastRunAt.AddMinutes(7)
@@ -1541,6 +1736,9 @@ function Get-ConsumerTaskAudit {
                 $presentationBudget = New-TimeSpan -Minutes (5 + (2 * $healthIntervalMinutes))
                 $presentationReceiptFresh = $presentationFinishedAt -ge [DateTimeOffset]::Now.Subtract($presentationBudget) -and
                     $presentationFinishedAt -le [DateTimeOffset]::Now.AddMinutes(2) -and
+                    $descriptionRegistrationValid -and
+                    $lastRunAt -ge $descriptionRegisteredAt -and
+                    $presentationFinishedAt -ge $descriptionRegisteredAt -and
                     $taskHasRun -and
                     $presentationFinishedAt -ge $lastRunAt.Subtract((New-TimeSpan -Minutes 1)) -and
                     $presentationFinishedAt -le $lastRunAt.AddMinutes(7)
@@ -1553,7 +1751,7 @@ function Get-ConsumerTaskAudit {
             $presentationReceiptValidation = 'presentation_receipt_invalid'
         }
     }
-    $descriptionValid = $descriptionMatch.Success -and
+    $descriptionValid = $descriptionMatch.Success -and $descriptionRegistrationValid -and
         $payloadHashValid -and
         ([string]::IsNullOrWhiteSpace($ExpectedRegistrationToken) -or
             [string]::Equals(
@@ -1714,6 +1912,7 @@ function Get-ConsumerTaskAudit {
         bundle_validation = [string]$bundleValidation.validation
         content_id = $descriptionContentId
         manifest_sha256 = $descriptionManifestSha256
+        registered_at = $descriptionRegisteredAtText
         files_valid = $filesValid
         enabled_valid = $enabledValid
         execute = if ($action.Count -eq 1) { [string]$action[0].Execute } else { '' }
@@ -1738,6 +1937,252 @@ function Get-ConsumerTaskAudit {
     }
 }
 
+function Test-OwnedUpgradeReplacement {
+    param(
+        [object]$Task,
+        [object]$Candidate,
+        [object]$Bundle,
+        [int]$ExpectedMinutes
+    )
+    if ($null -eq $Task) {
+        return $false
+    }
+    $action = @($Task.Actions)
+    $trigger = @($Task.Triggers)
+    $currentSid = Get-CurrentIdentitySid
+    $taskSid = Resolve-IdentitySid ([string]$Task.Principal.UserId)
+    $startBoundary = [DateTimeOffset]::MinValue
+    $startBoundaryText = if ($trigger.Count -eq 1) { [string]$trigger[0].StartBoundary } else { '' }
+    $startBoundaryValid = [DateTimeOffset]::TryParse(
+            $startBoundaryText,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::AssumeLocal,
+            [ref]$startBoundary
+        ) -and $startBoundary.Year -ge 2025 -and
+        $startBoundary -le [DateTimeOffset]::Now.AddMinutes(10)
+    return $action.Count -eq 1 -and
+        [string]::Equals(
+            [string]$Task.Description,
+            [string]$Candidate.description,
+            [System.StringComparison]::Ordinal
+        ) -and
+        (Test-OrdinalPathEqual $action[0].Execute ([string]$Bundle.validation.action_python_path)) -and
+        [string]::Equals(
+            [string]$action[0].Arguments,
+            [string]$Bundle.validation.arguments,
+            [System.StringComparison]::Ordinal
+        ) -and
+        (Test-OrdinalPathEqual $action[0].WorkingDirectory ([string]$Bundle.validation.working_directory)) -and
+        [string]::Equals($taskSid, $currentSid, [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals(
+            [string]$Task.Principal.RunLevel,
+            'Limited',
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
+        [string]::Equals(
+            [string]$Task.Principal.LogonType,
+            'Interactive',
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
+        [string]::Equals(
+            [string]$Task.Settings.MultipleInstances,
+            'IgnoreNew',
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
+        [bool]$Task.Settings.StartWhenAvailable -and
+        -not [bool]$Task.Settings.DisallowStartIfOnBatteries -and
+        -not [bool]$Task.Settings.StopIfGoingOnBatteries -and
+        [string]::Equals(
+            [string]$Task.Settings.ExecutionTimeLimit,
+            'PT5M',
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
+        [bool]$Task.Settings.Enabled -and
+        -not [bool]$Task.Settings.Hidden -and
+        -not [bool]$Task.Settings.RunOnlyIfIdle -and
+        -not [bool]$Task.Settings.WakeToRun -and
+        $trigger.Count -eq 1 -and [bool]$trigger[0].Enabled -and
+        [string]::Equals(
+            [string]$trigger[0].Repetition.Interval,
+            "PT$([int]$ExpectedMinutes)M",
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
+        [string]::Equals(
+            [string]$trigger[0].Repetition.Duration,
+            $expectedRepetitionDuration,
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
+        -not [bool]$trigger[0].Repetition.StopAtDurationEnd -and
+        $startBoundaryValid -and
+        -not [string]::Equals(
+            [string]$Task.State,
+            'Disabled',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+}
+
+function Invoke-ConsumerTaskUpgradeCore {
+    param([int]$IntervalMinutes)
+
+    $original = Get-ManagedUpgradeSource -ExpectedMinutes $IntervalMinutes
+    if (-not $original.valid) {
+        throw "Refusing upgrade because the existing task is not the exact managed predecessor ($($original.validation))."
+    }
+    $registrationToken = [Guid]::NewGuid().ToString('N')
+    $sourcePlan = @(Get-SourceBundlePlan)
+    $bundle = New-ProtectedConsumerBundle $sourcePlan $registrationToken
+    $candidate = New-ConsumerTaskCandidate `
+        -Bundle $bundle `
+        -RegistrationToken $registrationToken `
+        -IntervalMinutes $IntervalMinutes `
+        -StartDelayMinutes 10
+
+    $preReplace = Get-ManagedUpgradeSource -ExpectedMinutes $IntervalMinutes
+    if (-not $preReplace.valid -or
+        -not [string]::Equals(
+            [string]$preReplace.task_xml,
+            [string]$original.task_xml,
+            [System.StringComparison]::Ordinal
+        )) {
+        throw 'Managed predecessor changed while preparing its replacement; refusing upgrade.'
+    }
+
+    $replaceAttempted = $false
+    $ownedReplacementXml = ''
+    try {
+        $replaceAttempted = $true
+        Register-ScheduledTask `
+            -TaskName $taskName `
+            -TaskPath $taskPath `
+            -InputObject $candidate.definition `
+            -Force | Out-Null
+        $registered = Get-ScheduledTask `
+            -TaskName $taskName `
+            -TaskPath $taskPath `
+            -ErrorAction Stop
+        if (-not (Test-OwnedUpgradeReplacement `
+                $registered `
+                $candidate `
+                $bundle `
+                $IntervalMinutes)) {
+            throw 'Registered Scheduled Task did not read back as this invocation replacement.'
+        }
+        $ownedReplacementXml = [string](Export-ScheduledTask `
+                -TaskName $taskName `
+                -TaskPath $taskPath `
+                -ErrorAction Stop)
+        $readback = Get-ConsumerTaskAudit `
+            -ExpectedMinutes $IntervalMinutes `
+            -ExpectedRegistrationToken $registrationToken
+        if (-not $readback.installation_valid) {
+            throw 'Upgraded Scheduled Task readback did not match the exact new consumer contract.'
+        }
+        $readback.status = 'upgraded_pending_first_run'
+        $readback.valid = $false
+        if ($readback.PSObject.Properties.Name -contains 'health_valid') {
+            $readback.health_valid = $false
+        }
+        if ($readback.PSObject.Properties.Name -contains 'consumer_health') {
+            $readback.consumer_health = 'pending_first_new_release_run'
+        }
+        return $readback
+    }
+    catch {
+        $upgradeFailure = $_
+        if (-not $replaceAttempted) {
+            throw $upgradeFailure
+        }
+        $current = Get-ScheduledTask `
+            -TaskName $taskName `
+            -TaskPath $taskPath `
+            -ErrorAction SilentlyContinue
+        $restoreRequired = $null -eq $current
+        if ($null -ne $current) {
+            $currentXml = [string](Export-ScheduledTask `
+                    -TaskName $taskName `
+                    -TaskPath $taskPath `
+                    -ErrorAction Stop)
+            if ([string]::Equals(
+                    $currentXml,
+                    [string]$original.task_xml,
+                    [System.StringComparison]::Ordinal
+                )) {
+                throw $upgradeFailure
+            }
+            if ([string]::IsNullOrEmpty($ownedReplacementXml) -or
+                -not [string]::Equals(
+                    $currentXml,
+                    $ownedReplacementXml,
+                    [System.StringComparison]::Ordinal
+                ) -or
+                -not (Test-OwnedUpgradeReplacement $current $candidate $bundle $IntervalMinutes)) {
+                throw 'Scheduled Task changed to an unowned identity during upgrade; refusing rollback overwrite.'
+            }
+            $restoreRequired = $true
+        }
+        if ($restoreRequired) {
+            try {
+                if ($null -eq $current) {
+                    Register-ScheduledTask `
+                        -TaskName $taskName `
+                        -TaskPath $taskPath `
+                        -Xml ([string]$original.task_xml) | Out-Null
+                } else {
+                    Register-ScheduledTask `
+                        -TaskName $taskName `
+                        -TaskPath $taskPath `
+                        -Xml ([string]$original.task_xml) `
+                        -Force | Out-Null
+                }
+            }
+            catch {
+                throw "Scheduled Task upgrade rollback registration failed: $($_.Exception.Message)"
+            }
+            $restored = Get-ManagedUpgradeSource -ExpectedMinutes $IntervalMinutes
+            if (-not $restored.valid -or
+                -not [string]::Equals(
+                    [string]$restored.task_xml,
+                    [string]$original.task_xml,
+                    [System.StringComparison]::Ordinal
+                )) {
+                throw 'Scheduled Task upgrade rollback did not restore the exact predecessor definition.'
+            }
+        }
+        throw $upgradeFailure
+    }
+}
+
+function Invoke-ConsumerTaskUpgrade {
+    param([int]$IntervalMinutes)
+
+    $mutex = [System.Threading.Mutex]::new($false, $upgradeMutexName)
+    $acquired = $false
+    try {
+        try {
+            $acquired = $mutex.WaitOne(0)
+        }
+        catch [System.Threading.AbandonedMutexException] {
+            $acquired = $true
+        }
+        if (-not $acquired) {
+            throw 'Another managed consumer upgrade invocation is already active.'
+        }
+        return Invoke-ConsumerTaskUpgradeCore -IntervalMinutes $IntervalMinutes
+    }
+    finally {
+        if ($acquired) {
+            $mutex.ReleaseMutex()
+        }
+        $mutex.Dispose()
+    }
+}
+
+if ($Upgrade) {
+    $upgradeResult = Invoke-ConsumerTaskUpgrade -IntervalMinutes $Minutes
+    $upgradeResult | ConvertTo-Json -Depth 5
+    exit 0
+}
+
 if ($Apply) {
     $existing = Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
     if ($null -ne $existing) {
@@ -1756,37 +2201,15 @@ if ($Apply) {
         }
         exit 2
     }
-    $identity = Get-CurrentIdentityName
     $registrationToken = [Guid]::NewGuid().ToString('N')
     $sourcePlan = @(Get-SourceBundlePlan)
     $bundle = New-ProtectedConsumerBundle $sourcePlan $registrationToken
-    $createdDescription = "$descriptionPrefix$registrationToken;content_id=$($bundle.content_id);manifest_sha256=$($bundle.manifest_sha256)"
-    $action = New-ScheduledTaskAction `
-        -Execute $bundle.validation.action_python_path `
-        -Argument $bundle.validation.arguments `
-        -WorkingDirectory $bundle.validation.working_directory
-    $trigger = New-ScheduledTaskTrigger `
-        -Once `
-        -At (Get-Date).AddMinutes(1) `
-        -RepetitionInterval (New-TimeSpan -Minutes $Minutes) `
-        -RepetitionDuration (New-TimeSpan -Days 3650)
-    $trigger.Repetition.StopAtDurationEnd = $false
-    $settings = New-ScheduledTaskSettingsSet `
-        -MultipleInstances IgnoreNew `
-        -StartWhenAvailable `
-        -AllowStartIfOnBatteries `
-        -DontStopIfGoingOnBatteries `
-        -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
-    $principal = New-ScheduledTaskPrincipal `
-        -UserId $identity `
-        -LogonType Interactive `
-        -RunLevel Limited
-    $definition = New-ScheduledTask `
-        -Action $action `
-        -Trigger $trigger `
-        -Settings $settings `
-        -Principal $principal `
-        -Description $createdDescription
+    $candidate = New-ConsumerTaskCandidate `
+        -Bundle $bundle `
+        -RegistrationToken $registrationToken `
+        -IntervalMinutes $Minutes
+    $createdDescription = [string]$candidate.description
+    $definition = $candidate.definition
     $createdThisInvocation = $false
     try {
         Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -InputObject $definition | Out-Null

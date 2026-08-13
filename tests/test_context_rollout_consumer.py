@@ -226,6 +226,7 @@ def _mock_installer_audit(
     extra_count_field: str = "",
     trusted_acl: bool = True,
     task_has_run: bool = True,
+    last_run_age_minutes: int = 1,
     receipt_status: str = "completed",
     presentation_receipt_status: str = "completed",
     presentation_receipt_age_minutes: int = 0,
@@ -329,7 +330,9 @@ $mockNow = [DateTimeOffset]::Now
 $mockLocatorHash = 'a' * 64
 $mockToken = 'c' * 32
 $mockTaskHasRun = ${str(task_has_run).lower()}
-$mockDescription = 'XINAO S context rollout consumer v1; registration=' + $mockToken + ';content_id={content_id};manifest_sha256={manifest_hash}'
+$mockDescription = 'XINAO S context rollout consumer v1; registration=' + $mockToken +
+    ';registered_at=' + $mockNow.AddMinutes(-2).ToString('o') +
+    ';content_id={content_id};manifest_sha256={manifest_hash}'
 $mockReceipt = @'
 {{"schema_version":"s.context_rollout_consumer.receipt.v1","status":"{receipt_status}","started_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).ToString('o'))","bootstrap":false,"state_recovered":false,"scan_start":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","scan_end":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-1).ToString('o'))","counts":{{"appended":1,"inventoried":1{extra_count_json}}},"files":[{{"carrier_id":"s-primary","locator_sha256":"$($mockLocatorHash)","status":"imported","appended":1,"duplicate":0,"ignored":0,"incomplete_tail":false{extra_file_json}}}],"file_receipts_total":1,"file_receipts_omitted":0,"authority":false{extra_json}}}
 '@
@@ -369,7 +372,7 @@ function Get-ScheduledTaskInfo {{
     [CmdletBinding()] param([string]$TaskName, [string]$TaskPath)
     [pscustomobject]@{{
         LastTaskResult = {last_task_result}
-        LastRunTime = if ($mockTaskHasRun) {{ $mockNow.AddMinutes(-1) }} else {{ [DateTime]::MinValue }}
+        LastRunTime = if ($mockTaskHasRun) {{ $mockNow.AddMinutes(-{last_run_age_minutes}) }} else {{ [DateTime]::MinValue }}
         NextRunTime = $mockNow.AddMinutes(1)
     }}
 }}
@@ -662,6 +665,375 @@ exit 9
         json.loads(output_lines[-1]),
         completed.stdout + completed.stderr,
     )
+
+
+def _run_managed_upgrade_source_probe(
+    *,
+    action_name: str,
+    drift: str = "",
+) -> tuple[int, dict[str, object], str]:
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+    installer = consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
+    command = rf"""
+$ErrorActionPreference = 'Stop'
+$installerText = [System.IO.File]::ReadAllText('{str(installer).replace("'", "''")}')
+$prefix = $installerText.Substring(0, $installerText.IndexOf('function Get-ConsumerTaskAudit'))
+. ([scriptblock]::Create($prefix))
+$script:bundleBindingValid = $false
+$script:canonicalManagedXml = '<Task><Command>{{XINAO_MANAGED_PYTHON_ACTION}}</Command><Arguments>-I -B &quot;C:\owned\app\scripts\context_rollout_consumer.py&quot;</Arguments><Hidden>false</Hidden><Interval>PT2M</Interval><URI>\managed</URI></Task>'
+$script:mockManagedXml = '<Task><Command>C:\owned\python\{action_name}</Command><Arguments>-I -B &quot;C:\owned\app\scripts\context_rollout_consumer.py&quot;</Arguments><Hidden>false</Hidden><Interval>PT2M</Interval><URI>\managed</URI></Task>'
+switch ('{drift}') {{
+    'arguments' {{
+        $script:mockManagedXml = $script:mockManagedXml.Replace(
+            'C:\owned\app\scripts\context_rollout_consumer.py',
+            'C:\foreign.py'
+        )
+    }}
+    'settings' {{
+        $script:mockManagedXml = $script:mockManagedXml.Replace(
+            '<Hidden>false</Hidden>',
+            '<Hidden>true</Hidden>'
+        )
+    }}
+    'trigger' {{
+        $script:mockManagedXml = $script:mockManagedXml.Replace(
+            '<Interval>PT2M</Interval>',
+            '<Interval>PT5M</Interval>'
+        )
+    }}
+    'xml' {{
+        $script:mockManagedXml = $script:mockManagedXml.Replace(
+            '</Task>',
+            '<ForeignNode>true</ForeignNode></Task>'
+        )
+    }}
+}}
+$managedUpgradeSourceNormalizedXmlSha256 = Get-BytesSha256 (
+    [System.Text.UTF8Encoding]::new($false).GetBytes($script:canonicalManagedXml)
+)
+function Test-BundlePayload {{
+    [CmdletBinding()] param(
+        [string]$BundleRoot,
+        [string]$ExpectedContentId,
+        [string]$ExpectedManifestSha256,
+        [string[]]$RequiredPaths,
+        [Nullable[int]]$ExpectedFileCount
+    )
+    [void]($script:bundleBindingValid =
+        $ExpectedContentId -eq '882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823' -and
+        $ExpectedManifestSha256 -eq 'db7516e59cdf11ecef3a1b25e88b709136f29da9fd49aba0c53b1137ea5e51b0' -and
+        @($RequiredPaths).Count -eq 7 -and $ExpectedFileCount -eq 1332)
+    [pscustomobject]@{{
+        valid = $script:bundleBindingValid
+        python_path = 'C:\owned\python\python.exe'
+        action_python_path = 'C:\owned\python\pythonw.exe'
+        arguments = '-I -B "C:\owned\app\scripts\context_rollout_consumer.py"'
+        working_directory = 'C:\owned\app'
+    }}
+}}
+function Get-CurrentIdentitySid {{ return 'S-1-5-21-test' }}
+function Resolve-IdentitySid {{ param([string]$Identity); return 'S-1-5-21-test' }}
+function Export-ScheduledTask {{ return $script:mockManagedXml }}
+function Get-ScheduledTask {{
+    $description = 'XINAO S context rollout consumer v1; registration=' + ('a' * 32) +
+        ';content_id=882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823' +
+        ';manifest_sha256=db7516e59cdf11ecef3a1b25e88b709136f29da9fd49aba0c53b1137ea5e51b0'
+    $execute = 'C:\owned\python\{action_name}'
+    $arguments = '-I -B "C:\owned\app\scripts\context_rollout_consumer.py"'
+    $hidden = $false
+    $interval = 'PT2M'
+    switch ('{drift}') {{
+        'description' {{ $description = 'FOREIGN' }}
+        'action' {{ $execute = 'C:\foreign\pythonw.exe' }}
+        'arguments' {{ $arguments = '-I -B "C:\foreign.py"' }}
+        'settings' {{ $hidden = $true }}
+        'trigger' {{ $interval = 'PT5M' }}
+    }}
+    [pscustomobject]@{{
+        Description = $description
+        State = 'Ready'
+        Actions = @([pscustomobject]@{{
+            Execute = $execute
+            Arguments = $arguments
+            WorkingDirectory = 'C:\owned\app'
+        }})
+        Principal = [pscustomobject]@{{
+            UserId = 'managed-user'
+            RunLevel = 'Limited'
+            LogonType = 'Interactive'
+        }}
+        Settings = [pscustomobject]@{{
+            MultipleInstances = 'IgnoreNew'
+            StartWhenAvailable = $true
+            DisallowStartIfOnBatteries = $false
+            StopIfGoingOnBatteries = $false
+            ExecutionTimeLimit = 'PT5M'
+            Enabled = $true
+            Hidden = $hidden
+            RunOnlyIfIdle = $false
+            WakeToRun = $false
+        }}
+        Triggers = @([pscustomobject]@{{
+            Enabled = $true
+            StartBoundary = [DateTimeOffset]::Now.AddDays(-1).ToString('o')
+            Repetition = [pscustomobject]@{{
+                Interval = $interval
+                Duration = 'P3650D'
+                StopAtDurationEnd = $false
+            }}
+        }})
+    }}
+}}
+$result = Get-ManagedUpgradeSource -ExpectedMinutes 2
+[ordered]@{{
+    valid = [bool]$result.valid
+    validation = [string]$result.validation
+    action_variant = [string]$result.action_variant
+    bundle_binding_valid = [bool]$script:bundleBindingValid
+}} | ConvertTo-Json -Compress
+"""
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            base64.b64encode(command.encode("utf-16-le")).decode(),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    output_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    assert output_lines, completed.stdout + completed.stderr
+    return completed.returncode, json.loads(output_lines[-1]), completed.stdout + completed.stderr
+
+
+def _run_upgrade_state_machine_probe(
+    scenario: str,
+) -> tuple[int, dict[str, object], str]:
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+    installer = consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
+    command = rf"""
+$ErrorActionPreference = 'Stop'
+$installerText = [System.IO.File]::ReadAllText('{str(installer).replace("'", "''")}')
+$prefix = $installerText.Substring(0, $installerText.IndexOf('if ($Upgrade)'))
+. ([scriptblock]::Create($prefix))
+$script:scenario = '{scenario}'
+$script:state = 'old'
+$script:managedCalls = 0
+$script:replaceCalls = 0
+$script:rollbackCalls = 0
+$script:allForced = $true
+$script:oldXml = '<Task>OLD-EXACT</Task>'
+$script:newXml = '<Task>NEW-EXACT</Task>'
+$script:foreignXml = '<Task>FOREIGN</Task>'
+$script:newDescription = 'NEW-OWNED-DESCRIPTION'
+function Get-CurrentIdentitySid {{ return 'S-1-5-21-test' }}
+function Resolve-IdentitySid {{ param([string]$Identity); return 'S-1-5-21-test' }}
+function Get-ManagedUpgradeSource {{
+    $script:managedCalls += 1
+    $xml = $script:oldXml
+    if ($script:scenario -eq 'pre_replace_drift' -and $script:managedCalls -eq 2) {{
+        $xml = '<Task>OLD-CHANGED</Task>'
+    }}
+    [pscustomobject]@{{
+        valid = $true
+        validation = 'managed_predecessor_valid'
+        task_xml = $xml
+        task_description = 'OLD-DESCRIPTION'
+        action_variant = 'windowless_python'
+    }}
+}}
+function Get-SourceBundlePlan {{ return @([pscustomobject]@{{ relative_path = 'mock' }}) }}
+function New-ProtectedConsumerBundle {{
+    [pscustomobject]@{{
+        content_id = 'd' * 64
+        manifest_sha256 = 'e' * 64
+        validation = [pscustomobject]@{{
+            action_python_path = 'C:\new\python\pythonw.exe'
+            arguments = '-I -B "C:\new\app\scripts\context_rollout_consumer.py"'
+            working_directory = 'C:\new\app'
+        }}
+    }}
+}}
+function New-ConsumerTaskCandidate {{
+    [pscustomobject]@{{
+        description = $script:newDescription
+        definition = [pscustomobject]@{{ candidate = $true }}
+    }}
+}}
+function Register-ScheduledTask {{
+    [CmdletBinding()] param(
+        [string]$TaskName,
+        [string]$TaskPath,
+        [object]$InputObject,
+        [string]$Xml,
+        [switch]$Force
+    )
+    $script:allForced = $script:allForced -and [bool]$Force
+    if ($PSBoundParameters.ContainsKey('Xml')) {{
+        $script:rollbackCalls += 1
+        if ($script:scenario -eq 'rollback_failure') {{
+            throw 'SIMULATED-ROLLBACK-FAILURE'
+        }}
+        $script:state = 'old'
+        return
+    }}
+    $script:replaceCalls += 1
+    switch ($script:scenario) {{
+        'foreign_after_attempt' {{
+            $script:state = 'foreign'
+            throw 'SIMULATED-REPLACE-FAILURE'
+        }}
+        'absent_after_attempt' {{
+            $script:state = 'absent'
+            throw 'SIMULATED-REPLACE-FAILURE'
+        }}
+        'unchanged_failure' {{
+            $script:state = 'old'
+            throw 'SIMULATED-REPLACE-FAILURE'
+        }}
+        default {{ $script:state = 'new' }}
+    }}
+}}
+function Get-ConsumerTaskAudit {{
+    if ($script:scenario -eq 'success' -and $script:state -eq 'new') {{
+        return [pscustomobject]@{{
+            installation_valid = $true
+            health_valid = $true
+            consumer_health = 'healthy'
+            valid = $true
+            status = 'installed_valid'
+        }}
+    }}
+    return [pscustomobject]@{{
+        installation_valid = $false
+        valid = $false
+        status = 'installed_drifted'
+    }}
+}}
+function Get-ScheduledTask {{
+    if ($script:state -eq 'absent') {{ return $null }}
+    if ($script:state -eq 'old') {{
+        return [pscustomobject]@{{
+            Description = 'OLD-DESCRIPTION'
+            Actions = @([pscustomobject]@{{
+                Execute = 'C:\old\python\pythonw.exe'
+                Arguments = '-I -B "C:\old\app\scripts\context_rollout_consumer.py"'
+                WorkingDirectory = 'C:\old\app'
+            }})
+        }}
+    }}
+    if ($script:state -eq 'new') {{
+        $newHidden = $script:scenario -eq 'owned_description_drift'
+        return [pscustomobject]@{{
+            Description = $script:newDescription
+            State = 'Ready'
+            Actions = @([pscustomobject]@{{
+                Execute = 'C:\new\python\pythonw.exe'
+                Arguments = '-I -B "C:\new\app\scripts\context_rollout_consumer.py"'
+                WorkingDirectory = 'C:\new\app'
+            }})
+            Principal = [pscustomobject]@{{
+                UserId = 'managed-user'
+                RunLevel = 'Limited'
+                LogonType = 'Interactive'
+            }}
+            Settings = [pscustomobject]@{{
+                MultipleInstances = 'IgnoreNew'
+                StartWhenAvailable = $true
+                DisallowStartIfOnBatteries = $false
+                StopIfGoingOnBatteries = $false
+                ExecutionTimeLimit = 'PT5M'
+                Enabled = $true
+                Hidden = $newHidden
+                RunOnlyIfIdle = $false
+                WakeToRun = $false
+            }}
+            Triggers = @([pscustomobject]@{{
+                Enabled = $true
+                StartBoundary = [DateTimeOffset]::Now.AddMinutes(-1).ToString('o')
+                Repetition = [pscustomobject]@{{
+                    Interval = 'PT2M'
+                    Duration = 'P3650D'
+                    StopAtDurationEnd = $false
+                }}
+            }})
+        }}
+    }}
+    return [pscustomobject]@{{
+        Description = 'FOREIGN-DESCRIPTION'
+        Actions = @([pscustomobject]@{{
+            Execute = 'C:\foreign\python.exe'
+            Arguments = '-c foreign'
+            WorkingDirectory = 'C:\foreign'
+        }})
+    }}
+}}
+function Export-ScheduledTask {{
+    switch ($script:state) {{
+        'old' {{ return $script:oldXml }}
+        'new' {{ return $script:newXml }}
+        default {{ return $script:foreignXml }}
+    }}
+}}
+$succeeded = $false
+$status = ''
+$valid = $false
+$healthValid = $false
+$consumerHealth = ''
+$errorText = ''
+try {{
+    $result = Invoke-ConsumerTaskUpgrade -IntervalMinutes 2
+    $succeeded = $true
+    $status = [string]$result.status
+    $valid = [bool]$result.valid
+    $healthValid = [bool]$result.health_valid
+    $consumerHealth = [string]$result.consumer_health
+}}
+catch {{
+    $errorText = [string]$_.Exception.Message
+}}
+[ordered]@{{
+    succeeded = $succeeded
+    status = $status
+    valid = $valid
+    health_valid = $healthValid
+    consumer_health = $consumerHealth
+    error = $errorText
+    state = $script:state
+    managed_calls = $script:managedCalls
+    replace_calls = $script:replaceCalls
+    rollback_calls = $script:rollbackCalls
+    all_forced = $script:allForced
+}} | ConvertTo-Json -Compress
+"""
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            base64.b64encode(command.encode("utf-16-le")).decode(),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    output_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    assert output_lines, completed.stdout + completed.stderr
+    return completed.returncode, json.loads(output_lines[-1]), completed.stdout + completed.stderr
 
 
 @pytest.mark.parametrize("engine_name", ["pwsh", "powershell"])
@@ -1924,8 +2296,8 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
     assert "-DontStopIfGoingOnBatteries" in script
     assert "-I -B" in script
     assert "python/pythonw.exe" in script
-    assert "-Execute $bundle.validation.action_python_path" in script
-    assert "-Execute $bundle.validation.python_path" not in script
+    assert "-Execute $Bundle.validation.action_python_path" in script
+    assert "-Execute $Bundle.validation.python_path" not in script
     assert "-RunLevel Limited" in script
     assert "WindowsIdentity]::GetCurrent().Name" in script
     assert "WindowsIdentity]::GetCurrent().User.Value" in script
@@ -2026,7 +2398,7 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
         "Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -InputObject $definition -Force"
         not in script
     )
-    assert "-Apply" in script and "-Remove" in script and "-Audit" in script
+    assert all(option in script for option in ("-Apply", "-Upgrade", "-Remove", "-Audit"))
     assert "RunLevel Highest" not in script
     assert consumer.PRODUCTION_CONTEXT_FABRIC_ROOT == Path(
         r"D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric"
@@ -2278,6 +2650,130 @@ def test_installer_apply_preflight_rejects_source_and_lock_tamper_without_residu
 
 
 @pytest.mark.parametrize(
+    ("action_name", "expected_variant"),
+    [("python.exe", "console_python"), ("pythonw.exe", "windowless_python")],
+)
+def test_installer_upgrade_admits_only_both_exact_managed_predecessor_actions(
+    action_name: str,
+    expected_variant: str,
+) -> None:
+    exit_code, result, raw_output = _run_managed_upgrade_source_probe(
+        action_name=action_name
+    )
+
+    assert exit_code == 0, raw_output
+    assert result == {
+        "valid": True,
+        "validation": "managed_predecessor_valid",
+        "action_variant": expected_variant,
+        "bundle_binding_valid": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "drift",
+    ["description", "action", "arguments", "settings", "trigger", "xml"],
+)
+def test_installer_upgrade_rejects_any_non_action_predecessor_drift(drift: str) -> None:
+    exit_code, result, raw_output = _run_managed_upgrade_source_probe(
+        action_name="pythonw.exe",
+        drift=drift,
+    )
+
+    assert exit_code == 0, raw_output
+    assert result["valid"] is False
+    assert result["validation"] in {
+        "predecessor_description_invalid",
+        "predecessor_task_contract_invalid",
+        "predecessor_xml_identity_invalid",
+    }
+
+
+def test_installer_upgrade_success_replaces_once_and_returns_pending_readback() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("success")
+
+    assert exit_code == 0, raw_output
+    assert result == {
+        "succeeded": True,
+        "status": "upgraded_pending_first_run",
+        "valid": False,
+        "health_valid": False,
+        "consumer_health": "pending_first_new_release_run",
+        "error": "",
+        "state": "new",
+        "managed_calls": 2,
+        "replace_calls": 1,
+        "rollback_calls": 0,
+        "all_forced": True,
+    }
+
+
+def test_installer_upgrade_refuses_replace_when_predecessor_changes_during_prepare() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("pre_replace_drift")
+
+    assert exit_code == 0, raw_output
+    assert result["succeeded"] is False
+    assert "changed while preparing" in result["error"]
+    assert result["state"] == "old"
+    assert result["replace_calls"] == 0
+    assert result["rollback_calls"] == 0
+
+
+def test_installer_upgrade_failed_replace_leaves_unchanged_predecessor_alone() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("unchanged_failure")
+
+    assert exit_code == 0, raw_output
+    assert result["succeeded"] is False
+    assert "SIMULATED-REPLACE-FAILURE" in result["error"]
+    assert result["state"] == "old"
+    assert result["replace_calls"] == 1
+    assert result["rollback_calls"] == 0
+
+
+def test_installer_upgrade_restores_absent_failed_replace_without_force() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("absent_after_attempt")
+
+    assert exit_code == 0, raw_output
+    assert result["succeeded"] is False
+    assert "SIMULATED-REPLACE-FAILURE" in result["error"]
+    assert result["state"] == "old"
+    assert result["rollback_calls"] == 1
+    assert result["all_forced"] is False
+
+
+def test_installer_upgrade_refuses_rollback_over_foreign_concurrent_identity() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("foreign_after_attempt")
+
+    assert exit_code == 0, raw_output
+    assert result["succeeded"] is False
+    assert "unowned identity" in result["error"]
+    assert result["state"] == "foreign"
+    assert result["rollback_calls"] == 0
+
+
+def test_installer_upgrade_refuses_rollback_when_owned_description_contract_drifts() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe(
+        "owned_description_drift"
+    )
+
+    assert exit_code == 0, raw_output
+    assert result["succeeded"] is False
+    assert "unowned identity" in result["error"]
+    assert result["state"] == "new"
+    assert result["rollback_calls"] == 0
+
+
+def test_installer_upgrade_reports_rollback_failure_without_deleting_task() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("rollback_failure")
+
+    assert exit_code == 0, raw_output
+    assert result["succeeded"] is False
+    assert "rollback registration failed" in result["error"]
+    assert result["state"] == "new"
+    assert result["rollback_calls"] == 1
+
+
+@pytest.mark.parametrize(
     ("last_result", "age_minutes", "extra_field", "trusted_acl", "health"),
     [
         (1, 0, "", True, "task_last_result_nonzero"),
@@ -2325,6 +2821,23 @@ def test_installer_audit_accepts_only_fresh_completed_receipt_and_zero_task_resu
     assert audit["consumer_receipt_schema_valid"] is True
     assert audit["consumer_receipt_fresh"] is True
     assert audit["consumer_health"] == "healthy"
+
+
+def test_installer_audit_rejects_receipts_from_a_run_started_before_registration() -> None:
+    exit_code, audit, _raw_output = _mock_installer_audit(
+        last_task_result=0,
+        receipt_age_minutes=0,
+        presentation_receipt_age_minutes=0,
+        last_run_age_minutes=3,
+        trusted_acl=True,
+    )
+
+    assert exit_code != 0
+    assert audit["installation_valid"] is True
+    assert audit["valid"] is False
+    assert audit["consumer_receipt_fresh"] is False
+    assert audit["presentation_receipt_fresh"] is False
+    assert audit["consumer_health"] == "receipt_stale"
 
 
 @pytest.mark.parametrize(
