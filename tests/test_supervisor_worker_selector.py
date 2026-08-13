@@ -46,9 +46,9 @@ def identity(item: dict[str, object]) -> tuple[str, str, str, str]:
 
 def test_input_order_does_not_change_result() -> None:
     candidates = [
-        candidate("grok", "grok-4.5"),
+        candidate("grok", "grok-4.6"),
         candidate("codex", "codex", context_capable=True),
-        candidate("grok", "grok-composer-2.5-fast", healthy=False),
+        candidate("grok", "grok-retired-model", healthy=False),
     ]
 
     forward = select_supervisor_worker(candidates, task_separable=True)
@@ -62,8 +62,8 @@ def test_input_order_does_not_change_result() -> None:
 
 
 def test_exact_supervisor_choice_uses_all_four_identity_fields() -> None:
-    first = candidate("grok", "grok-4.5", profile_ref="profile:a", transport_id="direct")
-    second = candidate("grok", "grok-4.5", profile_ref="profile:b", transport_id="temporal")
+    first = candidate("grok", "grok-4.6", profile_ref="profile:a", transport_id="direct")
+    second = candidate("grok", "grok-4.6", profile_ref="profile:b", transport_id="temporal")
 
     result = select_supervisor_worker(
         [first, second],
@@ -71,7 +71,7 @@ def test_exact_supervisor_choice_uses_all_four_identity_fields() -> None:
         supervisor_choice=CandidateIdentity(
             provider_id="grok",
             profile_ref="profile:b",
-            model_id="grok-4.5",
+            model_id="grok-4.6",
             transport_id="temporal",
         ),
     )
@@ -111,7 +111,7 @@ def test_all_admission_facts_are_filtered_with_explicit_reasons() -> None:
 
 def test_inseparable_task_returns_no_action_without_hiding_eligible_candidates() -> None:
     result = select_supervisor_worker(
-        [candidate("grok", "grok-4.5")],
+        [candidate("grok", "grok-4.6")],
         task_separable=False,
     )
 
@@ -124,7 +124,7 @@ def test_inseparable_task_returns_no_action_without_hiding_eligible_candidates()
 def test_no_positive_benefit_returns_no_action() -> None:
     result = select_supervisor_worker(
         [
-            candidate("grok", "grok-4.5", positive_benefit=False),
+            candidate("grok", "grok-4.6", positive_benefit=False),
             candidate("codex", "codex", positive_benefit=False),
         ],
         task_separable=True,
@@ -138,7 +138,7 @@ def test_no_positive_benefit_returns_no_action() -> None:
 def test_context_requirement_keeps_only_context_capable_candidate() -> None:
     result = select_supervisor_worker(
         [
-            candidate("grok", "grok-4.5", context_capable=False),
+            candidate("grok", "grok-4.6", context_capable=False),
             candidate("codex", "codex", context_capable=True),
         ],
         task_separable=True,
@@ -152,7 +152,7 @@ def test_context_requirement_keeps_only_context_capable_candidate() -> None:
 
 def test_stable_preference_applies_to_any_positive_separable_work() -> None:
     candidates = [
-        candidate("grok", "grok-4.5"),
+        candidate("grok", "grok-4.6"),
         candidate("codex", "codex"),
     ]
 
@@ -213,7 +213,7 @@ def test_independent_validation_requires_direct_tool_capability() -> None:
 
 def test_capacity_preference_uses_current_remaining_quota_without_reset_math() -> None:
     result = select_supervisor_worker(
-        [candidate("grok", "grok-4.5"), candidate("codex", "codex")],
+        [candidate("grok", "grok-4.6"), candidate("codex", "codex")],
         task_separable=True,
         capacity_by_provider={
             "grok": {"remaining_percent": 96},
@@ -229,7 +229,7 @@ def test_capacity_preference_uses_current_remaining_quota_without_reset_math() -
 def test_provider_preference_does_not_choose_model_or_transport() -> None:
     result = select_supervisor_worker(
         [
-            candidate("grok", "grok-4.5"),
+            candidate("grok", "grok-4.6"),
             candidate("grok", "grok-4", profile_ref="profile:other"),
             candidate("codex", "codex"),
         ],
@@ -245,15 +245,15 @@ def test_provider_preference_does_not_choose_model_or_transport() -> None:
 def test_unavailable_explicit_choice_does_not_create_a_fallback_chain() -> None:
     result = select_supervisor_worker(
         [
-            candidate("grok", "grok-composer-2.5-fast", healthy=False),
-            candidate("grok", "grok-4.5"),
+            candidate("grok", "grok-retired-model", healthy=False),
+            candidate("grok", "grok-4.6"),
             candidate("codex", "codex"),
         ],
         task_separable=True,
         supervisor_choice={
             "provider_id": "grok",
             "profile_ref": "profile:grok",
-            "model_id": "grok-composer-2.5-fast",
+            "model_id": "grok-retired-model",
             "transport_id": "temporal-docker-langgraph",
         },
     )
@@ -266,14 +266,14 @@ def test_unavailable_explicit_choice_does_not_create_a_fallback_chain() -> None:
 def test_unavailable_explicit_choice_does_not_fall_through_to_sole_candidate() -> None:
     result = select_supervisor_worker(
         [
-            candidate("grok", "grok-composer-2.5-fast", healthy=False),
-            candidate("grok", "grok-4.5"),
+            candidate("grok", "grok-retired-model", healthy=False),
+            candidate("grok", "grok-4.6"),
         ],
         task_separable=True,
         supervisor_choice={
             "provider_id": "grok",
             "profile_ref": "profile:grok",
-            "model_id": "grok-composer-2.5-fast",
+            "model_id": "grok-retired-model",
             "transport_id": "temporal-docker-langgraph",
         },
     )
@@ -286,8 +286,8 @@ def test_unavailable_explicit_choice_does_not_fall_through_to_sole_candidate() -
 def test_composer_failure_only_removes_composer_candidate() -> None:
     result = select_supervisor_worker(
         [
-            candidate("grok", "grok-composer-2.5-fast", healthy=False),
-            candidate("grok", "grok-4.5"),
+            candidate("grok", "grok-retired-model", healthy=False),
+            candidate("grok", "grok-4.6"),
             candidate("codex", "codex", context_capable=True),
         ],
         task_separable=True,
@@ -295,10 +295,10 @@ def test_composer_failure_only_removes_composer_candidate() -> None:
 
     assert result["decision"] == "decision_required"
     assert {item["model_id"] for item in result["eligible_candidates"]} == {
-        "grok-4.5",
+        "grok-4.6",
         "codex",
     }
-    assert result["excluded_reasons"][0]["candidate"]["model_id"] == ("grok-composer-2.5-fast")
+    assert result["excluded_reasons"][0]["candidate"]["model_id"] == ("grok-retired-model")
     assert result["excluded_reasons"][0]["reasons"] == ["unhealthy"]
 
 
@@ -310,7 +310,7 @@ def test_one_provider_failure_does_not_freeze_the_other(
     unhealthy_provider: str,
     remaining_provider: str,
 ) -> None:
-    model_by_provider = {"grok": "grok-4.5", "codex": "codex"}
+    model_by_provider = {"grok": "grok-4.6", "codex": "codex"}
     result = select_supervisor_worker(
         [
             candidate(
@@ -328,7 +328,7 @@ def test_one_provider_failure_does_not_freeze_the_other(
 
 
 def test_duplicate_exact_identity_is_rejected_instead_of_order_dependent_merging() -> None:
-    item = candidate("grok", "grok-4.5")
+    item = candidate("grok", "grok-4.6")
 
     with pytest.raises(ValueError, match="identities must be unique"):
         select_supervisor_worker([item, dict(item)], task_separable=True)
@@ -340,7 +340,7 @@ def test_dataclass_inputs_reject_incomplete_identity_and_non_boolean_facts() -> 
 
     with pytest.raises(TypeError, match="healthy"):
         WorkerCandidate(
-            identity=CandidateIdentity("grok", "profile:grok", "grok-4.5", "direct"),
+            identity=CandidateIdentity("grok", "profile:grok", "grok-4.6", "direct"),
             declared_active=True,
             healthy=1,  # type: ignore[arg-type]
             positive_benefit=True,

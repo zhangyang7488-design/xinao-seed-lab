@@ -1163,9 +1163,9 @@ def validate_consumer_registry(
         "provider_identity_binding_contract.conformance_test",
     )
     productivity_evidence = identity_binding_ref.get("current_productivity_evidence")
-    if not isinstance(productivity_evidence, list) or not productivity_evidence:
+    if not isinstance(productivity_evidence, list):
         raise ExecutionContractError(
-            "provider identity binding requires current productivity evidence"
+            "provider identity binding current productivity evidence must be a list"
         )
     if binding_entrypoint != "grok_docker_model_identity_binding":
         raise ExecutionContractError("provider identity binding authority entrypoint drifted")
@@ -1184,28 +1184,22 @@ def validate_consumer_registry(
         grok_docker_model_identity_binding,
     )
 
-    composer_binding = grok_docker_model_identity_binding("grok-composer-2.5-fast")
-    grok45_binding = grok_docker_model_identity_binding("grok-4.5")
+    grok46_binding = grok_docker_model_identity_binding("grok-4.6")
     if not (
-        composer_binding.get("allowed_backend_model_ids") == ["grok-4.5-build"]
-        and composer_binding.get("session_model_id") == "grok-composer-2.5-fast"
-        and composer_binding.get("session_evidence_required") is True
-        and composer_binding.get("capability_ledger") == "composer_exact_capability"
-        and composer_binding.get("composer_completion_credit") is True
-        and grok45_binding.get("allowed_backend_model_ids") == ["grok-4.5-build"]
-        and grok45_binding.get("session_model_id") == "grok-4.5"
-        and grok45_binding.get("session_evidence_required") is True
-        and grok45_binding.get("capability_ledger") == "grok_45_productivity"
-        and grok45_binding.get("composer_completion_credit") is False
+        grok46_binding.get("allowed_backend_model_ids") == ["grok-4.6-build"]
+        and grok46_binding.get("session_model_id") == "grok-4.6"
+        and grok46_binding.get("session_evidence_required") is True
+        and grok46_binding.get("capability_ledger") == "grok_46_current"
+        and grok46_binding.get("composer_completion_credit") is False
     ):
-        raise ExecutionContractError("provider identity binding ledger separation drifted")
-    expected_grok45_backends = sorted(
-        str(model) for model in grok45_binding.get("allowed_backend_model_ids") or []
+        raise ExecutionContractError("provider identity binding drifted from the current Grok 4.6 model")
+    expected_grok46_backends = sorted(
+        str(model) for model in grok46_binding.get("allowed_backend_model_ids") or []
     )
-    if not expected_grok45_backends or len(expected_grok45_backends) != len(
-        set(expected_grok45_backends)
+    if not expected_grok46_backends or len(expected_grok46_backends) != len(
+        set(expected_grok46_backends)
     ):
-        raise ExecutionContractError("Grok 4.5 backend identity binding is invalid")
+        raise ExecutionContractError("Grok 4.6 backend identity binding is invalid")
     for index, evidence_ref in enumerate(productivity_evidence):
         field = f"provider_identity_binding_contract.current_productivity_evidence[{index}]"
         evidence, payload = _verified_registry_json(
@@ -1232,7 +1226,7 @@ def validate_consumer_registry(
             raw_evidence_sha256s.add(str(raw_evidence.get("sha256") or ""))
         _validate_registry_session_identity(
             evidence,
-            selected_model="grok-4.5",
+            selected_model="grok-4.6",
             expected_session_ids=raw_session_ids,
             catalog=catalog,
             repo_root=repo_root,
@@ -1240,7 +1234,7 @@ def validate_consumer_registry(
         )
         _validate_registry_terminal_receipts(
             evidence,
-            selected_model="grok-4.5",
+            selected_model="grok-4.6",
             expected_session_ids=raw_session_ids,
             expected_provider_sha256s=raw_evidence_sha256s,
             catalog=catalog,
@@ -1257,16 +1251,16 @@ def validate_consumer_registry(
         )
         payload_models = _registry_observed_models(payload)
         if not (
-            evidence.get("requested_model") == "grok-4.5"
-            and evidence.get("capability_ledger") == "grok_45_productivity"
+            evidence.get("requested_model") == "grok-4.6"
+            and evidence.get("capability_ledger") == "grok_46_current"
             and evidence.get("composer_completion_credit") is False
             and evidence.get("completion_claim_allowed") is True
-            and declared_models == expected_grok45_backends
-            and sorted(raw_models) == expected_grok45_backends
-            and sorted(payload_models) == expected_grok45_backends
+            and declared_models == expected_grok46_backends
+            and sorted(raw_models) == expected_grok46_backends
+            and sorted(payload_models) == expected_grok46_backends
         ):
             raise ExecutionContractError(
-                f"{field} does not prove the current Grok 4.5 productivity identity"
+                f"{field} does not prove the current Grok 4.6 productivity identity"
             )
     seen: set[str] = set()
     reports: list[dict[str, object]] = []

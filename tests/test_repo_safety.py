@@ -521,10 +521,10 @@ def test_grok_worker_pool_runtime_is_independent_of_retired_admin_workspace() ->
     direct_consumers = {
         item["consumer_id"]: item["source_path"]
         for item in registry["consumers"]
-        if item["consumer_id"] in {"direct_grok_composer25_worker", "direct_grok_worker_pool"}
+        if item["consumer_id"] in {"direct_grok_model_worker", "direct_grok_worker_pool"}
     }
     assert set(direct_consumers) == {
-        "direct_grok_composer25_worker",
+        "direct_grok_model_worker",
         "direct_grok_worker_pool",
     }
     assert all(
@@ -558,7 +558,7 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema_version"] == "xinao.grok_worker_pool_runtime_manifest.v1"
     declared = {item["path"]: item["sha256"] for item in manifest["files"]}
-    assert len(declared) == 15
+    assert len(declared) == 16
     bridge_root = Path(manifest["bridge_root"])
     for name, expected_sha256 in declared.items():
         source = bridge_root / name
@@ -601,7 +601,10 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert selector_resolution["selected_from"] == "stable_release_pointer"
     assert selector_resolution["release_binding"]["release_id"]
 
-    worker_text = (bridge_root / "Invoke-GrokComposer25Worker.ps1").read_text(encoding="utf-8")
+    worker_text = (bridge_root / "Invoke-GrokModelWorker.ps1").read_text(encoding="utf-8")
+    compatibility_text = (bridge_root / "Invoke-GrokComposer25Worker.ps1").read_text(
+        encoding="utf-8"
+    )
     dispatch_text = (bridge_root / "Invoke-CodexDispatchGrokWorkerPool.ps1").read_text(
         encoding="utf-8"
     )
@@ -641,6 +644,7 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert "resolve_model_from_fresh_authenticated_catalog_and_active_policy" in launcher_text
     assert "$workerExecutionBackend = if ($AllowExceptionalDocker)" in pool_text
     assert "GROK_DOCKER_EXCEPTION_OPT_IN_REQUIRED" in worker_text
+    assert "Invoke-GrokModelWorker.ps1" in compatibility_text
     assert 'HostIsolationMode = "temporary-git-worktree"' not in worker_text
     assert '"temporary-git-worktree"' in worker_text
 
@@ -663,7 +667,7 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
             "-NoProfile",
             "-NonInteractive",
             "-File",
-            str(bridge_root / "Invoke-GrokComposer25Worker.ps1"),
+            str(bridge_root / "Invoke-GrokModelWorker.ps1"),
             "-Prompt",
             "NO_MODEL_CALL_EXPECTED",
             "-Cwd",
@@ -754,6 +758,66 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert "worker_transport_auth_present" in oauth_text
 
 
+def test_live_grok_script_calls_use_46_and_model_neutral_worker_when_installed() -> None:
+    launcher = Path(r"C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1")
+    oauth = Path(r"C:\Users\xx363\CodexLaunchers\Invoke-GrokWorkerOAuthRecovery.ps1")
+    bridge = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool\bridge")
+    policy_path = Path(r"D:\XINAO_RESEARCH_RUNTIME\agent_runtime\routing_policy.json")
+    active_scripts = [
+        launcher,
+        oauth,
+        bridge / "Invoke-CodexDispatchGrokWorkerPool.ps1",
+        bridge / "Invoke-GrokWorkerPool.ps1",
+        bridge / "Invoke-GrokModelWorker.ps1",
+        bridge / "Test-GrokCliEffectiveOutput.ps1",
+    ]
+    if not all(path.is_file() for path in [*active_scripts, policy_path]):
+        return
+
+    texts = {path.name: path.read_text(encoding="utf-8") for path in active_scripts}
+    assert '$script:CodexGrokDefaultModel = "grok-4.6"' in texts[launcher.name]
+    assert 'Join-Path $bridge "Invoke-GrokModelWorker.ps1"' in texts["Invoke-GrokWorkerPool.ps1"]
+    assert "Invoke-GrokComposer25Worker.ps1" not in texts["Invoke-GrokWorkerPool.ps1"]
+    for name, text in texts.items():
+        assert "grok-4.5" not in text, name
+        assert "grok-composer-2.5-fast" not in text, name
+
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    grok_routes = [
+        route
+        for route in policy["routes"]
+        if route.get("provider_id") == "grok_acpx_headless"
+    ]
+    assert grok_routes
+    assert {route["model_id"] for route in grok_routes} == {"grok-4.6"}
+    assert policy["grok_provider_model_policy"]["active_models"] == ["grok-4.6"]
+
+
+def test_installed_xinao_discovery_grok_consumer_is_46_when_present() -> None:
+    site = Path(
+        r"D:\XINAO_RESEARCH_RUNTIME\tools\scoop\persist\uv\tools\versions"
+        r"\xinao-discovery\Lib\site-packages"
+    )
+    if not site.is_dir():
+        return
+
+    metadata_paths = list(site.glob("xinao_discovery-*.dist-info/METADATA"))
+    assert len(metadata_paths) == 1
+    metadata = metadata_paths[0].read_text(encoding="utf-8")
+    assert "Version: 0.1.3+grok46.20260813" in metadata
+    source_paths = [
+        site / "xinao" / "policy" / "agent_admission.py",
+        site / "xinao" / "science" / "researcher_result_adapter.py",
+        site / "xinao" / "foundation" / "assessment.py",
+    ]
+    assert all(path.is_file() for path in source_paths)
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in source_paths)
+    assert "grok-4.6" in combined
+    assert "grok-4.6-build" in combined
+    assert "grok-4.5" not in combined
+    assert "grok-composer-2.5-fast" not in combined
+
+
 def test_stable_reentry_uses_only_one_explicit_continuation_locator_when_installed(
     tmp_path: Path,
 ) -> None:
@@ -837,7 +901,7 @@ def test_live_grok_catalog_refresh_prefers_verified_postcondition_over_stale_ter
                 "    origin='https://cli-chat-proxy.grok.com'; "
                 "    auth_method='session'; "
                 "    fetched_at=[DateTimeOffset]::UtcNow.ToString('o'); "
-                "    models=[ordered]@{ 'grok-4.5'=[ordered]@{} } "
+                "    models=[ordered]@{ 'grok-4.6'=[ordered]@{} } "
                 "  }; "
                 "  $catalog | ConvertTo-Json -Depth 8 | "
                 "    Set-Content -LiteralPath (Join-Path $grokProfileRoot 'models_cache.json') -Encoding utf8; "
@@ -845,7 +909,7 @@ def test_live_grok_catalog_refresh_prefers_verified_postcondition_over_stale_ter
                 "    stderr='invalid_grant: RefreshTokenRejected from an earlier attempt' } "
                 "}; "
                 "$result = Invoke-GrokAuthenticatedCatalogSingleFlight "
-                "  -GrokHome $grokProfileRoot -Model 'grok-4.5' -TtlSeconds 300 -RefreshAction $refresh; "
+                "  -GrokHome $grokProfileRoot -Model 'grok-4.6' -TtlSeconds 300 -RefreshAction $refresh; "
                 "if (-not $result.refresh_performed -or "
                 "    $result.final_reason -ne 'fresh_authenticated_catalog') { exit 31 }"
             ),
@@ -890,7 +954,7 @@ def test_live_grok_catalog_refresh_prefers_valid_postcondition_over_thrown_termi
                 "    origin='https://cli-chat-proxy.grok.com'; "
                 "    auth_method='session'; "
                 "    fetched_at=[DateTimeOffset]::UtcNow.ToString('o'); "
-                "    models=[ordered]@{ 'grok-4.5'=[ordered]@{} } "
+                "    models=[ordered]@{ 'grok-4.6'=[ordered]@{} } "
                 "  }; "
                 "  $catalog | ConvertTo-Json -Depth 8 | "
                 "    Set-Content -LiteralPath "
@@ -898,7 +962,7 @@ def test_live_grok_catalog_refresh_prefers_valid_postcondition_over_thrown_termi
                 "  throw 'invalid_grant: RefreshTokenRejected from an earlier attempt' "
                 "}; "
                 "$result = Invoke-GrokAuthenticatedCatalogSingleFlight "
-                "  -GrokHome $grokProfileRoot -Model 'grok-4.5' "
+                "  -GrokHome $grokProfileRoot -Model 'grok-4.6' "
                 "  -TtlSeconds 300 -RefreshAction $refresh; "
                 "if (-not $result.refresh_performed -or "
                 "    $result.final_reason -ne 'fresh_authenticated_catalog') { exit 31 }"
@@ -943,7 +1007,7 @@ def test_live_grok_catalog_refresh_keeps_terminal_failure_without_valid_postcond
                 "$seenExpected = $false; "
                 "try { "
                 "  Invoke-GrokAuthenticatedCatalogSingleFlight "
-                "    -GrokHome $grokProfileRoot -Model 'grok-4.5' "
+                "    -GrokHome $grokProfileRoot -Model 'grok-4.6' "
                 "    -TtlSeconds 300 -RefreshAction $refresh | Out-Null "
                 "} catch { "
                 "  if ($_.Exception.Message -eq "

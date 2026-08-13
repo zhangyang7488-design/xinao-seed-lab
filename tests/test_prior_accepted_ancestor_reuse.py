@@ -234,7 +234,7 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
     selection = {
         "provider_id": "grok_acpx_headless",
         "profile_ref": "grok.com.cached_profile",
-        "model_id": "grok-4.5",
+        "model_id": "grok-4.6",
         "transport_id": "grok-cli-container",
         "capability_binding_sha256": "d" * 64,
     }
@@ -492,7 +492,7 @@ def test_leg_b_consumer_reuses_validated_ancestor_without_current_model_call(
 
     reused = docker_worker._prior_accepted_ancestor_lane(
         lane=lane,
-        requested_model="grok-4.5",
+        requested_model="grok-4.6",
         prompt_sha256=package["prompt_ref"]["sha256"],
         execution_prompt_sha256="7" * 64,
         current_operation_id="op-current-carrier",
@@ -540,7 +540,7 @@ def test_current_package_or_action_hash_drift_is_rejected(
 def test_current_selection_drift_is_rejected(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     action = copy.deepcopy(fixture["action_binding"])
-    action["selection"]["model_id"] = "grok-composer-2.5-fast"
+    action["selection"]["model_id"] = "grok-retired-model"
 
     with pytest.raises(DispatchEconomicsError, match="selection drifted"):
         _validate(fixture, expected_action_binding=action)
@@ -640,7 +640,7 @@ def test_logical_contract_bytes_drift_is_rejected(tmp_path: Path) -> None:
     contract_path = fixture["contract_path"]
     assert isinstance(contract_path, Path)
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
-    contract["selection"]["model_id"] = "grok-composer-2.5-fast"
+    contract["selection"]["model_id"] = "grok-retired-model"
     _write_json(contract_path, contract)
 
     with pytest.raises(DispatchEconomicsError, match="prior_logical_contract_ref sha256 mismatch"):

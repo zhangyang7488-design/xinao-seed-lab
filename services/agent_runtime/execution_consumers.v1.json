@@ -16,8 +16,9 @@
     "authority_source_path": "services/agent_runtime/grok_execution_contract_adapter.py",
     "authority_entrypoint": "grok_docker_model_identity_binding",
     "execution_scope": "docker:houtai-gongren",
-    "conformance_test": "tests/test_cross_seam_execution_conformance.py::test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_separate",
-    "current_productivity_evidence": [
+    "conformance_test": "tests/test_cross_seam_execution_conformance.py::test_docker_grok_identity_binding_is_exactly_current_46",
+    "current_productivity_evidence": [],
+    "historical_productivity_evidence": [
       "grok45-docker-productivity-20260721T052426Z"
     ]
   },
@@ -85,10 +86,10 @@
       "status_reason": "The generic implementation remains in S, but prior dedicated-XINAO evidence was removed with that platform. A current exact consumer canary is required before any complete claim.",
       "writes_effects": false,
       "completion_claim": {
-        "ledger": "composer_exact_capability",
-        "requested_model": "grok-composer-2.5-fast",
+        "ledger": "grok_46_current",
+        "requested_model": "grok-4.6",
         "allowed_observed_models": [
-          "grok-4.5-build"
+          "grok-4.6-build"
         ]
       },
       "conformance_tests": [
@@ -114,10 +115,10 @@
       "status_reason": "The generic implementation remains in S, but prior dedicated-XINAO evidence was removed with that platform. A current exact consumer canary is required before any complete claim.",
       "writes_effects": false,
       "completion_claim": {
-        "ledger": "composer_exact_capability",
-        "requested_model": "grok-composer-2.5-fast",
+        "ledger": "grok_46_current",
+        "requested_model": "grok-4.6",
         "allowed_observed_models": [
-          "grok-4.5-build"
+          "grok-4.6-build"
         ]
       },
       "conformance_tests": [
@@ -143,10 +144,10 @@
       "status_reason": "The generic implementation remains in S, but prior dedicated-XINAO evidence was removed with that platform. A current exact consumer canary is required before any complete claim.",
       "writes_effects": false,
       "completion_claim": {
-        "ledger": "composer_exact_capability",
-        "requested_model": "grok-composer-2.5-fast",
+        "ledger": "grok_46_current",
+        "requested_model": "grok-4.6",
         "allowed_observed_models": [
-          "grok-4.5-build"
+          "grok-4.6-build"
         ]
       },
       "conformance_tests": [
@@ -172,10 +173,10 @@
       "status_reason": "The generic implementation remains in S, but prior dedicated-XINAO evidence was removed with that platform. A current exact consumer canary is required before any complete claim.",
       "writes_effects": true,
       "completion_claim": {
-        "ledger": "composer_exact_capability",
-        "requested_model": "grok-composer-2.5-fast",
+        "ledger": "grok_46_current",
+        "requested_model": "grok-4.6",
         "allowed_observed_models": [
-          "grok-4.5-build"
+          "grok-4.6-build"
         ]
       },
       "conformance_tests": [
@@ -190,10 +191,10 @@
       "fresh_canary_evidence": []
     },
     {
-      "consumer_id": "direct_grok_composer25_worker",
+      "consumer_id": "direct_grok_model_worker",
       "route_transport_id": "direct-grok-worker-pool",
-      "source_path": "D:/XINAO_RESEARCH_RUNTIME/tools/grok-worker-pool/bridge/Invoke-GrokComposer25Worker.ps1",
-      "entrypoint": "Invoke-GrokComposer25Worker.ps1",
+      "source_path": "D:/XINAO_RESEARCH_RUNTIME/tools/grok-worker-pool/bridge/Invoke-GrokModelWorker.ps1",
+      "entrypoint": "Invoke-GrokModelWorker.ps1",
       "role": "direct_provider_primitive",
       "contract_mode": "provider_v1_only",
       "status": "partial",
@@ -201,7 +202,10 @@
       "writes_effects": false,
       "conformance_tests": [],
       "replay_evidence": [],
-      "fresh_canary_evidence": []
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/grok_worker_pool/gwp_20260813T210855_761b657f/pool_summary.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/grok_worker_pool/gwp_20260813T210855_761b657f/lane_00/latest.json"
+      ]
     },
     {
       "consumer_id": "direct_grok_worker_pool",

@@ -17,7 +17,7 @@ from services.agent_runtime.routing_policy_reader import (
 
 def _dynamic_policy(*, frozen_workers: list[str] | None = None) -> dict[str, object]:
     return {
-        "policy_version": "xinao.routing-policy.v4-positive-benefit-dynamic",
+        "policy_version": "xinao.routing-policy.v6-global-grok-4.6-default",
         "default_strategy": "benefit_driven_provider_and_transport_resolution",
         "model_worker_policy": "positive_benefit_dynamic",
         "default_draft_worker": "caller_resolved",
@@ -75,14 +75,14 @@ def _dynamic_policy(*, frozen_workers: list[str] | None = None) -> dict[str, obj
         "frozen_workers": list(frozen_workers or []),
         "routes": [
             {
-                "target": "grok",
+                "target": "grok_46",
                 "provider_id": GROK_PROVIDER_ID,
                 "worker_id": "grok_dynamic_worker",
                 "route_role": "worker_candidate",
                 "profile_ref": "grok.com.cached_profile",
-                "model_id": "grok-composer-2.5-fast",
+                "model_id": "grok-4.6",
                 "transport_id": "temporal-docker-langgraph",
-                "preferred_model": "grok-composer-2.5-fast",
+                "preferred_model": "grok-4.6",
             },
             {
                 "target": "codex_subagent",
@@ -93,16 +93,6 @@ def _dynamic_policy(*, frozen_workers: list[str] | None = None) -> dict[str, obj
                 "model_id": "current_codex_session",
                 "transport_id": "in-turn-agent",
                 "preferred_model": "current_codex_session",
-            },
-            {
-                "target": "grok_45",
-                "provider_id": GROK_PROVIDER_ID,
-                "worker_id": "grok_45_worker",
-                "route_role": "worker_candidate",
-                "profile_ref": "grok.com.cached_profile",
-                "model_id": "grok-4.5",
-                "transport_id": "temporal-docker-langgraph",
-                "preferred_model": "grok-4.5",
             },
         ],
     }
@@ -171,30 +161,25 @@ def test_one_frozen_candidate_does_not_freeze_the_other_provider(tmp_path: Path)
 
     assert [route["provider_id"] for route in policy["routes"]] == [
         CODEX_SUBAGENT_PROVIDER_ID,
-        GROK_PROVIDER_ID,
     ]
-    assert [route["target"] for route in policy["routes"]] == [
-        "codex_subagent",
-        "grok_45",
-    ]
+    assert [route["target"] for route in policy["routes"]] == ["codex_subagent"]
     assert [route["provider_id"] for route in policy["inactive_routes"]] == [
         GROK_PROVIDER_ID,
     ]
     assert policy["model_worker_policy"] == "positive_benefit_dynamic"
     assert draft_worker_target(runtime_root=tmp_path) == DEFAULT_DRAFT_WORKER
-    with pytest.raises(ValueError, match="explicitly selected active Grok model"):
-        draft_model(runtime_root=tmp_path, candidate="grok-composer-2.5-fast")
+    with pytest.raises(ValueError, match="not active|explicitly selected active Grok model"):
+        draft_model(runtime_root=tmp_path, candidate="grok-4.6")
 
 
 def test_selected_grok_route_keeps_exact_model_semantics(tmp_path: Path) -> None:
     _write_policy(tmp_path, _dynamic_policy())
 
     assert draft_worker_target(runtime_root=tmp_path) == DEFAULT_DRAFT_WORKER
-    assert (
-        draft_model(runtime_root=tmp_path, candidate="grok-composer-2.5-fast")
-        == "grok-composer-2.5-fast"
-    )
-    assert draft_model(runtime_root=tmp_path, candidate="grok-4.5") == "grok-4.5"
+    assert draft_model(runtime_root=tmp_path, candidate="grok-4.6") == "grok-4.6"
+    with pytest.raises(ValueError, match="not active|explicitly selected active Grok model"):
+        # Retired selectors are retained here only as a fail-closed regression case.
+        draft_model(runtime_root=tmp_path, candidate="grok-4.5")
 
 
 def test_declared_single_provider_policy_is_read_without_inventing_another(tmp_path: Path) -> None:
@@ -206,10 +191,7 @@ def test_declared_single_provider_policy_is_read_without_inventing_another(tmp_p
 
     assert policy["allowed_provider_ids"] == [CODEX_SUBAGENT_PROVIDER_ID]
     assert [route["provider_id"] for route in policy["routes"]] == [CODEX_SUBAGENT_PROVIDER_ID]
-    assert [route["provider_id"] for route in policy["inactive_routes"]] == [
-        GROK_PROVIDER_ID,
-        GROK_PROVIDER_ID,
-    ]
+    assert [route["provider_id"] for route in policy["inactive_routes"]] == [GROK_PROVIDER_ID]
 
 
 def test_missing_policy_does_not_invent_provider_or_model(tmp_path: Path) -> None:
@@ -220,7 +202,7 @@ def test_missing_policy_does_not_invent_provider_or_model(tmp_path: Path) -> Non
     assert policy["routes"] == []
     assert draft_worker_target(runtime_root=tmp_path) == DEFAULT_DRAFT_WORKER
     with pytest.raises(ValueError, match="not present|not active|explicitly selected"):
-        draft_model(runtime_root=tmp_path, candidate="grok-4.5")
+        draft_model(runtime_root=tmp_path, candidate="grok-4.6")
 
 
 def test_retired_dp_fallback_is_absent_and_unconfigured_route_fails_closed(
@@ -260,7 +242,7 @@ def test_production_bridge_binds_exact_policy_candidate_and_hash(tmp_path: Path)
     identity = {
         "provider_id": GROK_PROVIDER_ID,
         "profile_ref": "grok.com.cached_profile",
-        "model_id": "grok-composer-2.5-fast",
+        "model_id": "grok-4.6",
         "transport_id": "temporal-docker-langgraph",
     }
 
@@ -282,7 +264,7 @@ def test_production_bridge_binds_exact_policy_candidate_and_hash(tmp_path: Path)
     )
 
     assert decision["decision"] == "selected"
-    assert decision["selected_candidate"]["model_id"] == "grok-composer-2.5-fast"
+    assert decision["selected_candidate"]["model_id"] == "grok-4.6"
     assert decision["worker_output_authority"] == "non_authoritative_candidate"
     assert decision["quota_policy"] == "telemetry_only_not_an_activation_gate"
     assert (
@@ -304,7 +286,7 @@ def test_production_bridge_applies_replaceable_default_and_capacity_evidence(
                 {
                     "provider_id": GROK_PROVIDER_ID,
                     "profile_ref": "grok.com.cached_profile",
-                    "model_id": "grok-4.5",
+                    "model_id": "grok-4.6",
                     "transport_id": "temporal-docker-langgraph",
                     "declared_active": True,
                     "healthy": True,
@@ -497,7 +479,7 @@ def test_codex_inner_optimization_cannot_override_outer_provider_choice(
                 {
                     "provider_id": GROK_PROVIDER_ID,
                     "profile_ref": "grok.com.cached_profile",
-                    "model_id": "grok-composer-2.5-fast",
+                    "model_id": "grok-4.6",
                     "transport_id": "temporal-docker-langgraph",
                     "declared_active": True,
                     "healthy": True,

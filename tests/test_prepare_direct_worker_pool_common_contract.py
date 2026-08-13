@@ -59,7 +59,7 @@ def test_prepare_contract_binds_prompt_selection_rules_context_and_output(
             "selected_candidate": {
                 "provider_id": "grok_acpx_headless",
                 "profile_ref": "grok.com.cached_profile",
-                "model_id": "grok-4.5",
+                "model_id": "grok-4.6",
                 "transport_id": "direct-grok-worker-pool",
             },
         },
@@ -113,7 +113,7 @@ def test_prepare_contract_preserves_utf8_bom_in_raw_prompt_identity(tmp_path: Pa
             "selected_candidate": {
                 "provider_id": "grok_acpx_headless",
                 "profile_ref": "grok.com.cached_profile",
-                "model_id": "grok-4.5",
+                "model_id": "grok-4.6",
                 "transport_id": "direct-grok-worker-pool",
             },
         },
@@ -158,7 +158,7 @@ def test_prepare_contract_binds_schema_to_json_requirement(tmp_path: Path) -> No
             "selected_candidate": {
                 "provider_id": "grok_acpx_headless",
                 "profile_ref": "grok.com.cached_profile",
-                "model_id": "grok-4.5",
+                "model_id": "grok-4.6",
                 "transport_id": "direct-grok-worker-pool",
             },
         },
@@ -208,7 +208,7 @@ def test_require_json_object_without_compileable_schema_rejects_before_model(
             "selected_candidate": {
                 "provider_id": "grok_acpx_headless",
                 "profile_ref": "grok.com.cached_profile",
-                "model_id": "grok-4.5",
+                "model_id": "grok-4.6",
                 "transport_id": "direct-grok-worker-pool",
             },
         },
@@ -254,7 +254,7 @@ def test_prepare_contract_derives_context_from_validated_manifest(tmp_path: Path
             "selected_candidate": {
                 "provider_id": "grok_acpx_headless",
                 "profile_ref": "grok.com.cached_profile",
-                "model_id": "grok-4.5",
+                "model_id": "grok-4.6",
                 "transport_id": "direct-grok-worker-pool",
             },
         },

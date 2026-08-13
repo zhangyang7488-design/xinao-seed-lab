@@ -32,6 +32,9 @@ with workflow.unsafe.imports_passed_through():
         DEFAULT_MODEL as GROK_DEFAULT_MODEL,
     )
     from xinao_coordination.temporal.grok_parallel import (
+        LEGACY_COMPOSER_MODEL as GROK_LEGACY_COMPOSER_MODEL,
+    )
+    from xinao_coordination.temporal.grok_parallel import (
         LEGACY_DEFAULT_MODEL as GROK_LEGACY_DEFAULT_MODEL,
     )
     from xinao_coordination.temporal.grok_parallel import (
@@ -52,6 +55,7 @@ GROK_PREFAN_ACCEPTANCE_PATCH_ID = "promoted-grok-prefan-acceptance-v1"
 GROK_FULL_FRONTIER_ACCEPTANCE_PATCH_ID = "promoted-grok-full-frontier-v1"
 GROK_FULL_FRONTIER_DEFAULT_PATCH_ID = "promoted-grok-full-frontier-default-v2"
 GROK_COMPOSER_DEFAULT_PATCH_ID = "promoted-grok-composer-default-v1"
+GROK_46_DEFAULT_PATCH_ID = "promoted-grok-4.6-default-v1"
 GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID = "promoted-grok-explicit-supervisor-selection-v1"
 GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID = "promoted-grok-supervisor-selection-receipt-v1"
 GROK_ATTESTED_LANE_ACCEPTANCE_PATCH_ID = "promoted-grok-attested-lane-acceptance-v1"
@@ -725,15 +729,22 @@ class XinaoPromotedTaskWorkflowV1:
         started: dict[str, Any],
     ) -> dict[str, Any]:
         serial_reason = str(workflow_input.get("grok_serial_reason") or "")
+        grok46_model_policy = workflow.patched(GROK_46_DEFAULT_PATCH_ID)
         composer_model_policy = workflow.patched(GROK_COMPOSER_DEFAULT_PATCH_ID)
         explicit_supervisor_selection = workflow.patched(GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID)
         attested_lane_acceptance = workflow.patched(GROK_ATTESTED_LANE_ACCEPTANCE_PATCH_ID)
-        default_model = GROK_DEFAULT_MODEL if composer_model_policy else GROK_LEGACY_DEFAULT_MODEL
+        if grok46_model_policy:
+            default_model = GROK_DEFAULT_MODEL
+        elif composer_model_policy:
+            default_model = GROK_LEGACY_COMPOSER_MODEL
+        else:
+            default_model = GROK_LEGACY_DEFAULT_MODEL
         try:
             lanes = validate_ready_frontier(
                 workflow_input.get("grok_ready_frontier"),
                 serial_reason=serial_reason,
                 default_model=default_model,
+                allow_replay_only=not grok46_model_policy,
                 require_explicit_model=explicit_supervisor_selection,
                 require_explicit_cwd=explicit_supervisor_selection,
             )

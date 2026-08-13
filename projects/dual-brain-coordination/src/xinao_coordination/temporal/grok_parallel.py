@@ -24,11 +24,16 @@ from xinao_coordination.database import default_db_path
 
 POLICY_ID = "xinao.grok.temporal_acpx.v1"
 PROVIDER_ID = "grok_acpx_headless"
-MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v1"
-DEFAULT_MODEL = "grok-composer-2.5-fast"
+MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
+DEFAULT_MODEL = "grok-4.6"
+# These selectors are replay-only inputs for histories created before the
+# machine-wide 4.6 migration. New calls may select only DEFAULT_MODEL.
 LEGACY_DEFAULT_MODEL = "grok-4.5"
-ESCALATION_MODEL = "grok-4.5"
-ALLOWED_MODELS = frozenset({DEFAULT_MODEL, ESCALATION_MODEL})
+LEGACY_COMPOSER_MODEL = "grok-composer-2.5-fast"
+ESCALATION_MODEL = LEGACY_DEFAULT_MODEL
+ACTIVE_MODELS = frozenset({DEFAULT_MODEL})
+REPLAY_ONLY_MODELS = frozenset({LEGACY_DEFAULT_MODEL, LEGACY_COMPOSER_MODEL})
+ALLOWED_MODELS = ACTIVE_MODELS | REPLAY_ONLY_MODELS
 DEFAULT_ROUTE_ROLE = "default_background_worker"
 ESCALATION_ROUTE_ROLE = "grok_4_5_escalation_worker"
 ESCALATION_REASONS = frozenset(
@@ -85,28 +90,43 @@ def _write_json_atomic(path: Path, value: object) -> None:
     os.replace(temporary, path)
 
 
-def resolve_provider_model(raw: object, *, default_model: str = DEFAULT_MODEL) -> str:
+def resolve_provider_model(
+    raw: object,
+    *,
+    default_model: str = DEFAULT_MODEL,
+    allow_replay_only: bool = False,
+) -> str:
     """Resolve one explicit Grok-provider model and reject silent provider drift."""
 
     fallback = str(default_model or DEFAULT_MODEL).strip()
-    if fallback not in ALLOWED_MODELS:
+    admitted_models = ALLOWED_MODELS if allow_replay_only else ACTIVE_MODELS
+    if fallback not in admitted_models:
         raise ValueError(f"unsupported Grok provider default model: {fallback}")
     model = str(raw or fallback).strip()
-    if model not in ALLOWED_MODELS:
+    if model not in admitted_models:
         raise ValueError(f"unsupported Grok provider model: {model}")
     return model
 
 
-def _model_route_fields(item: dict[str, Any], *, default_model: str) -> dict[str, Any]:
+def _model_route_fields(
+    item: dict[str, Any],
+    *,
+    default_model: str,
+    allow_replay_only: bool,
+) -> dict[str, Any]:
     explicit_model = bool(str(item.get("model") or "").strip())
-    model = resolve_provider_model(item.get("model"), default_model=default_model)
+    model = resolve_provider_model(
+        item.get("model"),
+        default_model=default_model,
+        allow_replay_only=allow_replay_only,
+    )
     reason = str(item.get("escalation_reason") or "").strip()
     if model == ESCALATION_MODEL:
         reason = reason or ("explicit_model_override" if explicit_model else "runtime_policy_default")
         if reason not in ESCALATION_REASONS:
             raise ValueError(f"unsupported Grok 4.5 escalation_reason: {reason}")
     elif reason:
-        raise ValueError("escalation_reason is only valid for the Grok 4.5 escalation model")
+        raise ValueError("escalation_reason is valid only for replaying the Grok 4.5 route")
     return {
         "model": model,
         "requested_model": model,
@@ -122,6 +142,7 @@ def validate_ready_frontier(
     *,
     serial_reason: str = "",
     default_model: str = DEFAULT_MODEL,
+    allow_replay_only: bool = False,
     require_explicit_model: bool = False,
     require_explicit_cwd: bool = True,
 ) -> list[dict[str, Any]]:
@@ -167,7 +188,11 @@ def validate_ready_frontier(
             "lane_id": lane_id,
             "prompt": prompt,
             "mode": str(item.get("mode") or "implementation").strip(),
-            **_model_route_fields(item, default_model=default_model),
+            **_model_route_fields(
+                item,
+                default_model=default_model,
+                allow_replay_only=allow_replay_only,
+            ),
             "cwd": str(cwd),
             "write": write,
             "max_turns": max_turns,
@@ -178,7 +203,7 @@ def validate_ready_frontier(
         raise ValueError("a one-lane ready frontier requires a concrete serial_reason")
     models = {str(lane["model"]) for lane in lanes}
     if len(models) > 1:
-        raise ValueError("one Grok ready frontier cannot mix Composer and Grok 4.5 models")
+        raise ValueError("one Grok ready frontier cannot mix model identities")
     return lanes
 
 
@@ -592,6 +617,7 @@ GROK_TEMPORAL_ACTIVITIES = (execute_grok_acpx_lane, materialize_grok_acpx_fanin)
 
 __all__ = [
     "ALLOWED_MODELS",
+    "ACTIVE_MODELS",
     "BACKGROUND_ALLOWED_TOOLS",
     "DEFAULT_MODEL",
     "DEFAULT_ROUTE_ROLE",
@@ -601,6 +627,8 @@ __all__ = [
     "FANIN_SENTINEL",
     "GROK_TEMPORAL_ACTIVITIES",
     "LEGACY_DEFAULT_MODEL",
+    "LEGACY_COMPOSER_MODEL",
+    "REPLAY_ONLY_MODELS",
     "LEGACY_REPLAY_DEFAULT_CWD",
     "MODEL_POLICY_ID",
     "POLICY_ID",

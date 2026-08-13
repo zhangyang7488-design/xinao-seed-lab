@@ -159,7 +159,7 @@ def _fixture(
     selected_candidate = {
         "provider_id": "grok_acpx_headless",
         "profile_ref": "grok.com.cached_profile",
-        "model_id": "grok-4.5",
+        "model_id": "grok-4.6",
         "transport_id": "direct-grok-worker-pool",
         "declared_active": True,
         "healthy": True,
@@ -400,7 +400,7 @@ def _route_selection_receipt(transport_id: str) -> dict[str, object]:
         "selected_candidate": {
             "provider_id": "grok_acpx_headless",
             "profile_ref": "grok.com.cached_profile",
-            "model_id": "grok-4.5",
+            "model_id": "grok-4.6",
             "transport_id": transport_id,
             "declared_active": True,
             "healthy": True,

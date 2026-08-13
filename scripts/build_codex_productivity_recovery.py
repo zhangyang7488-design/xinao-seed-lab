@@ -330,8 +330,8 @@ def _collect_sources() -> list[SourceEntry]:
     if declared_bridge.resolve() != GROK_BRIDGE_ROOT.resolve():
         raise ValueError("Grok WorkerPool runtime manifest bridge root mismatch")
     runtime_files = runtime_manifest.get("files")
-    if not isinstance(runtime_files, list) or len(runtime_files) != 15:
-        raise ValueError("Grok WorkerPool runtime manifest must declare 15 exact files")
+    if not isinstance(runtime_files, list) or len(runtime_files) != 16:
+        raise ValueError("Grok WorkerPool runtime manifest must declare 16 exact files")
     entries.append(
         SourceEntry(
             source=GROK_RUNTIME_MANIFEST,

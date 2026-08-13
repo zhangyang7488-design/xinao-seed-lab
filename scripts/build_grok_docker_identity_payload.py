@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
 
-ALLOWED_MODELS = frozenset({"grok-composer-2.5-fast", "grok-4.5"})
+ALLOWED_MODELS = frozenset({"grok-4.6"})
 
 
 def compile_identity_payload(

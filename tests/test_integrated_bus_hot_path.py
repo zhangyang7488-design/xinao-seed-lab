@@ -25,14 +25,14 @@ from services.agent_runtime.grok_execution_contract_adapter import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-COMPOSER_MODEL = "grok-composer-2.5-fast"
-GROK_BACKEND_BUILD = "grok-4.5-build"
-GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
+GROK_MODEL = "grok-4.6"
+GROK_BACKEND_BUILD = "grok-4.6-build"
+GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v3"
 GROK_EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
 
 
 def _supervisor_decision(
-    model: str = COMPOSER_MODEL,
+    model: str = GROK_MODEL,
     *,
     transport_id: str = "temporal-docker-langgraph",
 ) -> dict:
@@ -146,7 +146,7 @@ def _docker_leg_b_package_fixture(
     context_ref["path"] = to_logical(context_path)
     input_ref = {"path": to_logical(input_path), "sha256": input_sha256}
 
-    selection_receipt = _supervisor_decision("grok-4.5")
+    selection_receipt = _supervisor_decision("grok-4.6")
     selected_candidate = dict(selection_receipt["selected_candidate"])
     schema_ref = None
     if json_schema_text is not None:
@@ -358,7 +358,7 @@ def _session_model_evidence(model: str, session_id: str) -> dict:
         "turnModelIds": [model],
         "observedModelId": backend_models[0],
         "modelUsageIds": backend_models,
-        "availableModelIds": [COMPOSER_MODEL, "grok-4.5"],
+        "availableModelIds": [GROK_MODEL],
         "backendModelIds": backend_models,
         "expectedBackendModelIds": backend_models,
         "backendSessionId": session_id,
@@ -374,7 +374,7 @@ def _session_model_evidence(model: str, session_id: str) -> dict:
 def _common_execution_evidence(
     lane_id: str,
     *,
-    model: str = COMPOSER_MODEL,
+    model: str = GROK_MODEL,
     operation_id: str | None = None,
 ) -> tuple[dict, dict, str]:
     operation_id = operation_id or f"op-{lane_id}"
@@ -473,7 +473,7 @@ def _attested_grok_lane(
     lane_id: str,
     mode: str,
     *,
-    model: str = COMPOSER_MODEL,
+    model: str = GROK_MODEL,
     identity_path: Path,
 ) -> dict:
     backend_models = expected_docker_grok_backend_models(model)
@@ -543,7 +543,7 @@ def _attested_grok_manifest(
     lanes: list[tuple[str, str]],
     *,
     workflow_id: str = "parent-wf",
-    model: str = COMPOSER_MODEL,
+    model: str = GROK_MODEL,
     canonical_package_mode: bool = False,
 ) -> dict:
     backend_models = expected_docker_grok_backend_models(model)
@@ -641,14 +641,14 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
             "usage": {"total_tokens": 10_043},
             "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
         },
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
     )
     assert text == "verified"
     assert session_id.startswith("019f")
     assert usage["total_tokens"] == 10_043
     assert list(model_usage) == [GROK_BACKEND_BUILD]
 
-    for wrong_model in (COMPOSER_MODEL, "grok-4.5"):
+    for wrong_model in (GROK_MODEL, "grok-4.6"):
         with pytest.raises(ValueError, match="model identity mismatch"):
             _parse_cli_result(
                 {
@@ -658,7 +658,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
                     "usage": {"total_tokens": 1},
                     "modelUsage": {wrong_model: {"modelCalls": 1}},
                 },
-                requested_model=COMPOSER_MODEL,
+                requested_model=GROK_MODEL,
             )
     with pytest.raises(ValueError, match="model identity mismatch"):
         _parse_cli_result(
@@ -668,11 +668,11 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
                 "sessionId": "session",
                 "usage": {"total_tokens": 1},
                 "modelUsage": {
-                    COMPOSER_MODEL: {"modelCalls": 1},
-                    "grok-4.5-build": {"modelCalls": 1},
+                    GROK_MODEL: {"modelCalls": 1},
+                    "grok-4.6-build": {"modelCalls": 1},
                 },
             },
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
         )
     with pytest.raises(ValueError, match="did not complete"):
         _parse_cli_result(
@@ -683,7 +683,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
                 "usage": {"total_tokens": 70_129},
                 "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
             },
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
         )
     with pytest.raises(ValueError, match="one JSON object"):
         _parse_cli_result(
@@ -694,7 +694,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
                 "usage": {"total_tokens": 1},
                 "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
             },
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
             result_format="json_object",
         )
     with pytest.raises(ValueError, match="bound JSON schema"):
@@ -706,7 +706,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
                 "usage": {"total_tokens": 1},
                 "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
             },
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
             result_format="json_object",
             result_json_schema={
                 "type": "object",
@@ -717,7 +717,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
         )
 
 
-def test_docker_grok_catalog_admits_only_hidden_oauth_selectors(
+def test_docker_grok_catalog_requires_current_authenticated_selector(
     tmp_path: Path,
 ) -> None:
     from services.agent_runtime.grok_build_docker_worker import (
@@ -734,26 +734,26 @@ def test_docker_grok_catalog_admits_only_hidden_oauth_selectors(
                 "grok_version": "0.2.102",
                 "auth_method": "session",
                 "origin": "https://cli-chat-proxy.grok.com/v1/models",
-                "models": {"grok-4.5": {"id": "grok-4.5"}},
+                "models": {"grok-4.6": {"id": "grok-4.6"}},
             }
         ),
         encoding="utf-8",
     )
     snapshot = _authenticated_model_catalog(
         catalog,
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         cli_version="0.2.102",
         observed_at=datetime.now(UTC),
     )
     assert snapshot["schema_version"] == "xinao.grok.authenticated_model_catalog.v1"
-    assert snapshot["server_model_ids"] == ["grok-4.5"]
-    assert snapshot["requested_model_available"] is False
+    assert snapshot["server_model_ids"] == ["grok-4.6"]
+    assert snapshot["requested_model_available"] is True
     assert len(snapshot["cache_sha256"]) == 64
 
     first_binding = _model_capability_binding(
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         cli_version="0.2.102",
-        merged_cli_model_ids=["grok-4.5", COMPOSER_MODEL],
+        merged_cli_model_ids=[GROK_MODEL],
         authenticated_catalog=snapshot,
     )
     refreshed_observation = {
@@ -765,15 +765,15 @@ def test_docker_grok_catalog_admits_only_hidden_oauth_selectors(
         "sha256": "e" * 64,
     }
     second_binding = _model_capability_binding(
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         cli_version="0.2.102",
-        merged_cli_model_ids=["grok-4.5", COMPOSER_MODEL],
+        merged_cli_model_ids=[GROK_MODEL],
         authenticated_catalog=refreshed_observation,
     )
     assert first_binding["sha256"] == second_binding["sha256"]
     assert first_binding["requested_model_available"] is True
-    assert first_binding["hidden_oauth_selector"] is True
-    assert first_binding["admission_source"] == "hidden_oauth_selector"
+    assert first_binding["hidden_oauth_selector"] is False
+    assert first_binding["admission_source"] == "authenticated_server_catalog"
     assert first_binding["identity_policy"] == "exact_session_selector_and_backend_binding_v2"
     assert first_binding["expected_backend_model_ids"] == [GROK_BACKEND_BUILD]
 
@@ -781,7 +781,7 @@ def test_docker_grok_catalog_admits_only_hidden_oauth_selectors(
         _model_capability_binding(
             requested_model="invented-local-alias",
             cli_version="0.2.102",
-            merged_cli_model_ids=["grok-4.5", "invented-local-alias"],
+            merged_cli_model_ids=["grok-4.6", "invented-local-alias"],
             authenticated_catalog=snapshot,
         )
     payload = json.loads(catalog.read_text(encoding="utf-8"))
@@ -790,7 +790,7 @@ def test_docker_grok_catalog_admits_only_hidden_oauth_selectors(
     with pytest.raises(DockerGrokPermanentError, match="origin is invalid"):
         _authenticated_model_catalog(
             catalog,
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
             cli_version="0.2.102",
             observed_at=datetime.now(UTC),
         )
@@ -824,34 +824,34 @@ def test_docker_grok_catalog_binding_tracks_only_selected_model_semantics() -> N
     base = {
         "origin": "https://cli-chat-proxy.grok.com/v1/models",
         "auth_method": "session",
-        "server_model_ids": [COMPOSER_MODEL, "grok-4.5"],
+        "server_model_ids": [GROK_MODEL],
         "requested_server_entry_sha256": "a" * 64,
     }
     first = _model_capability_binding(
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         cli_version="0.2.102",
-        merged_cli_model_ids=[COMPOSER_MODEL, "grok-4.5"],
+        merged_cli_model_ids=[GROK_MODEL],
         authenticated_catalog=base,
     )
     unrelated_added = _model_capability_binding(
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         cli_version="0.2.102",
-        merged_cli_model_ids=[COMPOSER_MODEL, "grok-4.5", "unrelated"],
+        merged_cli_model_ids=[GROK_MODEL, "unrelated"],
         authenticated_catalog={
             **base,
             "server_model_ids": [*base["server_model_ids"], "unrelated"],
         },
     )
     selected_changed = _model_capability_binding(
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         cli_version="0.2.102",
-        merged_cli_model_ids=[COMPOSER_MODEL, "grok-4.5"],
+        merged_cli_model_ids=[GROK_MODEL],
         authenticated_catalog={**base, "requested_server_entry_sha256": "b" * 64},
     )
     profile_filtered = _model_capability_binding(
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         cli_version="0.2.102",
-        merged_cli_model_ids=["grok-4.5"],
+        merged_cli_model_ids=["unrelated"],
         authenticated_catalog=base,
     )
     assert first["requested_model_available"] is True
@@ -903,7 +903,7 @@ def test_docker_grok_catalog_rejects_invalid_cache_semantics(
         "grok_version": "0.2.102",
         "auth_method": "session",
         "origin": "https://cli-chat-proxy.grok.com/v1/models",
-        "models": {COMPOSER_MODEL: {"id": COMPOSER_MODEL}},
+        "models": {GROK_MODEL: {"id": GROK_MODEL}},
     }
     if case == "stale":
         payload["fetched_at"] = (now - timedelta(seconds=301)).isoformat()
@@ -914,13 +914,13 @@ def test_docker_grok_catalog_rejects_invalid_cache_semantics(
     elif case == "timezone":
         payload["fetched_at"] = now.replace(tzinfo=None).isoformat()
     elif case == "malformed_entry":
-        payload["models"] = {COMPOSER_MODEL: "not-an-object"}
+        payload["models"] = {GROK_MODEL: "not-an-object"}
     catalog = tmp_path / "models_cache.json"
     catalog.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DockerGrokPermanentError, match=message):
         _authenticated_model_catalog(
             catalog,
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
             cli_version="0.2.102",
             observed_at=now,
         )
@@ -1015,7 +1015,7 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
     assert _cli_failure_kind(b"Error: max turns reached", cancelled) == "session_incomplete"
     assert _recoverable_incomplete_result(
         cancelled,
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         session_id=session_id,
         model_identity_ok=True,
     )
@@ -1026,7 +1026,7 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
     }
     assert _recoverable_effective_output_result(
         completed,
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         session_id=session_id,
         model_identity_ok=True,
     )
@@ -1045,7 +1045,7 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
     assert "tool calls" in correction
     summary = _safe_cli_summary(
         cancelled,
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         return_code=1,
         stdout=cancelled_stdout,
         stderr=b"Error: max turns reached",
@@ -1058,14 +1058,14 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
     forged_summary = _safe_cli_summary(
         {
             **cancelled,
-            "modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}},
+            "modelUsage": {GROK_MODEL: {"modelCalls": 1}},
         },
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         return_code=0,
         stdout=cancelled_stdout,
         stderr=b"",
     )
-    assert forged_summary["observed_models"] == [COMPOSER_MODEL]
+    assert forged_summary["observed_models"] == [GROK_MODEL]
     assert forged_summary["model_identity_ok"] is False
     recovery = _recovery_prompt()
     assert "without repeating" in recovery
@@ -1073,7 +1073,7 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
 
     zero_rc_summary = _safe_cli_summary(
         cancelled,
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         return_code=0,
         stdout=cancelled_stdout,
         stderr=b"",
@@ -1250,7 +1250,7 @@ def test_docker_grok_fanin_missing_cwd_fails_before_provider_effect(
                     {
                         "lane_id": "missing-cwd",
                         "prompt": "must fail closed",
-                        "model": "grok-4.5",
+                        "model": "grok-4.6",
                     }
                 ],
                 serial_reason="one negative cwd-admission unit",
@@ -1278,7 +1278,7 @@ def test_docker_grok_fanin_invalid_selection_fails_before_provider_effect(
     monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
     input_path = tmp_path / "input.md"
     input_path.write_text("frozen input", encoding="utf-8")
-    wrong = _supervisor_decision("grok-composer-2.5-fast")
+    wrong = _supervisor_decision("grok-retired-model")
 
     with pytest.raises(ValueError, match="selection receipt is invalid"):
         asyncio.run(
@@ -1291,7 +1291,7 @@ def test_docker_grok_fanin_invalid_selection_fails_before_provider_effect(
                     {
                         "lane_id": "selected-model",
                         "prompt": "must fail closed",
-                        "model": "grok-4.5",
+                        "model": "grok-4.6",
                         "cwd": "/app",
                     }
                 ],
@@ -1322,7 +1322,7 @@ def test_docker_grok_fanin_self_reported_package_mode_requires_envelope(
     monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
     input_path = tmp_path / "input.md"
     input_path.write_text("frozen input", encoding="utf-8")
-    decision = _supervisor_decision("grok-4.5")
+    decision = _supervisor_decision("grok-4.6")
 
     with pytest.raises(ValueError, match="requires dispatch_envelope_ref"):
         asyncio.run(
@@ -1336,7 +1336,7 @@ def test_docker_grok_fanin_self_reported_package_mode_requires_envelope(
                         "lane_id": "missing-package",
                         "package_contract_mode": "xinao.worker_package_batch.v3",
                         "prompt": "must fail closed",
-                        "model": "grok-4.5",
+                        "model": "grok-4.6",
                         "cwd": "/app",
                     }
                 ],
@@ -1363,7 +1363,7 @@ def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
     manifest_path = fixture["manifest_path"]
     original_manifest_bytes = manifest_path.read_bytes()
     host_selection = _supervisor_decision(
-        "grok-4.5",
+        "grok-4.6",
         transport_id="direct-grok-worker-pool",
     )
     host_selection_path = fixture["physical_root"] / "selection-a.json"
@@ -1429,7 +1429,7 @@ def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
             workflow_id="wf-leg-b-canonical",
             input_path=fixture["input_path"],
             content_md="bounded\n",
-            supervisor_worker_decision=_supervisor_decision("grok-4.5"),
+            supervisor_worker_decision=_supervisor_decision("grok-4.6"),
             supervisor_selection_required=True,
             dispatch_envelope_ref=fixture["envelope_ref"],
             dispatch_route_claim_ref=fixture["route_claim_ref"],
@@ -1443,7 +1443,7 @@ def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
     assert lane["lane_id"] == "p1"
     assert lane["package_id"] == "p1"
     assert lane["work_key"] == "work-p1"
-    assert lane["model"] == "grok-4.5"
+    assert lane["model"] == "grok-4.6"
     assert lane["cwd"] == "D:/XINAO_RESEARCH_RUNTIME/worktrees/shared-package/outputs/p1"
     assert lane["allowed_output_root"] == lane["cwd"]
     assert lane["write"] is True
@@ -1704,7 +1704,7 @@ def test_docker_grok_leg_b_rejects_other_route_or_fake_adapter_before_provider(
 
     if invalid_binding == "leg-a":
         selection = _supervisor_decision(
-            "grok-4.5",
+            "grok-4.6",
             transport_id="direct-grok-worker-pool",
         )
         selection_ref = _write_dispatch_fixture_json(
@@ -1797,7 +1797,7 @@ def test_worker_terminal_b_compares_route_to_provider_adapter_contract(
             "selection": {
                 "provider_id": "grok_acpx_headless",
                 "profile_ref": "grok.com.cached_profile",
-                "model_id": "grok-4.5",
+                "model_id": "grok-4.6",
                 "transport_id": transport_id,
                 "capability_binding_sha256": capability_binding_sha256,
             },
@@ -1839,7 +1839,7 @@ def test_worker_terminal_b_compares_route_to_provider_adapter_contract(
                 {
                     "invocation": 1,
                     "state": "accepted",
-                    "observed_model": "grok-4.5",
+                    "observed_model": "grok-4.6",
                     "stop_reason": "EndTurn",
                     "output_sha256": output_ref["sha256"],
                     "output_chars": 10,
@@ -1988,7 +1988,7 @@ def test_docker_grok_legacy_lane_identity_and_failure_shape_remain_unchanged(
         "lane_id": "lane",
         "prompt_sha256": "b" * 64,
         "execution_prompt_sha256": "",
-        "model": COMPOSER_MODEL,
+        "model": GROK_MODEL,
         "mode": "",
         "cwd": "",
         "write": False,
@@ -2016,7 +2016,7 @@ def test_docker_grok_legacy_lane_identity_and_failure_shape_remain_unchanged(
         "op_grok_docker_" + hashlib.sha256(artifact_json_bytes(legacy_identity)).hexdigest()[:32]
     )
     assert (
-        docker_worker._operation_id("wf", "lane", "b" * 64, COMPOSER_MODEL) == expected_operation_id
+        docker_worker._operation_id("wf", "lane", "b" * 64, GROK_MODEL) == expected_operation_id
     )
 
     observed_lanes: list[dict] = []
@@ -2046,7 +2046,7 @@ def test_docker_grok_legacy_lane_identity_and_failure_shape_remain_unchanged(
                 {
                     "lane_id": "legacy",
                     "prompt": "legacy prompt",
-                    "model": COMPOSER_MODEL,
+                    "model": GROK_MODEL,
                     "cwd": "/app",
                 }
             ],
@@ -2057,7 +2057,7 @@ def test_docker_grok_legacy_lane_identity_and_failure_shape_remain_unchanged(
         {
             "lane_id": "legacy",
             "prompt": "legacy prompt",
-            "model": COMPOSER_MODEL,
+            "model": GROK_MODEL,
             "cwd": "/app",
             "mode": "audit",
             "write": False,
@@ -2089,7 +2089,7 @@ def test_integrated_bus_rejects_invalid_required_selection_before_worker(
         "run_validate_bus",
         lambda **kwargs: {"validate_ok": True, "validation_input": kwargs},
     )
-    invalid = _supervisor_decision("grok-4.5")
+    invalid = _supervisor_decision("grok-4.6")
     invalid["decision_sha256"] = "0" * 64
     input_path = tmp_path / "input.md"
     input_path.write_text("frozen input", encoding="utf-8")
@@ -2106,7 +2106,7 @@ def test_integrated_bus_rejects_invalid_required_selection_before_worker(
                     {
                         "lane_id": "lane-a",
                         "prompt": "must not invoke",
-                        "model": "grok-4.5",
+                        "model": "grok-4.6",
                         "cwd": "/app",
                     }
                 ],
@@ -2217,7 +2217,7 @@ def test_temporal_langgraph_passes_exact_dispatch_envelope_ref_and_legacy_histor
     assert "dispatch_route_claim_ref" not in decoded_legacy
 
 
-@pytest.mark.parametrize("model", [COMPOSER_MODEL, "grok-4.5"])
+@pytest.mark.parametrize("model", [GROK_MODEL, "grok-4.6"])
 def test_docker_grok_fanin_passes_each_explicit_model_unchanged_to_adapter(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2473,7 +2473,7 @@ def test_canonical_package_attempt_identity_is_stable_across_workflow_carriers()
         "workflow-a",
         "p1",
         "d" * 64,
-        "grok-4.5",
+        "grok-4.6",
         correlation_id="correlation-a",
         parent_operation_id="parent-a",
         **common,
@@ -2482,7 +2482,7 @@ def test_canonical_package_attempt_identity_is_stable_across_workflow_carriers()
         "workflow-b",
         "p1",
         "d" * 64,
-        "grok-4.5",
+        "grok-4.6",
         correlation_id="correlation-b",
         parent_operation_id="parent-b",
         **common,
@@ -2491,7 +2491,7 @@ def test_canonical_package_attempt_identity_is_stable_across_workflow_carriers()
         "workflow-b",
         "p1",
         "d" * 64,
-        "grok-4.5",
+        "grok-4.6",
         correlation_id="correlation-b",
         parent_operation_id="parent-b",
         **{**common, "route_choice_sha256": "e" * 64},
@@ -2500,7 +2500,7 @@ def test_canonical_package_attempt_identity_is_stable_across_workflow_carriers()
         "workflow-b",
         "p1",
         "d" * 64,
-        "grok-4.5",
+        "grok-4.6",
         correlation_id="correlation-b",
         parent_operation_id="parent-b",
         **{**common, "dispatch_task_run_id": "run-other"},
@@ -2531,47 +2531,47 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
         "contract_id": "contract",
         "allowed_tools": ("read_file",),
     }
-    operation_id = _operation_id("wf", "lane", "b" * 64, COMPOSER_MODEL, **common)
+    operation_id = _operation_id("wf", "lane", "b" * 64, GROK_MODEL, **common)
     changed_intake = _operation_id(
         "wf",
         "lane",
         "b" * 64,
-        COMPOSER_MODEL,
+        GROK_MODEL,
         **{**common, "execution_prompt_sha256": "c" * 64},
     )
     changed_cwd = _operation_id(
         "wf",
         "lane",
         "b" * 64,
-        COMPOSER_MODEL,
+        GROK_MODEL,
         **{**common, "cwd": "/evidence/worktrees/lane"},
     )
     changed_tools = _operation_id(
         "wf",
         "lane",
         "b" * 64,
-        COMPOSER_MODEL,
+        GROK_MODEL,
         **{**common, "allowed_tools": ("grep", "read_file")},
     )
     changed_capability = _operation_id(
         "wf",
         "lane",
         "b" * 64,
-        COMPOSER_MODEL,
+        GROK_MODEL,
         **{**common, "external_research": True},
     )
     changed_output_contract = _operation_id(
         "wf",
         "lane",
         "b" * 64,
-        COMPOSER_MODEL,
+        GROK_MODEL,
         **{**common, "result_format": "json_object", "min_result_chars": 1_000},
     )
     changed_read_only_sandbox = _operation_id(
         "wf",
         "lane",
         "b" * 64,
-        COMPOSER_MODEL,
+        GROK_MODEL,
         **{
             **common,
             "sandbox_read_only": True,
@@ -2583,7 +2583,7 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
         "wf",
         "lane",
         "b" * 64,
-        COMPOSER_MODEL,
+        GROK_MODEL,
         **{
             **common,
             "sandbox_read_only": True,
@@ -2622,7 +2622,7 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
     )
     identity_sha = hashlib.sha256(identity.read_bytes()).hexdigest()
     session_id = "session-lane"
-    session_evidence = _session_model_evidence(COMPOSER_MODEL, session_id)
+    session_evidence = _session_model_evidence(GROK_MODEL, session_id)
     session_evidence_path = operation_root / "session_model_evidence.json"
     session_evidence_path.write_bytes(artifact_json_bytes(session_evidence))
     session_evidence_sha = hashlib.sha256(session_evidence_path.read_bytes()).hexdigest()
@@ -2656,11 +2656,11 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
                     "execution_contract_version": GROK_EXECUTION_CONTRACT_VERSION,
                     "model_policy_id": GROK_MODEL_POLICY_ID,
                     "operation_id": operation_id,
-                    "requested_model": COMPOSER_MODEL,
+                    "requested_model": GROK_MODEL,
                     "observed_model": GROK_BACKEND_BUILD,
                     "observed_models": [GROK_BACKEND_BUILD],
                     "observed_backend_models": [GROK_BACKEND_BUILD],
-                    "model_identity_binding": grok_docker_model_identity_binding(COMPOSER_MODEL),
+                    "model_identity_binding": grok_docker_model_identity_binding(GROK_MODEL),
                     "model_identity_ok": True,
                     "session_model_evidence": session_evidence,
                     "session_model_evidence_valid": True,
@@ -2705,7 +2705,7 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
         _cached_lane(
             manifest,
             operation_id=operation_id,
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
             prompt_sha256="b" * 64,
             execution_prompt_sha256="a" * 64,
             operation_spec_sha256=operation_spec_sha,
@@ -2716,7 +2716,7 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
         _cached_lane(
             manifest,
             operation_id=operation_id,
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
             prompt_sha256="b" * 64,
             execution_prompt_sha256="a" * 64,
             operation_spec_sha256="spec-b",
@@ -2726,7 +2726,7 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
 
     forged = json.loads(manifest.read_text(encoding="utf-8"))
     identity.write_text(
-        json.dumps({"modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}}}),
+        json.dumps({"modelUsage": {GROK_MODEL: {"modelCalls": 1}}}),
         encoding="utf-8",
     )
     forged_identity_sha = hashlib.sha256(identity.read_bytes()).hexdigest()
@@ -2742,7 +2742,7 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
         _cached_lane(
             manifest,
             operation_id=operation_id,
-            requested_model=COMPOSER_MODEL,
+            requested_model=GROK_MODEL,
             prompt_sha256="b" * 64,
             execution_prompt_sha256="a" * 64,
             operation_spec_sha256=operation_spec_sha,
@@ -2817,7 +2817,7 @@ def test_docker_native_manifest_is_consumed_without_host_prefan_marker(tmp_path:
     )
     assert lane is not None
     assert lane["worker_lane_ok"] is True
-    assert lane["worker_lane_model"] == COMPOSER_MODEL
+    assert lane["worker_lane_model"] == GROK_MODEL
     assert lane["worker_lane_adapter"] == "grok_build_cli_docker_native"
     assert lane["grok_execution_location"] == "docker:houtai-gongren"
 
@@ -3599,12 +3599,12 @@ def test_promoted_grok_fanin_bypasses_legacy_qwen_worker(tmp_path: Path) -> None
     assert lane is not None
     assert lane["worker_lane_ok"] is True
     assert lane["worker_lane_provider"] == GROK_FANIN_PROVIDER
-    assert lane["worker_lane_model"] == "grok-composer-2.5-fast"
+    assert lane["worker_lane_model"] == "grok-4.6"
     assert lane["grok_fanin_model_identity_ok"] is True
     assert lane["worker_lane_adapter"] == "grok_build_cli_docker_native"
 
 
-def test_promoted_grok_fanin_rejects_backend_build_without_exact_composer_session(
+def test_promoted_grok_fanin_rejects_backend_build_without_exact_current_session(
     tmp_path: Path,
 ) -> None:
     from services.agent_runtime.integrated_bus_graph import _grok_raw_model_identity_valid
@@ -3617,14 +3617,14 @@ def test_promoted_grok_fanin_rejects_backend_build_without_exact_composer_sessio
     lane = manifest["lanes"][0]
     assert _grok_raw_model_identity_valid(
         lane,
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         runtime=runtime,
         repo_root=REPO_ROOT,
     )
 
     session_evidence_path = Path(lane["session_model_evidence_ref"])
     forged_evidence = dict(lane["session_model_evidence"])
-    forged_evidence["currentModelId"] = "grok-4.5"
+    forged_evidence["currentModelId"] = "grok-retired-model"
     session_evidence_path.write_bytes(artifact_json_bytes(forged_evidence))
     lane["session_model_evidence"] = forged_evidence
     lane["session_model_evidence_sha256"] = hashlib.sha256(
@@ -3633,13 +3633,13 @@ def test_promoted_grok_fanin_rejects_backend_build_without_exact_composer_sessio
 
     assert not _grok_raw_model_identity_valid(
         lane,
-        requested_model=COMPOSER_MODEL,
+        requested_model=GROK_MODEL,
         runtime=runtime,
         repo_root=REPO_ROOT,
     )
 
 
-def test_promoted_grok_fanin_accepts_4_5_escalation_and_rejects_invalid_evidence(
+def test_promoted_grok_fanin_accepts_4_6_and_rejects_invalid_evidence(
     tmp_path: Path,
 ) -> None:
     from services.agent_runtime.integrated_bus_graph import (
@@ -3659,13 +3659,13 @@ def test_promoted_grok_fanin_accepts_4_5_escalation_and_rejects_invalid_evidence
     )
     intake.write_text(content, encoding="utf-8")
     base = _attested_grok_manifest(intake, [("one", "audit"), ("two", "audit")])
-    escalated = _attested_grok_manifest(
+    current = _attested_grok_manifest(
         intake,
         [("one", "audit"), ("two", "audit")],
-        model="grok-4.5",
+        model="grok-4.6",
     )
-    manifest.write_text(json.dumps(escalated), encoding="utf-8")
-    escalation_lane = _grok_fanin_worker_lane(
+    manifest.write_text(json.dumps(current), encoding="utf-8")
+    current_lane = _grok_fanin_worker_lane(
         {
             "runtime_root": str(runtime),
             "repo_root": str(REPO_ROOT),
@@ -3674,9 +3674,9 @@ def test_promoted_grok_fanin_accepts_4_5_escalation_and_rejects_invalid_evidence
             "content_md": content,
         }
     )
-    assert escalation_lane is not None
-    assert escalation_lane["worker_lane_ok"] is True
-    assert escalation_lane["worker_lane_model"] == "grok-4.5"
+    assert current_lane is not None
+    assert current_lane["worker_lane_ok"] is True
+    assert current_lane["worker_lane_model"] == "grok-4.6"
 
     cases = [
         {**base, "model": "grok-unknown", "models": ["grok-unknown"]},
@@ -3931,7 +3931,7 @@ def test_post_draft_review_is_optional_or_requires_bound_evidence(tmp_path: Path
         review_required=True,
         post_draft_review={
             "provider_id": "grok_acpx_headless",
-            "model": COMPOSER_MODEL,
+            "model": GROK_MODEL,
             "target_draft_sha256": hashlib.sha256(b"draft output").hexdigest(),
             "verdict": "APPROVED",
             "stop_reason": "EndTurn",

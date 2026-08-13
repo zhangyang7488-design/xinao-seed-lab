@@ -130,7 +130,7 @@ def test_static_identity_ignores_only_runtime_generation() -> None:
     assert before["started_at"] != after["started_at"]
 
 
-def test_result_acceptance_admits_real_docker_composer_without_legacy_send() -> None:
+def test_result_acceptance_admits_current_docker_grok_without_legacy_send() -> None:
     result = {
         "validate_ok": True,
         "planner_ok": True,
@@ -147,8 +147,8 @@ def test_result_acceptance_admits_real_docker_composer_without_legacy_send() -> 
         "grok_lanes": [
             {
                 "ok": True,
-                "requested_model": canary.COMPOSER_MODEL,
-                "observed_model": canary.COMPOSER_MODEL,
+                "requested_model": canary.GROK_MODEL,
+                "observed_model": canary.GROK_MODEL,
             }
         ],
     }

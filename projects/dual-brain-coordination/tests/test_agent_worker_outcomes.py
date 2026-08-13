@@ -122,19 +122,19 @@ print(json.dumps({
     "resultAuthoritative": True,
     "result": {"status": "completed", "stopReason": "end_turn"},
     "finalText": "verified output",
-    "requestedModel": "grok-4.5",
+    "requestedModel": "grok-4.6",
     "observedModels": {
-        "currentModelId": "grok-4.5",
-        "availableModelIds": ["grok-4.5"]
+        "currentModelId": "grok-4.6",
+        "availableModelIds": ["grok-4.6"]
     },
     "acpxRecordId": "acpx-completed",
     "backendSessionId": "backend-completed",
     "resolvedSession": resolved,
     "sessionModelEvidence": {
         "source": "acpx_runtime_status_after_turn",
-        "requestedModel": "grok-4.5",
-        "currentModelId": "grok-4.5",
-        "availableModelIds": ["grok-4.5"],
+        "requestedModel": "grok-4.6",
+        "currentModelId": "grok-4.6",
+        "availableModelIds": ["grok-4.6"],
         "acpxRecordId": "acpx-completed",
         "backendSessionId": "backend-completed"
     }
@@ -151,7 +151,7 @@ raise SystemExit(0)
     assert "operation-spec.json" in artifacts
     assert "manifest.json" in artifacts
     manifest = json.loads(Path(str(artifacts["manifest.json"]["uri"])).read_text(encoding="utf-8"))
-    assert DEFAULT_GROK_MODEL == "grok-4.5"
+    assert DEFAULT_GROK_MODEL == "grok-4.6"
     assert manifest["requested_model"] == DEFAULT_GROK_MODEL
     assert manifest["observed_models"]["currentModelId"] == DEFAULT_GROK_MODEL
     assert manifest["session_model_evidence_valid"] is True
@@ -163,8 +163,8 @@ raise SystemExit(0)
     ("available", "resolved_backend", "expected"),
     [
         ([], "backend-completed", False),
-        (["grok-4.5"], "backend-other", False),
-        (["grok-4.5"], "backend-completed", True),
+        (["grok-4.6"], "backend-other", False),
+        (["grok-4.6"], "backend-completed", True),
     ],
 )
 def test_session_model_evidence_requires_advertisement_and_lineage(
@@ -184,15 +184,15 @@ def test_session_model_evidence_requires_advertisement_and_lineage(
     }
     evidence: dict[str, object] = {
         "source": "acpx_runtime_status_after_turn",
-        "requestedModel": "grok-4.5",
-        "currentModelId": "grok-4.5",
+        "requestedModel": "grok-4.6",
+        "currentModelId": "grok-4.6",
         "availableModelIds": available,
         **final,
     }
     assert (
         validate_session_model_evidence(
             outcome_state="completed",
-            spec_model="grok-4.5",
+            spec_model="grok-4.6",
             evidence=evidence,
             resolved_session=resolved,
             terminal_resolved_session=resolved,
@@ -210,15 +210,15 @@ def test_session_model_evidence_treats_empty_optional_agent_id_as_absent() -> No
     }
     evidence: dict[str, object] = {
         "source": "acpx_runtime_status_after_turn",
-        "requestedModel": "grok-4.5",
-        "currentModelId": "grok-4.5",
-        "availableModelIds": ["grok-4.5"],
+        "requestedModel": "grok-4.6",
+        "currentModelId": "grok-4.6",
+        "availableModelIds": ["grok-4.6"],
         "acpxRecordId": "acpx-completed",
         "backendSessionId": "backend-completed",
     }
     assert validate_session_model_evidence(
         outcome_state="completed",
-        spec_model="grok-4.5",
+        spec_model="grok-4.6",
         evidence=evidence,
         resolved_session=final,
         terminal_resolved_session={

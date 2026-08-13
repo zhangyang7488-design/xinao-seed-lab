@@ -13,43 +13,43 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "e3d0840b0b0cceb787f3475e876f34345c7121fd36be4496142174e63c08fd12",
-  "entry_count": 125,
+  "archive_sha256": "71fb1185d0966569884710151ae953129155f1ace043cee3d6f593e7c589349e",
+  "entry_count": 126,
   "entries": [
     {
       "archive_path": "contracts/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\docs\\tool_glue\\CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
       "role": "two_bodies_paired_credential_slots",
-      "size": 2698,
-      "sha256": "55d352c339d3bfe1ae9c7d9ec0c524fb8a68a92edd13936da12ec4cb95839f4c"
+      "size": 2663,
+      "sha256": "e761b40d781e36037981ee11d09a1f2dcd3eb995af8823a2e22b7ab4c0478e73"
     },
     {
       "archive_path": "contracts/CODEX_GROK_WORKER_POOL_OPERATOR.md",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_GROK_WORKER_POOL_OPERATOR.md",
       "role": "grok_worker_pool_operator_contract",
-      "size": 6655,
-      "sha256": "ad09e1797f97d2594de1cdbee5111cc6dd245af1ca3092bb9af7575014a71259"
+      "size": 6898,
+      "sha256": "d8b458bef86dccf1515c32ece409b06df4e93614fdec956942b3a0101ad56856"
     },
     {
       "archive_path": "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\docs\\tool_glue\\CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
       "role": "shared_runtime_credential_boundary",
-      "size": 4263,
-      "sha256": "22f3db9cdb5d49ee61623261717f1d4c8d931ad39cc142a0766bae8735a95877"
+      "size": 4191,
+      "sha256": "1ca3e13da26c4fbb836817ef6eb897fa1639adb0a3c0fa551b56b4f6b7c1df63"
     },
     {
       "archive_path": "contracts/CODEX_SITUATION_CONTEXT_PRODUCTION.md",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\docs\\tool_glue\\CODEX_SITUATION_CONTEXT_PRODUCTION.md",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\CODEX_SITUATION_CONTEXT_PRODUCTION.md",
       "role": "situation_context_contract",
-      "size": 5776,
-      "sha256": "b532ced054fca220edc3547176b4bdc9e78cf3df05c145146feaae1ba1efcd50"
+      "size": 7951,
+      "sha256": "3d963ce4b4c1df826d95e78b4197281ce1ae2c6593fd3b902097b755626c0fcb"
     },
     {
       "archive_path": "contracts/S_CONTEXT_FABRIC_CURRENT.md",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\docs\\tool_glue\\S_CONTEXT_FABRIC_CURRENT.md",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\S_CONTEXT_FABRIC_CURRENT.md",
       "role": "context_fabric_contract",
-      "size": 17425,
-      "sha256": "32224484932b9e428086d334ce77dc89b661bebfc874a120e832bdb5579b6f28"
+      "size": 18257,
+      "sha256": "b1c982a4acc5895dc7237d46e93ffee84002deab89e8f4f50b46ffbf8ac36370"
     },
     {
       "archive_path": "human-entries/持续上下文运行时.txt",
@@ -69,36 +69,36 @@
       "archive_path": "launchers/Invoke-Codex-GrokWorkerPool.ps1",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-Codex-GrokWorkerPool.ps1",
       "role": "grok_worker_pool_public_launcher",
-      "size": 44802,
-      "sha256": "99c2f953eca216b5986aa429ed09300b2f1b541d4e44947eb4acbd5ec3434906"
+      "size": 44983,
+      "sha256": "2c4ef2bf2fcc172708a6d0acb56e2f5aeef9e10413344957da9b6238bed9661a"
     },
     {
       "archive_path": "launchers/Invoke-GrokWorkerOAuthRecovery.ps1",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-GrokWorkerOAuthRecovery.ps1",
       "role": "grok_worker_pool_oauth_recovery_entry",
       "size": 6084,
-      "sha256": "cc44df72f6f0f57eebfc7f1d3db26e79c8d004d28d6e776fb8ea3827646f71da"
+      "sha256": "47977af36e22d75e091d84b6c2f9d8e76c72d28457bc226e2fca6ef968c1ead6"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode-Account-B.ps1",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\launchers\\Open-Codex-S-Hardmode-Account-B.ps1",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\launchers\\Open-Codex-S-Hardmode-Account-B.ps1",
       "role": "credential_b_compatibility_entry",
-      "size": 443,
-      "sha256": "6511a5d433d102f93375bd6a909f83918cb8b5098da11436772aab1b6ba4aa86"
+      "size": 431,
+      "sha256": "73c130cca74bab51b5fa4ebf5455fd64e06046999cd44485f66a3c50b6286d20"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode.ps1",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\launchers\\Open-Codex-S-Hardmode.ps1",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\launchers\\Open-Codex-S-Hardmode.ps1",
       "role": "credential_a_compatibility_entry",
-      "size": 443,
-      "sha256": "aa70810656c01d2c8f5fb47e6cb7e04650c0ea60f009fe5218ef96ab8dfbc1db"
+      "size": 431,
+      "sha256": "6949898ae2fe04cd410034b5adbb705b0a3f8c1812ab4c104cd73cb83bcf0ef0"
     },
     {
       "archive_path": "launchers/Open-Codex-S-SharedRuntime.ps1",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\Open-Codex-S-SharedRuntime.ps1",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Open-Codex-S-SharedRuntime.ps1",
       "role": "canonical_shared_runtime_launcher",
-      "size": 11189,
-      "sha256": "2e86fc1efbd414f173f8de3de6df49e9e807111e113f10ca4de33113dcd59aea"
+      "size": 10924,
+      "sha256": "7bffcbda41e2782e147b617941e88f8a7c8e378b260671a975a25fa6c098678d"
     },
     {
       "archive_path": "main-home/AGENTS.md",
@@ -202,8 +202,8 @@
       "archive_path": "main-home/skills/dispatch-grok-worker-pool/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-grok-worker-pool\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 15021,
-      "sha256": "d4c117dbc9e8d8017267dc056be71472401d67d3e523a9efd31892fedc85c2f1"
+      "size": 15450,
+      "sha256": "a699b7853795c5e28de7a41126ce69275b8b8911b9cc752924258f5f5e1db5d9"
     },
     {
       "archive_path": "main-home/skills/dispatch-grok-worker-pool/agents/openai.yaml",
@@ -634,98 +634,98 @@
     },
     {
       "archive_path": "repository/evals/context_runtime_trajectory/receipt.schema.json",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\evals\\context_runtime_trajectory\\receipt.schema.json",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\evals\\context_runtime_trajectory\\receipt.schema.json",
       "role": "context_runtime_trajectory_receipt_schema",
-      "size": 2989,
-      "sha256": "4092d1f5a50801a9bcba510825192051129bedb0828cb5acfda668d452bc907b"
+      "size": 3119,
+      "sha256": "0535b5eb0681ff22660da8753ded7bc045b507ddcd9a6c6077d5373e1a954898"
     },
     {
       "archive_path": "repository/evals/context_runtime_trajectory/run_context_runtime_trajectory.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\evals\\context_runtime_trajectory\\run_context_runtime_trajectory.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\evals\\context_runtime_trajectory\\run_context_runtime_trajectory.py",
       "role": "context_runtime_trajectory_harness",
-      "size": 101238,
-      "sha256": "cb3e5c4d672188b3f4c7dbb7de609c4e61f514cc1c86cd266d00ff01ef8e059e"
+      "size": 103807,
+      "sha256": "85bf97fa8a470cbad5fc0c75ae79d80bd9a86b1799b77bd66061208be3aeac6a"
     },
     {
       "archive_path": "repository/scripts/Install-SContextRolloutConsumer.ps1",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\Install-SContextRolloutConsumer.ps1",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Install-SContextRolloutConsumer.ps1",
       "role": "context_rollout_consumer_installer",
-      "size": 72336,
-      "sha256": "2d74598636424b2cd92f61f46062d6c044f71bd5dc68379876e53fee9ea6a8ee"
+      "size": 104495,
+      "sha256": "a09ef5a28bc627964d0324059c9f4d3bc7b5c5b5c65e8979b488a08ac5d13f42"
     },
     {
       "archive_path": "repository/scripts/Protect-SContextFabricState.ps1",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\Protect-SContextFabricState.ps1",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Protect-SContextFabricState.ps1",
       "role": "context_fabric_acl_installer",
-      "size": 4685,
-      "sha256": "fccb1811e423ddfc18fe09deb4efc087b05787edd43d79f394ae292f77b7a9af"
+      "size": 4712,
+      "sha256": "cdcc828acac179fef09e0f885a57ce79605ed6ce18e7aeb21acdc422108f2025"
     },
     {
       "archive_path": "repository/scripts/codex_situation_context_hook.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\codex_situation_context_hook.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\codex_situation_context_hook.py",
       "role": "situation_hook_adapter",
-      "size": 1537,
-      "sha256": "8482195f25b516ec4de7294873a7a4beef88bf1e5f188eb195bd293a78c35e20"
+      "size": 3575,
+      "sha256": "592464948083586757ebcfc2e15bcb7c9aae50324fd69d332842aefa1150fd60"
     },
     {
       "archive_path": "repository/scripts/context_rollout_consumer.bundle.lock.json",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\context_rollout_consumer.bundle.lock.json",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\context_rollout_consumer.bundle.lock.json",
       "role": "context_rollout_consumer_release_lock",
-      "size": 245386,
-      "sha256": "6a95d1ae9d66969522c4ba0e46b27f37dde9039f891a2420318927f102c32846"
+      "size": 246347,
+      "sha256": "d39e0828fe172e1338604a66b1e9b80a074401887a599977627e839efed46a59"
     },
     {
       "archive_path": "repository/scripts/context_rollout_consumer.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\context_rollout_consumer.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\context_rollout_consumer.py",
       "role": "context_rollout_incremental_consumer",
-      "size": 62777,
-      "sha256": "fd352a4f3f47c040f11ea2ceedd63fb41a0c80ef37123424da33aa8e42dc8764"
+      "size": 83812,
+      "sha256": "786aa0cc3380cd11b693bc565bcf00de6a44e7fc2f99318307ea734d05f893dd"
     },
     {
       "archive_path": "repository/scripts/manage_context_fabric.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\manage_context_fabric.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\manage_context_fabric.py",
       "role": "explicit_context_fabric_manager",
       "size": 7666,
       "sha256": "167d9f090f7003c6fda37996c699aa0881cf0fe49eca86dee1309dc4392077e8"
     },
     {
       "archive_path": "repository/scripts/manage_current_situation.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\manage_current_situation.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\manage_current_situation.py",
       "role": "explicit_situation_manager",
       "size": 3498,
       "sha256": "56f4dda8bcbc479d31c13fed5521e6b564caed2bf8efce7f111facff2ca71a21"
     },
     {
       "archive_path": "repository/services/agent_runtime/codex_situation_hook.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\services\\agent_runtime\\codex_situation_hook.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\codex_situation_hook.py",
       "role": "situation_hook_adapter",
-      "size": 17497,
-      "sha256": "6f1924546dcd3dfc99031e63b1348c8fba5f36a162b556db3ed304c2b271699b"
+      "size": 21361,
+      "sha256": "bd22f5e197ba47c6fc626bbc1faba47b7aff22a0d2797a1d796318a274d48f7c"
     },
     {
       "archive_path": "repository/services/agent_runtime/context_fabric.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\services\\agent_runtime\\context_fabric.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\context_fabric.py",
       "role": "context_fabric_runtime_source",
-      "size": 101067,
-      "sha256": "2ca481932ae391acd3318d8ba074610e9a226a0300012183f9c49940500e36a0"
+      "size": 98652,
+      "sha256": "5d6b8cd173d85ad866d3593a68072e308faa9d636121f3d25e2a346f80a622fd"
     },
     {
       "archive_path": "repository/services/agent_runtime/context_runtime_completion.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\services\\agent_runtime\\context_runtime_completion.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\context_runtime_completion.py",
       "role": "context_runtime_completion_source",
-      "size": 161260,
-      "sha256": "1d61bb13e345172650d50636d87915e8dd956c1257089075a6c59ea27f045b2f"
+      "size": 170960,
+      "sha256": "101eb0518a1a110974151567f9ab7028a259f0f5af50aad82483893c9d20c562"
     },
     {
       "archive_path": "repository/services/agent_runtime/current_situation.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\services\\agent_runtime\\current_situation.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\current_situation.py",
       "role": "situation_runtime_source",
       "size": 27156,
       "sha256": "a89699403399be59d790c2bde761e2953179b6bc25e09b6455ecfcae840e3d02"
     },
     {
       "archive_path": "repository/services/agent_runtime/runtime_observation.py",
-      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\services\\agent_runtime\\runtime_observation.py",
+      "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\runtime_observation.py",
       "role": "situation_runtime_source",
       "size": 32117,
       "sha256": "346a528569dbb6152e9f1775e96363a6037ba5062a817d54ba680208eb0dbf96"
@@ -832,8 +832,8 @@
       "archive_path": "runtime/grok-worker-pool/bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Invoke-CodexDispatchGrokWorkerPool.ps1",
       "role": "grok_worker_pool_sealed_transport",
-      "size": 46555,
-      "sha256": "8716c20f2f44156c95c321b3cafc133cf3be14b17c8906cde6e953fb692722ef"
+      "size": 46553,
+      "sha256": "13845be0995e5cd0425c7480e35d0be0d8073e620758b67c8d1e232ef400fa86"
     },
     {
       "archive_path": "runtime/grok-worker-pool/bridge/Invoke-CodexGrokPackageBatch.ps1",
@@ -846,15 +846,22 @@
       "archive_path": "runtime/grok-worker-pool/bridge/Invoke-GrokComposer25Worker.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Invoke-GrokComposer25Worker.ps1",
       "role": "grok_worker_pool_sealed_transport",
-      "size": 74463,
-      "sha256": "c1f3a7aad2946ab2020ff2dd3d78ca7e2249bb54767bbe270c9cc751e8d28e4c"
+      "size": 211,
+      "sha256": "10df84e317131849e8321167818511456f9bdd3eac4200b542776003ec8aa2f4"
+    },
+    {
+      "archive_path": "runtime/grok-worker-pool/bridge/Invoke-GrokModelWorker.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Invoke-GrokModelWorker.ps1",
+      "role": "grok_worker_pool_sealed_transport",
+      "size": 74367,
+      "sha256": "250eff51a7652f692248e66bc592773995f674df34fc53b040d139f4ddd99780"
     },
     {
       "archive_path": "runtime/grok-worker-pool/bridge/Invoke-GrokWorkerPool.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Invoke-GrokWorkerPool.ps1",
       "role": "grok_worker_pool_sealed_transport",
-      "size": 39474,
-      "sha256": "d4b540e17d2774e521693b107c2495770c8d16adc80cdc40aabbe99859ad41bf"
+      "size": 39465,
+      "sha256": "e3a0543a8b0850d1ee8439a62eda84a947bcae187439c031b485f6c29caf2659"
     },
     {
       "archive_path": "runtime/grok-worker-pool/bridge/Prepare-CodexGrokTaskLocalCheckpoint.ps1",
@@ -867,8 +874,8 @@
       "archive_path": "runtime/grok-worker-pool/bridge/Test-GrokCliEffectiveOutput.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\bridge\\Test-GrokCliEffectiveOutput.ps1",
       "role": "grok_worker_pool_sealed_transport",
-      "size": 23370,
-      "sha256": "d909c465ea439f6632be02547833ce7cfb80cc391f2ac7ac94a48220efd1f57a"
+      "size": 23264,
+      "sha256": "3cd55de34756d90abb55e00b7af49de67a8c880ed1f17f42f462165d19f906f4"
     },
     {
       "archive_path": "runtime/grok-worker-pool/bridge/resolve_grok_worker_selection_receipt.py",
@@ -888,8 +895,8 @@
       "archive_path": "runtime/grok-worker-pool/runtime-manifest.v1.json",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool\\runtime-manifest.v1.json",
       "role": "grok_worker_pool_runtime_manifest",
-      "size": 4442,
-      "sha256": "6aaf20dfba9925b95027333b661d776ca4bea413639d217e58b14cd4a21b74dd"
+      "size": 5077,
+      "sha256": "a682ba65d7424a3b2cc0365d88184bc77ce8ab1999002dcf98f086daa8d407f0"
     }
   ],
   "source_and_projection": {

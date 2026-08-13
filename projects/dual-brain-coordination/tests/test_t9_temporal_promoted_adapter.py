@@ -253,7 +253,7 @@ def test_t9_langgraph_summary_requires_real_acceptance_evidence() -> None:
             "content_md": "real promoted input",
             "parallel_succeeded": 2,
             "worker_lane_provider": "grok_acpx_headless",
-            "worker_lane_model": "grok-4.5",
+            "worker_lane_model": "grok-4.6",
             "grok_only_mode": False,
             "selected_provider_fail_closed": True,
             "provider_fanin_ok": True,
@@ -386,7 +386,7 @@ def test_t9_langgraph_summary_requires_real_acceptance_evidence() -> None:
     parent_fanin = {
         "ok": True,
         "provider_id": "grok_acpx_headless",
-        "model": "grok-4.5",
+        "model": "grok-4.6",
         "succeeded": 2,
         "failed": 0,
         "lane_count": 2,

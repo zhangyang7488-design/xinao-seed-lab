@@ -12,32 +12,30 @@ from xinao_coordination.temporal import grok_parallel
 REPO = Path(__file__).resolve().parents[1]
 
 
-def test_default_temporal_grok_model_is_composer_and_4_5_is_explicit() -> None:
-    assert grok_parallel.DEFAULT_MODEL == "grok-composer-2.5-fast"
+def test_default_temporal_grok_model_is_current_46_and_retired_models_fail_closed() -> None:
+    assert grok_parallel.DEFAULT_MODEL == "grok-4.6"
     lane = grok_parallel.validate_ready_frontier(
         [{"lane_id": "audit", "prompt": "audit", "cwd": str(REPO)}],
         serial_reason="one indivisible default-model check",
     )[0]
-    assert lane["model"] == "grok-composer-2.5-fast"
+    assert lane["model"] == "grok-4.6"
     assert lane["model_route_role"] == grok_parallel.DEFAULT_ROUTE_ROLE
     assert lane["is_escalated"] is False
     assert lane["max_turns"] is None
 
-    escalated = grok_parallel.validate_ready_frontier(
-        [
-            {
-                "lane_id": "research",
-                "prompt": "external research",
-                "cwd": str(REPO),
-                "model": "grok-4.5",
-                "escalation_reason": "external_research_required",
-            }
-        ],
-        serial_reason="one explicit external-research unit",
-    )[0]
-    assert escalated["model"] == "grok-4.5"
-    assert escalated["is_escalated"] is True
-    assert escalated["escalation_reason"] == "external_research_required"
+    for retired_model in ("grok-4.5", "grok-composer-2.5-fast"):
+        with pytest.raises(ValueError, match="unsupported Grok provider model"):
+            grok_parallel.validate_ready_frontier(
+                [
+                    {
+                        "lane_id": "retired",
+                        "prompt": "must fail closed",
+                        "cwd": str(REPO),
+                        "model": retired_model,
+                    }
+                ],
+                serial_reason="one retired-model rejection unit",
+            )
 
 
 def test_selected_grok_adapter_requires_explicit_supervisor_model() -> None:
@@ -56,7 +54,7 @@ def test_selected_grok_adapter_requires_explicit_supervisor_cwd() -> None:
                 {
                     "lane_id": "audit",
                     "prompt": "audit",
-                    "model": "grok-4.5",
+                    "model": "grok-4.6",
                 }
             ],
             serial_reason="one selected adapter lane",
@@ -87,20 +85,14 @@ def test_legacy_temporal_replay_can_request_the_historical_cwd_default() -> None
     ("model", "route_role", "is_escalated", "escalation_reason"),
     [
         (
-            "grok-composer-2.5-fast",
+            "grok-4.6",
             grok_parallel.DEFAULT_ROUTE_ROLE,
             False,
             "",
         ),
-        (
-            "grok-4.5",
-            grok_parallel.ESCALATION_ROUTE_ROLE,
-            True,
-            "explicit_model_override",
-        ),
     ],
 )
-def test_selected_grok_adapter_preserves_each_explicit_admitted_model(
+def test_selected_grok_adapter_preserves_explicit_current_model(
     model: str,
     route_role: str,
     is_escalated: bool,
@@ -144,7 +136,7 @@ def test_ready_frontier_clamps_only_explicit_turn_limit() -> None:
     assert lane["max_turns"] == 40
 
 
-def test_ready_frontier_rejects_unknown_mixed_or_unisolated_write_model(tmp_path: Path) -> None:
+def test_ready_frontier_rejects_unknown_retired_or_unisolated_write_model(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unsupported Grok provider model"):
         grok_parallel.validate_ready_frontier(
             [
@@ -157,7 +149,7 @@ def test_ready_frontier_rejects_unknown_mixed_or_unisolated_write_model(tmp_path
             ],
             serial_reason="negative model canary",
         )
-    with pytest.raises(ValueError, match="cannot mix"):
+    with pytest.raises(ValueError, match="unsupported Grok provider model"):
         grok_parallel.validate_ready_frontier(
             [
                 {"lane_id": "one", "prompt": "one", "cwd": str(REPO)},
@@ -167,7 +159,8 @@ def test_ready_frontier_rejects_unknown_mixed_or_unisolated_write_model(tmp_path
                     "cwd": str(REPO),
                     "model": "grok-4.5",
                 },
-            ]
+            ],
+            serial_reason="retired model cannot enter a new frontier",
         )
     with pytest.raises(ValueError, match="isolated worktree root"):
         grok_parallel.validate_ready_frontier(
@@ -422,7 +415,7 @@ def test_fanin_materializes_container_intake_and_lane_lineage(
             "require_full_frontier": True,
         }
     )
-    assert result["model"] == "grok-composer-2.5-fast"
+    assert result["model"] == "grok-4.6"
     assert result["succeeded"] == 2
     assert result["failed"] == 0
     assert result["intake"]["container_path"].startswith("/evidence/")
@@ -431,7 +424,7 @@ def test_fanin_materializes_container_intake_and_lane_lineage(
     assert "mature source result" in intake
     manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
     assert manifest["provider_id"] == grok_parallel.PROVIDER_ID
-    assert manifest["model"] == "grok-composer-2.5-fast"
+    assert manifest["model"] == "grok-4.6"
     assert manifest["model_identity_ok"] is True
     assert manifest["correlation_id"] == "corr-demo"
     assert manifest["parent_operation_id"] == "parent-op-demo"
@@ -446,7 +439,7 @@ def test_fanin_materializes_container_intake_and_lane_lineage(
         {
             "ok": False,
             "lane_id": "failed",
-            "model": "grok-4.5",
+            "model": "grok-4.6",
             "operation_id": "op-failed",
             "operation_state": "failed",
             "result_text": "",
@@ -454,14 +447,14 @@ def test_fanin_materializes_container_intake_and_lane_lineage(
         {
             "ok": True,
             "lane_id": "missing-state",
-            "model": "grok-4.5",
+            "model": "grok-4.6",
             "operation_id": "op-missing-state",
             "result_text": "unproven result",
         },
         {
             "ok": True,
             "lane_id": "empty-result",
-            "model": "grok-4.5",
+            "model": "grok-4.6",
             "operation_id": "op-empty-result",
             "operation_state": "completed",
             "result_text": "  ",
@@ -488,9 +481,9 @@ def test_fanin_rejects_any_incomplete_lane(
         "provider_id": grok_parallel.PROVIDER_ID,
         "lane_id": "valid",
         "mode": "audit",
-        "model": "grok-4.5",
-        "requested_model": "grok-4.5",
-        "observed_model": "grok-4.5",
+        "model": "grok-4.6",
+        "requested_model": "grok-4.6",
+        "observed_model": "grok-4.6",
         "model_identity_ok": True,
         "agent_session_id": "session-valid",
         "model_identity_ref": str(runtime / "identity-valid.json"),

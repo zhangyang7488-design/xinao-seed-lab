@@ -1774,15 +1774,15 @@ def test_invalid_dispatch_projection_keeps_parent_open_without_hiding_frontier(
 
 
 def test_identity_json_and_preflight_are_fail_closed_before_model(tmp_path: Path) -> None:
-    missing = reconcile_identity({"declared": "grok-4.5", "selected": "grok-4.5", "observed": ""})
+    missing = reconcile_identity({"declared": "grok-4.6", "selected": "grok-4.6", "observed": ""})
     assert missing["status"] == "unverified"
     assert missing["reason_codes"] == ["OBSERVED_IDENTITY_MISSING"]
     mismatch = reconcile_identity(
         {
-            "declared": "grok-4.5",
-            "selected": "grok-4.5",
+            "declared": "grok-4.6",
+            "selected": "grok-4.6",
             "observed": "other",
-            "allowed_observed": ["grok-4.5-build"],
+            "allowed_observed": ["grok-4.6-build"],
         }
     )
     assert mismatch["reason_codes"] == ["MODEL_IDENTITY_MISMATCH"]

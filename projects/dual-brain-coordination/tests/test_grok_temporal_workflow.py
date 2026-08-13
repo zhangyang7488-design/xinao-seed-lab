@@ -16,24 +16,29 @@ from xinao_coordination.temporal.workflow import (
     _is_accepted_grok_lane,
 )
 
-DEFAULT_MODEL = "grok-composer-2.5-fast"
+DEFAULT_MODEL = "grok-4.6"
 
 
 @pytest.mark.parametrize(
-    ("composer_patch_enabled", "expected_default"),
+    ("grok46_patch_enabled", "composer_patch_enabled", "expected_default", "replay_only"),
     [
-        (False, promoted_workflow.GROK_LEGACY_DEFAULT_MODEL),
-        (True, promoted_workflow.GROK_DEFAULT_MODEL),
+        (False, False, promoted_workflow.GROK_LEGACY_DEFAULT_MODEL, True),
+        (False, True, promoted_workflow.GROK_LEGACY_COMPOSER_MODEL, True),
+        (True, True, promoted_workflow.GROK_DEFAULT_MODEL, False),
     ],
 )
 def test_workflow_model_patch_preserves_pre_patch_replay_default(
     monkeypatch: pytest.MonkeyPatch,
+    grok46_patch_enabled: bool,
     composer_patch_enabled: bool,
     expected_default: str,
+    replay_only: bool,
 ) -> None:
     observed: dict[str, object] = {}
 
     def fake_patched(patch_id: str) -> bool:
+        if patch_id == promoted_workflow.GROK_46_DEFAULT_PATCH_ID:
+            return grok46_patch_enabled
         if patch_id == promoted_workflow.GROK_COMPOSER_DEFAULT_PATCH_ID:
             return composer_patch_enabled
         return False
@@ -43,6 +48,7 @@ def test_workflow_model_patch_preserves_pre_patch_replay_default(
         *,
         serial_reason: str,
         default_model: str,
+        allow_replay_only: bool,
         require_explicit_model: bool,
         require_explicit_cwd: bool,
     ) -> list[dict]:
@@ -50,6 +56,7 @@ def test_workflow_model_patch_preserves_pre_patch_replay_default(
             raw=raw,
             serial_reason=serial_reason,
             default_model=default_model,
+            allow_replay_only=allow_replay_only,
             require_explicit_model=require_explicit_model,
             require_explicit_cwd=require_explicit_cwd,
         )
@@ -72,6 +79,7 @@ def test_workflow_model_patch_preserves_pre_patch_replay_default(
 
     assert result == started
     assert observed["default_model"] == expected_default
+    assert observed["allow_replay_only"] is replay_only
     assert observed["serial_reason"] == "one retained-history lane"
     assert observed["require_explicit_model"] is False
     assert observed["require_explicit_cwd"] is False
@@ -81,7 +89,10 @@ def test_new_workflow_history_requires_explicit_supervisor_model_and_cwd(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_patched(patch_id: str) -> bool:
-        return patch_id == promoted_workflow.GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID
+        return patch_id in {
+            promoted_workflow.GROK_46_DEFAULT_PATCH_ID,
+            promoted_workflow.GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID,
+        }
 
     monkeypatch.setattr(promoted_workflow.workflow, "patched", fake_patched)
     instance = XinaoPromotedTaskWorkflowV1()
@@ -102,7 +113,7 @@ def test_attested_lane_acceptance_has_an_independent_replay_boundary() -> None:
     legacy_composer_result = {
         "ok": True,
         "provider_id": "grok_acpx_headless",
-        "model": DEFAULT_MODEL,
+        "model": promoted_workflow.GROK_LEGACY_COMPOSER_MODEL,
         "operation_id": "legacy-op",
         "operation_state": "completed",
         "result_text": "legacy Composer result without attestation fields",

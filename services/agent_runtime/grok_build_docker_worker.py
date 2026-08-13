@@ -63,16 +63,11 @@ FANIN_SENTINEL = "XINAO_GROK_TEMPORAL_FANIN_V1"
 PROVIDER_ID = "grok_acpx_headless"
 SUPERVISOR_PROFILE_REF = "grok.com.cached_profile"
 SUPERVISOR_DURABLE_TRANSPORT_ID = "temporal-docker-langgraph"
-MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
-DEFAULT_MODEL = "grok-composer-2.5-fast"
-ESCALATION_MODEL = "grok-4.5"
-ALLOWED_MODELS = frozenset({DEFAULT_MODEL, ESCALATION_MODEL})
-# Composer has historically been callable through an authenticated xAI OAuth
-# session while absent from /v1/models.  This exception only admits the
-# selector for a fail-closed probe; it never attests the backend model.
-IMPLICIT_SUBSCRIPTION_MODEL_SELECTORS = frozenset({DEFAULT_MODEL})
+MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v3"
+DEFAULT_MODEL = "grok-4.6"
+ALLOWED_MODELS = frozenset({DEFAULT_MODEL})
+IMPLICIT_SUBSCRIPTION_MODEL_SELECTORS: frozenset[str] = frozenset()
 DEFAULT_ROUTE_ROLE = "default_background_worker"
-ESCALATION_ROUTE_ROLE = "grok_4_5_escalation_worker"
 _SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 DEFAULT_MAX_TURNS = 16
 DEFAULT_LANE_DEADLINE_SECONDS = 1_800
@@ -2150,6 +2145,8 @@ async def _execute_lane_locked(
         raise ValueError("Docker Grok lane requires an explicit supervisor-selected model")
     if model not in ALLOWED_MODELS:
         raise ValueError(f"unsupported Docker Grok model: {model}")
+    if str(lane.get("escalation_reason") or "").strip():
+        raise ValueError("model escalation is unavailable in the single-model Grok 4.6 policy")
     if canonical_package_mode:
         if (
             write is not True
@@ -2869,11 +2866,9 @@ async def _execute_lane_locked(
         "supervisor_worker_decision_sha256": str(
             lane.get("supervisor_worker_decision_sha256") or ""
         ),
-        "model_route_role": (
-            ESCALATION_ROUTE_ROLE if model == ESCALATION_MODEL else DEFAULT_ROUTE_ROLE
-        ),
-        "is_escalated": model == ESCALATION_MODEL,
-        "escalation_reason": str(lane.get("escalation_reason") or ""),
+        "model_route_role": DEFAULT_ROUTE_ROLE,
+        "is_escalated": False,
+        "escalation_reason": "",
         "prompt_sha256": prompt_sha256,
         "execution_prompt_sha256": execution_prompt_sha256,
         "operation_spec_sha256": operation_spec_sha256,
@@ -3574,7 +3569,6 @@ async def run_docker_native_grok_fanin(
 __all__ = [
     "ALLOWED_MODELS",
     "DEFAULT_MODEL",
-    "ESCALATION_MODEL",
     "MODEL_POLICY_ID",
     "PROVIDER_ID",
     "_parse_cli_result",

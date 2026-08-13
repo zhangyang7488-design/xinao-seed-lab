@@ -119,7 +119,7 @@ services:
     build:
       context: .
       dockerfile: docker/houtai-gongren/Dockerfile
-    image: xinao-houtai-gongren:docker-native-composer25-20260717
+    image: xinao-houtai-gongren:docker-native-grok46-20260813
     container_name: houtai-gongren
     # Grok's Linux Landlock sandbox opens /dev/tty even for headless lanes.
     # Allocate the service PTY without keeping stdin open so sandboxed workers
@@ -161,7 +161,7 @@ services:
       XINAO_GROK_BIN: /usr/local/bin/grok
       XINAO_GROK_HOME: /grok-home
       GROK_HOME: /grok-home/.grok
-      XINAO_GROK_DEFAULT_MODEL: grok-composer-2.5-fast
+      XINAO_GROK_DEFAULT_MODEL: grok-4.6
     volumes:
       - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
       - ${XINAO_CODEX_S_REPO_HOST:-.}/AGENTS.md:/app/AGENTS.md:ro

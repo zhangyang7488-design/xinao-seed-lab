@@ -5,7 +5,7 @@
   "sessionId": "sess_zero_out",
   "requestId": "req_zero_out",
   "modelUsage": {
-    "grok-4.5-build": {
+    "grok-4.6-build": {
       "inputTokens": 12,
       "outputTokens": 0,
       "modelCalls": 1

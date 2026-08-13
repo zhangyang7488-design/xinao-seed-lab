@@ -13,7 +13,7 @@ param(
     [int]$TtlSeconds = 300,
     [int]$HistoryLimit = 20,
     [string]$AcpxHome = 'D:\XINAO_RESEARCH_RUNTIME\state\acpx-grok-brain',
-    [string]$GrokHome = 'C:\Users\xx363\.grok-4.5-lane',
+    [string]$GrokHome = 'C:\Users\xx363\.grok-bg-workers',
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$RawArgs = @()
 )

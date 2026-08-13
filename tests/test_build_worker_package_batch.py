@@ -323,7 +323,7 @@ def _route_receipt(transport_id: str) -> dict[str, object]:
         "selected_candidate": {
             "provider_id": "grok_acpx_headless",
             "profile_ref": "grok.com.cached_profile",
-            "model_id": "grok-4.5",
+            "model_id": "grok-4.6",
             "transport_id": transport_id,
             "declared_active": True,
             "healthy": True,

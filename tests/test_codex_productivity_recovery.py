@@ -105,7 +105,7 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
     grok_bridge_names = {
         name for name in names if name.startswith("runtime/grok-worker-pool/bridge/")
     }
-    assert len(grok_bridge_names) == 15
+    assert len(grok_bridge_names) == 16
     assert "runtime/grok-worker-pool/bridge/GrokSupervisorRootCapability.ps1" in grok_bridge_names
     assert "main-home/skills/repair-agent-behavior/SKILL.md" in names
     assert "main-home/skills/operate-for-user/SKILL.md" in names
@@ -241,7 +241,7 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         assert "Repair the selected Grok route before substitution" in dispatch_skill_text
         assert "native_codex_subagent_substitution_allowed=false" in dispatch_skill_text
         worker_text = archive.read(
-            "runtime/grok-worker-pool/bridge/Invoke-GrokComposer25Worker.ps1"
+            "runtime/grok-worker-pool/bridge/Invoke-GrokModelWorker.ps1"
         ).decode("utf-8")
         assert "GROK_DOCKER_EXCEPTION_OPT_IN_REQUIRED" in worker_text
     for entry in manifest["entries"]:

@@ -5,7 +5,7 @@
   "sessionId": "sess_wrong_model",
   "requestId": "req_wrong_model",
   "modelUsage": {
-    "grok-composer-2.5-fast": {
+    "grok-retired-model": {
       "inputTokens": 12,
       "outputTokens": 4,
       "modelCalls": 1

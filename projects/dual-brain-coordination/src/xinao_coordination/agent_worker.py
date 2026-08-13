@@ -22,7 +22,7 @@ from .errors import CoordinationError, InvalidTransitionError, LeaseError
 ACPX_CURRENT = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\acpx\current.json")
 ACPX_STATE = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\acpx-runtime-grok")
 DEFAULT_GROK_HOME = Path(r"C:\Users\xx363\.grok-bg-workers")
-DEFAULT_GROK_MODEL = "grok-4.5"
+DEFAULT_GROK_MODEL = "grok-4.6"
 
 
 def process_start_time_ms(process_handle: int | None = None) -> int:

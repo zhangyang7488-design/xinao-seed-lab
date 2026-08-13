@@ -43,7 +43,7 @@ CONTAINER_NAME = "houtai-gongren"
 GROK_SESSION_STORE_CONTAINER_TARGET = (
     "/mnt/host/d/XINAO_RESEARCH_RUNTIME/state/tool_profile_sessions/grok-bg-workers"
 )
-COMPOSER_MODEL = "grok-composer-2.5-fast"
+GROK_MODEL = "grok-4.6"
 WORKFLOW_TYPE = "XinaoIntegratedBusWorkflow"
 WORKFLOW_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 ALL_QUEUES = (
@@ -607,8 +607,8 @@ def _real_result_accepted(result: dict[str, Any]) -> bool:
         and result.get("grok_fanin_ok") is True
         and grok["execution_location"] == "docker:houtai-gongren"
         and grok["worker_lane_adapter"] == "grok_build_cli_docker_native"
-        and grok["requested_models"] == [COMPOSER_MODEL]
-        and grok["observed_models"] == [COMPOSER_MODEL]
+        and grok["requested_models"] == [GROK_MODEL]
+        and grok["observed_models"] == [GROK_MODEL]
         and grok["lane_count"] > 0
         and grok["successful_lanes"] == grok["lane_count"]
         and grok["total_tokens"] > 0
@@ -1090,7 +1090,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
             "grok_invocations": int(
                 ((fresh_payload.get("grok") or {}).get("successful_lanes") or 0)
             ),
-            "grok_model": COMPOSER_MODEL,
+            "grok_model": GROK_MODEL,
             "grok_total_tokens": int(((fresh_payload.get("grok") or {}).get("total_tokens") or 0)),
             "admin_invocations": 0,
             "visible_window": False,

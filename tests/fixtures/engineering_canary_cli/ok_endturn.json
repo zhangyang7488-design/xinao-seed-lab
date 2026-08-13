@@ -5,7 +5,7 @@
   "sessionId": "sess_canary_ok_001",
   "requestId": "req_canary_ok_001",
   "modelUsage": {
-    "grok-4.5-build": {
+    "grok-4.6-build": {
       "inputTokens": 12,
       "outputTokens": 4,
       "cacheReadInputTokens": 0,

@@ -54,7 +54,7 @@ def _write_routing_policy(runtime_root: Path, *models: str) -> None:
             "model_id": model,
             "transport_id": runner.CANONICAL_GROK_TRANSPORT,
         }
-        for index, model in enumerate(models or ("grok-4.5",))
+        for index, model in enumerate(models or ("grok-4.6",))
     ]
     path = runtime_root / "agent_runtime" / "routing_policy.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,11 +83,10 @@ def _identity(*, payload_sha256: str = "a" * 64) -> dict[str, object]:
 @pytest.mark.parametrize(
     ("model", "is_escalated"),
     [
-        ("grok-composer-2.5-fast", False),
-        ("grok-4.5", True),
+        ("grok-4.6", False),
     ],
 )
-def test_canonical_selected_adapter_preserves_explicit_supervisor_model(
+def test_canonical_selected_adapter_preserves_current_supervisor_model(
     tmp_path: Path,
     model: str,
     is_escalated: bool,
@@ -124,7 +123,7 @@ def test_canonical_selected_adapter_preserves_explicit_supervisor_model(
 def test_new_canonical_transaction_requires_supervisor_routing_before_effects(
     tmp_path: Path,
 ) -> None:
-    _write_routing_policy(tmp_path, "grok-4.5")
+    _write_routing_policy(tmp_path, "grok-4.6")
     raw = json.dumps(
         {
             "grok_ready_frontier": [
@@ -132,7 +131,7 @@ def test_new_canonical_transaction_requires_supervisor_routing_before_effects(
                     "lane_id": "missing-selection",
                     "prompt": "must be rejected before execution",
                     "cwd": str(tmp_path),
-                    "model": "grok-4.5",
+                    "model": "grok-4.6",
                 }
             ],
             "grok_serial_reason": "one negative selection-admission unit",
@@ -144,7 +143,7 @@ def test_new_canonical_transaction_requires_supervisor_routing_before_effects(
 
 
 def test_canonical_rejects_selected_model_that_differs_from_frontier(tmp_path: Path) -> None:
-    _write_routing_policy(tmp_path, "grok-4.5", "grok-composer-2.5-fast")
+    _write_routing_policy(tmp_path, "grok-4.6", "grok-retired-model")
     raw = json.dumps(
         {
             "grok_ready_frontier": [
@@ -152,11 +151,11 @@ def test_canonical_rejects_selected_model_that_differs_from_frontier(tmp_path: P
                     "lane_id": "model-mismatch",
                     "prompt": "must be rejected before execution",
                     "cwd": str(tmp_path),
-                    "model": "grok-4.5",
+                    "model": "grok-4.6",
                 }
             ],
             "grok_serial_reason": "one negative model-binding unit",
-            "supervisor_routing": _supervisor_routing("grok-composer-2.5-fast"),
+            "supervisor_routing": _supervisor_routing("grok-retired-model"),
         }
     ).encode("utf-8")
 
@@ -855,12 +854,12 @@ def test_mount_mismatch_rejects_before_temporal_worker_workflow_or_provider(
     )
 
     payload_path = tmp_path / "payload.json"
-    _write_routing_policy(tmp_path, "grok-4.5")
+    _write_routing_policy(tmp_path, "grok-4.6")
     payload_path.write_text(
         json.dumps(
             {
-                "grok_ready_frontier": [{"model": "grok-4.5"}],
-                "supervisor_routing": _supervisor_routing("grok-4.5"),
+                "grok_ready_frontier": [{"model": "grok-4.6"}],
+                "supervisor_routing": _supervisor_routing("grok-4.6"),
             }
         ),
         encoding="utf-8",
@@ -970,12 +969,12 @@ def test_run_reconnects_same_key_without_starting_a_second_execution(
     )
 
     payload_path = tmp_path / "payload.json"
-    _write_routing_policy(tmp_path, "grok-4.5")
+    _write_routing_policy(tmp_path, "grok-4.6")
     payload_path.write_text(
         json.dumps(
             {
-                "grok_ready_frontier": [{"model": "grok-4.5"}],
-                "supervisor_routing": _supervisor_routing("grok-4.5"),
+                "grok_ready_frontier": [{"model": "grok-4.6"}],
+                "supervisor_routing": _supervisor_routing("grok-4.6"),
             }
         ),
         encoding="utf-8",
@@ -1040,12 +1039,12 @@ def test_handshake_requires_unique_caller_nonce_before_start(
         lambda value, **kwargs: list(value or []),
     )
     payload_path = tmp_path / "payload.json"
-    _write_routing_policy(tmp_path, "grok-4.5")
+    _write_routing_policy(tmp_path, "grok-4.6")
     payload_path.write_text(
         json.dumps(
             {
-                "grok_ready_frontier": [{"model": "grok-4.5"}],
-                "supervisor_routing": _supervisor_routing("grok-4.5"),
+                "grok_ready_frontier": [{"model": "grok-4.6"}],
+                "supervisor_routing": _supervisor_routing("grok-4.6"),
             }
         ),
         encoding="utf-8",

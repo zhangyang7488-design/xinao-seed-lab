@@ -5,7 +5,7 @@
   "sessionId": "sess_mu_in_mismatch",
   "requestId": "req_mu_in_mismatch",
   "modelUsage": {
-    "grok-4.5-build": {
+    "grok-4.6-build": {
       "inputTokens": 999,
       "outputTokens": 4,
       "cacheReadInputTokens": 0,

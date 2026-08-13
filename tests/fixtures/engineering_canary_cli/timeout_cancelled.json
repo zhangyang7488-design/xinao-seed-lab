@@ -5,7 +5,7 @@
   "sessionId": "sess_timeout",
   "requestId": "req_timeout",
   "modelUsage": {
-    "grok-4.5-build": {
+    "grok-4.6-build": {
       "inputTokens": 5,
       "outputTokens": 0,
       "modelCalls": 1
