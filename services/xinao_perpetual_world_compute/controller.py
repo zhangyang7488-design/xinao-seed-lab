@@ -4442,6 +4442,87 @@ def _attempt_recovery_source_identity(
     }
 
 
+def _validate_prior_quarantined_attempt(
+    *,
+    config: Mapping[str, Any],
+    spec: Mapping[str, Any],
+    attempt_dir: Path,
+    turn_number: int,
+) -> None:
+    """Prove an earlier receiptless attempt was already quarantined in place."""
+
+    lineage_id = str(spec["lineage_id"])
+    match = re.fullmatch(r"attempt-(\d+)", attempt_dir.name)
+    if match is None:
+        raise PerpetualRuntimeError(f"RECOVERY_ATTEMPT_NAME_INVALID: {attempt_dir}")
+    attempt_number = int(match.group(1))
+    disposition_path = attempt_dir / "recovery_disposition.json"
+    if not disposition_path.is_file():
+        raise PerpetualRuntimeError(
+            f"RECOVERY_RECEIPT_AFTER_INCOMPLETE_ATTEMPT_AMBIGUOUS: {lineage_id}"
+        )
+    disposition = read_json_object(disposition_path)
+    stdout_path = attempt_dir / "exec_stdout.jsonl"
+    event_summary = (
+        _summarize_attempt_events(stdout_path)
+        if stdout_path.is_file()
+        else {"terminal_events": []}
+    )
+    message_path = attempt_dir / "last_message.txt"
+    lifecycle = (
+        parse_lifecycle_state(message_path.read_text(encoding="utf-8", errors="replace"))
+        if message_path.is_file()
+        else None
+    )
+    body_incidents = (
+        classify_body_incident_events(stdout_path, workspace=resolve_path(spec["workspace"]))
+        if stdout_path.is_file()
+        else []
+    )
+    source_identity = _attempt_recovery_source_identity(
+        attempt_dir,
+        event_summary=event_summary,
+        lifecycle=lifecycle,
+        body_incidents=body_incidents,
+    )
+    expected = {
+        "schema": ATTEMPT_RECOVERY_SCHEMA,
+        "run_id": config["run_id"],
+        "lineage_id": lineage_id,
+        "turn_number": turn_number,
+        "attempt_number": attempt_number,
+        "status": "QUARANTINED_IN_PLACE",
+        "observed_terminal_events": list(event_summary.get("terminal_events", [])),
+        "last_message_present": message_path.is_file(),
+        "lifecycle_state": lifecycle,
+        "source_identity": source_identity,
+        "body_incidents": body_incidents,
+        "evidence_required": _turn_requires_deep_evidence(
+            config, lineage_id=lineage_id, turn_number=turn_number
+        ),
+        "runtime_binding_required": _turn_requires_runtime_binding(
+            config, lineage_id=lineage_id, turn_number=turn_number
+        ),
+    }
+    if any(disposition.get(key) != value for key, value in expected.items()):
+        raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_SOURCE_DRIFT: {disposition_path}")
+    terminal_events = expected["observed_terminal_events"]
+    mechanically_complete = terminal_events == ["turn.completed"] and lifecycle is not None
+    reason = disposition.get("reason")
+    if body_incidents:
+        expected_reason = "BODY_INCIDENT_DETECTED_DURING_RECOVERY"
+        if reason != expected_reason:
+            raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_REASON_DRIFT: {disposition_path}")
+    elif not mechanically_complete and reason != "NO_UNAMBIGUOUS_COMPLETED_TURN_EVENT_AND_LIFECYCLE":
+        raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_REASON_DRIFT: {disposition_path}")
+    elif mechanically_complete and reason not in {
+        "REQUIRED_RUNTIME_BINDING_UNAVAILABLE_DURING_RECOVERY",
+        "REQUIRED_DEEP_EVIDENCE_UNAVAILABLE_DURING_RECOVERY",
+        "RECOVERY_TRAJECTORY_INDEX_UNAVAILABLE",
+    }:
+        raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_REASON_DRIFT: {disposition_path}")
+
+
 def _normalized_recovery_state_commits(
     *,
     config: Mapping[str, Any],
@@ -4860,9 +4941,12 @@ def reconcile_incomplete_attempts(
         latest_attempt = attempts[-1]
         incomplete = [attempt for attempt in attempts if not (attempt / "receipt.json").is_file()]
         if (latest_attempt / "receipt.json").is_file():
-            if incomplete:
-                raise PerpetualRuntimeError(
-                    f"RECOVERY_RECEIPT_AFTER_INCOMPLETE_ATTEMPT_AMBIGUOUS: {lineage_id}"
+            for prior_attempt in incomplete:
+                _validate_prior_quarantined_attempt(
+                    config=config,
+                    spec=spec,
+                    attempt_dir=prior_attempt,
+                    turn_number=turn_number,
                 )
             receipt_commits.append(
                 _commit_receipt_bearing_attempt_to_state(

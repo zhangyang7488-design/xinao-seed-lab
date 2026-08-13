@@ -1828,6 +1828,42 @@ def test_reconcile_failed_attempt_reuses_immutable_disposition(tmp_path: Path) -
     assert disposition_path.stat().st_mtime_ns == before_mtime
 
 
+def test_reconcile_commits_later_receipt_after_prior_attempt_was_quarantined(
+    tmp_path: Path,
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    first_attempt = (
+        controller.lineage_dir("world-01") / "turns" / "turn-000001" / "attempt-01"
+    )
+    first_attempt.mkdir(parents=True)
+    (first_attempt / "prompt.txt").write_text("research", encoding="utf-8")
+    (first_attempt / "exec_stderr.txt").write_text("runtime failed", encoding="utf-8")
+    (first_attempt / "exec_stdout.jsonl").write_text(
+        json.dumps({"type": "turn.failed"}) + "\n", encoding="utf-8"
+    )
+    config = {**controller.config, "branch_lineages": branches}
+    reconcile_incomplete_attempts(config, recovery_dir=controller.run_dir / "recovery" / "first")
+    disposition_path = first_attempt / "recovery_disposition.json"
+    disposition_before = disposition_path.read_bytes()
+
+    _write_uncommitted_receipt(
+        controller,
+        error_class="EVIDENCE_INCIDENT",
+        attempt_number=2,
+    )
+    result = reconcile_incomplete_attempts(
+        config,
+        recovery_dir=controller.run_dir / "recovery" / "second",
+    )
+
+    assert result["receipt_state_commits"][0]["attempt_number"] == 2
+    assert result["receipt_state_commits"][0]["disposition"] == "EVIDENCE_INCIDENT"
+    assert disposition_path.read_bytes() == disposition_before
+    state = json.loads(controller.lineage_state_path("world-01").read_text(encoding="utf-8"))
+    assert state["turns_completed"] == 0
+    assert state["status"] == "EVIDENCE_INCIDENT"
+
+
 def test_reconcile_new_evidence_required_turn_cannot_be_laundered_to_legacy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2040,8 +2076,14 @@ def _write_uncommitted_receipt(
     *,
     error_class: str | None,
     outside_denial: Path | None = None,
+    attempt_number: int = 1,
 ) -> Path:
-    attempt = controller.lineage_dir("world-01") / "turns" / "turn-000001" / "attempt-01"
+    attempt = (
+        controller.lineage_dir("world-01")
+        / "turns"
+        / "turn-000001"
+        / f"attempt-{attempt_number:02d}"
+    )
     attempt.mkdir(parents=True)
     prompt = attempt / "prompt.txt"
     stdout = attempt / "exec_stdout.jsonl"
@@ -2075,7 +2117,7 @@ def _write_uncommitted_receipt(
         "run_id": controller.config["run_id"],
         "lineage_id": "world-01",
         "turn_number": 1,
-        "attempt_number": 1,
+        "attempt_number": attempt_number,
         "exit_code": 0,
         "turn_status": "turn.completed",
         "session_id_observed": "session-1",
