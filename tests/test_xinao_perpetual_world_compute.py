@@ -37,8 +37,10 @@ from services.xinao_perpetual_world_compute.controller import (
     build_parser,
     build_root_fusion_prompt,
     build_trajectory_index,
+    canonical_json_bytes,
     capture_workspace_artifacts,
     classify_body_incident_events,
+    classify_failure,
     cleanroom_config_identity,
     create_world_isolated_launcher,
     exclusive_lock,
@@ -148,6 +150,23 @@ def test_atomic_write_does_not_hide_persistent_windows_replace_denial(
         controller_module.atomic_write_bytes(destination, b"new-state")
     assert destination.read_bytes() == b"prior-state"
     assert list(tmp_path.glob(".controller_state.json.*.tmp")) == []
+
+
+def test_provider_cyber_policy_refusal_is_blocked_not_a_hard_runtime_failure() -> None:
+    refusal = (
+        '{"type":"error","message":"This content was flagged for possible '
+        "cybersecurity risk. To get authorized for security work, join the Trusted "
+        'Access for Cyber program: https://chatgpt.com/cyber"}'
+    )
+
+    assert classify_failure(refusal, "") == "PROVIDER_POLICY_BLOCKED"
+    assert classify_failure("", "HTTP 403 Forbidden") == "HARD_RUNTIME_FAILURE"
+    assert (
+        classify_failure(
+            "A document says this content was flagged for possible cybersecurity risk", ""
+        )
+        == "UNKNOWN_RUNTIME_FAILURE"
+    )
 
 
 def make_test_controller(
@@ -2069,6 +2088,46 @@ def test_branch_loop_preserves_incident_class_while_parked(
     assert parked == [("world-01", error_class)]
 
 
+def test_branch_loop_parks_provider_policy_refusal_as_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    controller._lineage_states["world-01"]["session_id"] = "session-world-01"
+    parked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        controller,
+        "execute_turn",
+        lambda **_kwargs: {"outcome": "FAILED", "error_class": "PROVIDER_POLICY_BLOCKED"},
+    )
+
+    def fake_wait(lineage_id: str, status: str) -> bool:
+        parked.append((lineage_id, status))
+        controller._shutdown.set()
+        return False
+
+    monkeypatch.setattr(controller, "_wait_parked", fake_wait)
+    controller.branch_loop(branches[0])
+    assert parked == [("world-01", "PROVIDER_POLICY_BLOCKED")]
+
+
+@pytest.mark.parametrize(
+    "lineage_id,status",
+    (
+        ("world-01", "PROVIDER_POLICY_BLOCKED"),
+        ("root-main", "ROOT_PROVIDER_POLICY_BLOCKED"),
+    ),
+)
+def test_provider_policy_park_sets_blocked_lifecycle(
+    tmp_path: Path, lineage_id: str, status: str
+) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    controller._shutdown.set()
+
+    assert controller._wait_parked(lineage_id, status) is False
+    assert controller._lineage_states[lineage_id]["status"] == status
+    assert controller._lineage_states[lineage_id]["lifecycle_state"] == "BLOCKED"
+
+
 @pytest.mark.parametrize("error_class", ["BODY_INCIDENT", "EVIDENCE_INCIDENT"])
 def test_root_recovery_preserves_incident_class_while_parked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_class: str
@@ -2089,6 +2148,27 @@ def test_root_recovery_preserves_incident_class_while_parked(
     result = controller._execute_root_prompt_with_recovery("root-main", "fusion")
     assert result == {"outcome": "STOPPED"}
     assert parked == [("root-main", f"ROOT_{error_class}")]
+
+
+def test_root_recovery_parks_provider_policy_refusal_as_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    parked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        controller,
+        "execute_turn",
+        lambda **_kwargs: {"outcome": "FAILED", "error_class": "PROVIDER_POLICY_BLOCKED"},
+    )
+
+    def fake_wait(lineage_id: str, status: str) -> bool:
+        parked.append((lineage_id, status))
+        return False
+
+    monkeypatch.setattr(controller, "_wait_parked", fake_wait)
+    result = controller._execute_root_prompt_with_recovery("root-main", "fusion")
+    assert result == {"outcome": "STOPPED"}
+    assert parked == [("root-main", "ROOT_PROVIDER_POLICY_BLOCKED")]
 
 
 def test_lineage_runtime_accepts_descendant_commits_but_rejects_remotes(
@@ -2840,6 +2920,252 @@ def test_legacy_true_outside_body_seal_remains_parked(tmp_path: Path) -> None:
     assert state["status"] == "BODY_INCIDENT"
     assert review["decision"] == "KEEP_BODY_INCIDENT"
     assert review["reviewed_body_incident_count"] == 1
+
+
+def _write_legacy_sealed_provider_policy_receipt(
+    controller: PerpetualController,
+    branches: list[dict[str, str]],
+    *,
+    source_failure_class: str = "HARD_RUNTIME_FAILURE",
+) -> tuple[dict[str, object], Path, Path, Path]:
+    attempt = _write_uncommitted_receipt(
+        controller,
+        error_class="HARD_RUNTIME_FAILURE",
+    )
+    refusal = (
+        "HTTP 403 Forbidden. This content was flagged for possible cybersecurity risk. "
+        "To get authorized for security work, join the Trusted Access for Cyber program: "
+        "https://chatgpt.com/cyber"
+    )
+    stdout_path = attempt / "exec_stdout.jsonl"
+    stdout_path.write_text(
+        json.dumps({"type": "turn.failed", "error": {"message": refusal}}) + "\n",
+        encoding="utf-8",
+    )
+    receipt_path = attempt / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt.update(
+        {
+            "exit_code": 1,
+            "turn_status": "turn.failed",
+            "stdout_sha256": sha256_file(stdout_path),
+        }
+    )
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    release = controller.run_dir / "legacy_failure_controller_release.py"
+    release.write_text(
+        "def classify_body_incident_events(stdout_path, *, workspace):\n"
+        "    del stdout_path, workspace\n"
+        "    return []\n\n"
+        "def classify_failure(stdout_tail, stderr_tail):\n"
+        "    del stdout_tail, stderr_tail\n"
+        f"    return {source_failure_class!r}\n",
+        encoding="utf-8",
+    )
+    config: dict[str, object] = {
+        **controller.config,
+        "branch_lineages": branches,
+        "controller_release_path": str(release),
+        "controller_release_sha256": sha256_file(release),
+    }
+    receipt_sha256 = sha256_file(receipt_path)
+    seal = {
+        "schema": "xinao.cleanroom.world-compute-recovery-state-commit.v1",
+        "run_id": controller.config["run_id"],
+        "lineage_id": "world-01",
+        "turn_number": 1,
+        "attempt_number": 1,
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": receipt_sha256,
+        "disposition": "RUNTIME_PAUSED",
+    }
+    state_path = controller.lineage_state_path("world-01")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "status": "RUNTIME_PAUSED",
+            "lifecycle_state": "CONTINUE",
+            "last_error_class": "HARD_RUNTIME_FAILURE",
+            "last_error": "RECEIPT_COMMITTED_FAILURE_REQUIRES_OPERATOR_WAKE",
+            "recovery_state_commits": [seal],
+            "recovery_state_commit_receipt_path": str(receipt_path),
+            "recovery_state_commit_receipt_sha256": receipt_sha256,
+            "recovery_state_commit_disposition": "RUNTIME_PAUSED",
+            "recovery_state_commit_turn_number": 1,
+            "recovery_state_commit_attempt_number": 1,
+        }
+    )
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    return config, attempt, state_path, release
+
+
+def test_legacy_provider_policy_failure_is_append_only_blocked_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    config, attempt, state_path, legacy_release = _write_legacy_sealed_provider_policy_receipt(
+        controller, branches
+    )
+    receipt_path = attempt / "receipt.json"
+    receipt_before = receipt_path.read_bytes()
+    original_seal = json.loads(state_path.read_text(encoding="utf-8"))["recovery_state_commits"][0]
+
+    first = reconcile_incomplete_attempts(
+        config,
+        recovery_dir=controller.run_dir / "recovery" / "provider-policy-first",
+    )
+    state_after_first = state_path.read_bytes()
+    review_path = attempt / "failure_classification_review.json"
+    review_after_first = review_path.read_bytes()
+    current_controller = Path(
+        __import__(
+            "services.xinao_perpetual_world_compute.controller",
+            fromlist=["__file__"],
+        ).__file__
+    )
+    adopted_release = controller.run_dir / "controller_releases" / "recovery-current.py"
+    adopted_release.parent.mkdir()
+    adopted_release.write_bytes(current_controller.read_bytes())
+    adopted_config = {
+        **config,
+        "controller_release_path": str(adopted_release),
+        "controller_release_sha256": sha256_file(adopted_release),
+        "controller_release_history": [
+            {
+                "path": str(legacy_release),
+                "sha256": config["controller_release_sha256"],
+            },
+            {
+                "path": str(adopted_release),
+                "sha256": sha256_file(adopted_release),
+            },
+        ],
+    }
+    second = reconcile_incomplete_attempts(
+        adopted_config,
+        recovery_dir=controller.run_dir / "recovery" / "provider-policy-second",
+    )
+
+    state = json.loads(state_after_first)
+    review = json.loads(review_after_first)
+    assert first["receipt_state_commits"][0]["disposition"] == "PROVIDER_POLICY_BLOCKED"
+    assert first["receipt_state_commits"][0]["sealed_disposition"] == "RUNTIME_PAUSED"
+    assert second["receipt_state_commits"][0]["reused"] is True
+    assert second["receipt_state_commits"][0]["failure_classification_review_reused"] is True
+    assert state_path.read_bytes() == state_after_first
+    assert review_path.read_bytes() == review_after_first
+    assert receipt_path.read_bytes() == receipt_before
+    assert state["recovery_state_commits"] == [original_seal]
+    assert state["turns_completed"] == 0
+    assert state["status"] == "PROVIDER_POLICY_BLOCKED"
+    assert state["lifecycle_state"] == "BLOCKED"
+    assert state["last_error_class"] == "PROVIDER_POLICY_BLOCKED"
+    assert state["failure_classification_reviews"][0]["decision"] == (
+        "KEEP_FAILED_ATTEMPT_PROVIDER_POLICY_BLOCKED"
+    )
+    assert review["automatic_retry_allowed"] is False
+    assert review["old_attempt_never_promoted_to_success_or_fusion"] is True
+    assert not (attempt / "body_incident.json").exists()
+    assert sorted(path.name for path in attempt.parent.glob("attempt-*")) == ["attempt-01"]
+
+
+def test_provider_policy_reclassification_refuses_frozen_source_class_mismatch(
+    tmp_path: Path,
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    config, attempt, state_path, _ = _write_legacy_sealed_provider_policy_receipt(
+        controller,
+        branches,
+        source_failure_class="UNKNOWN_RUNTIME_FAILURE",
+    )
+    state_before = state_path.read_bytes()
+
+    with pytest.raises(
+        PerpetualRuntimeError,
+        match="RECOVERY_TURN_RECEIPT_FAILURE_CLASS_MISMATCH",
+    ):
+        reconcile_incomplete_attempts(
+            config,
+            recovery_dir=controller.run_dir / "recovery" / "provider-policy-mismatch",
+        )
+
+    assert state_path.read_bytes() == state_before
+    assert not (attempt / "failure_classification_review.json").exists()
+
+
+def test_provider_policy_review_refuses_known_release_that_does_not_reclassify(
+    tmp_path: Path,
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    config, attempt, state_path, _ = _write_legacy_sealed_provider_policy_receipt(
+        controller,
+        branches,
+    )
+    reconcile_incomplete_attempts(
+        config,
+        recovery_dir=controller.run_dir / "recovery" / "provider-policy-valid",
+    )
+    state_before = state_path.read_bytes()
+    review_path = attempt / "failure_classification_review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["reviewing_controller_sha256"] = config["controller_release_sha256"]
+    review.pop("review_sha256")
+    review["review_sha256"] = sha256_bytes(canonical_json_bytes(review))
+    review_path.write_bytes(canonical_json_bytes(review))
+
+    with pytest.raises(
+        PerpetualRuntimeError,
+        match="FAILURE_CLASSIFICATION_REVIEW_RELEASE_CLASS_DRIFT",
+    ):
+        reconcile_incomplete_attempts(
+            config,
+            recovery_dir=controller.run_dir / "recovery" / "provider-policy-forged",
+        )
+
+    assert state_path.read_bytes() == state_before
+
+
+def test_already_provider_policy_receipt_recovers_as_blocked_not_runtime_paused(
+    tmp_path: Path,
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    attempt = _write_uncommitted_receipt(
+        controller,
+        error_class="PROVIDER_POLICY_BLOCKED",
+    )
+    refusal = (
+        "This content was flagged for possible cybersecurity risk. To get authorized "
+        "for security work, join the Trusted Access for Cyber program."
+    )
+    stdout_path = attempt / "exec_stdout.jsonl"
+    stdout_path.write_text(
+        json.dumps({"type": "turn.failed", "error": {"message": refusal}}) + "\n",
+        encoding="utf-8",
+    )
+    receipt_path = attempt / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt.update(
+        {
+            "exit_code": 1,
+            "turn_status": "turn.failed",
+            "stdout_sha256": sha256_file(stdout_path),
+        }
+    )
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    result = reconcile_incomplete_attempts(
+        {**controller.config, "branch_lineages": branches},
+        recovery_dir=controller.run_dir / "recovery" / "provider-policy-direct",
+    )
+
+    state = json.loads(controller.lineage_state_path("world-01").read_text(encoding="utf-8"))
+    assert result["receipt_state_commits"][0]["disposition"] == "PROVIDER_POLICY_BLOCKED"
+    assert result["receipt_state_commits"][0]["sealed_disposition"] == ("PROVIDER_POLICY_BLOCKED")
+    assert state["status"] == "PROVIDER_POLICY_BLOCKED"
+    assert state["lifecycle_state"] == "BLOCKED"
+    assert state["turns_completed"] == 0
+    assert not (attempt / "failure_classification_review.json").exists()
 
 
 @pytest.mark.parametrize("drift", ["release", "receipt"])

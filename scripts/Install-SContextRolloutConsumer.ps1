@@ -24,6 +24,7 @@ $expectedPresentationRuntimeRootHashes = @(
     'afc8ff4d120f1968ad1fbaf4bb096435eba32561859786ee859a5d284c3782aa',
     '247ddd4bc4925aa2786b84b1495d657f23194b59e013058d8c0e84d200815691',
     'f1e7525ba72d661a66ef07895cfd662f9473a7c8f1f8bfb8b53b38ec99fed0b1',
+    '5edffee57ec0692972583b8116c4dc7fc19a56d05af04175f1fc410c3f9352f6',
     '5ed766c971420da10a2b8b4a30d4b13c1954a2fc4930fc2a53ca05677a59c281',
     'b469bf51ee586a5c3ab9aa595288f3d505f39a4870d7a0f4e3a899ad504006a3',
     '91f853881f3bfcfbf1b165f0e679b14a7a49d6b6fc9200c5c93e283db533b39f',
@@ -31,13 +32,13 @@ $expectedPresentationRuntimeRootHashes = @(
 )
 $officialPythonSha256 = 'ef8f51028ac5329641985112f8efb1c2d4c47c86b8011ddf7e6fae21e2b4e5a1'
 $officialPythonwSha256 = '95225ed035643523e8c586c11981e276541dce4949eb35cf8cf5741c824249d4'
-$expectedBundleLockSha256 = 'd39e0828fe172e1338604a66b1e9b80a074401887a599977627e839efed46a59'
-$expectedBundleContentId = 'ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80'
+$expectedBundleLockSha256 = '37c5a974127fc0d5ac1a3043311633f050ca24877a6dea412f7460bb84eda1b5'
+$expectedBundleContentId = 'f117fe78c0772a6a1a6c451451f23c154340004b9df74775ac414fbc1729a664'
 $expectedBundleFileCount = 1337
-$managedUpgradeSourceContentId = 'ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e'
-$managedUpgradeSourceManifestSha256 = 'ae9d1041929a0e6f24f06c1afe6203dc3b1579ad3de457c90c23d8dcce9b983e'
-$managedUpgradeSourceFileCount = 1336
-$managedUpgradeSourceNormalizedXmlSha256 = '88387e861731f7277ad20d004781ce5c7f02d591bef32dd9d3e87cdd7526c101'
+$managedUpgradeSourceContentId = 'ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80'
+$managedUpgradeSourceManifestSha256 = '0bd81900d25ff27c1978b130ee39a0586ad926d8b3574bdee33370d333da1d81'
+$managedUpgradeSourceFileCount = 1337
+$managedUpgradeSourceNormalizedXmlSha256 = 'c1f5bcebc3d35abdf93d612cdcc0dfb273a19b7bf3033970d891720d93c669dd'
 $mutationMutexName = 'Global\XINAO.S.ContextRolloutConsumer.Mutation.v1'
 $bundleLockSchema = 's.context_rollout_consumer.bundle_lock.v1'
 $requiredLockedFilePaths = @(
@@ -54,19 +55,11 @@ $requiredLockedFilePaths = @(
     'app/services/agent_runtime/presentation_delivery.py'
     'app/services/agent_runtime/presentation_lock.py'
 )
-$managedUpgradeSourceRequiredPaths = @(
-    'python/python.exe',
-    'python/pythonw.exe',
-    'app/scripts/context_rollout_consumer.py',
-    'app/services/__init__.py',
-    'app/services/agent_runtime/__init__.py',
-    'app/services/agent_runtime/context_fabric.py',
-    'app/services/agent_runtime/context_runtime_completion.py'
-)
+$managedUpgradeSourceRequiredPaths = @($requiredLockedFilePaths)
 $directLockedFileHashes = [ordered]@{
     'python/python.exe' = $officialPythonSha256
     'python/pythonw.exe' = $officialPythonwSha256
-    'app/scripts/context_rollout_consumer.py' = '786aa0cc3380cd11b693bc565bcf00de6a44e7fc2f99318307ea734d05f893dd'
+    'app/scripts/context_rollout_consumer.py' = '861e870ede5f6743a6c13b2c682edb346e3d9a0ff2089f56b4513dbeec8e8eb4'
     'app/scripts/Invoke-SPresentationDelivery.ps1' = '11137a2faacd8af55320aebdd7f2d08d01e5a20cd213a6a3615b6302f9016e21'
 }
 $bundleBoundary = [Environment]::ExpandEnvironmentVariables('%LOCALAPPDATA%')
@@ -556,7 +549,7 @@ function Get-SourceBundlePlan {
         ) -or
         -not [string]::Equals(
             [string]$bundleLock.source_identity.release,
-            '2026-08-13',
+            '2026-08-14',
             [System.StringComparison]::Ordinal
         ) -or
         -not [string]::Equals(
@@ -1661,7 +1654,7 @@ function Get-ConsumerTaskAudit {
                 ) -or
                 [string]$presentationReceipt.status -notin @('completed', 'completed_with_errors') -or
                 $presentationReceipt.runtime_roots -isnot [System.Array] -or
-                @($presentationReceipt.runtime_roots).Count -ne 8 -or
+                @($presentationReceipt.runtime_roots).Count -ne 9 -or
                 $presentationReceipt.counts -isnot [System.Management.Automation.PSCustomObject] -or
                 -not [string]::Equals(
                     [string]$presentationReceipt.visible_emitter,

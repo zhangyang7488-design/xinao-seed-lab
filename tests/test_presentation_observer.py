@@ -208,6 +208,30 @@ def test_incident_and_blocked_are_mechanically_classified_from_typed_fields(
     )
 
 
+def test_provider_policy_boundary_is_blocked_not_runtime_incident(tmp_path: Path) -> None:
+    controller_path = tmp_path / "controller_state.json"
+    _write_json(
+        controller_path,
+        _controller_payload(
+            lineages={
+                "world-05": {
+                    "status": "PROVIDER_POLICY_BLOCKED",
+                    "lifecycle_state": "BLOCKED",
+                    "last_error_class": "PROVIDER_POLICY_BLOCKED",
+                    "turns_completed": 9,
+                }
+            }
+        ),
+    )
+
+    result = observe_runtime_states(
+        [_controller_source(controller_path)],
+        cursor_path=tmp_path / "cursor.json",
+    )
+
+    assert result.transitions[0].category == CATEGORY_BLOCKED
+
+
 def test_updated_at_only_heartbeat_is_routine_and_overwrites_no_visible_delta(
     tmp_path: Path,
 ) -> None:

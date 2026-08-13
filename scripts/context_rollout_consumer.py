@@ -76,17 +76,26 @@ ROLLOUT_LOCAL_TIMEZONE = timezone(timedelta(hours=8))
 LOCATOR_PAYLOAD_TOLERANCE = timedelta(seconds=5)
 FUTURE_CLOCK_TOLERANCE = timedelta(seconds=5)
 PRODUCTION_CONTEXT_FABRIC_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric")
-PRODUCTION_PRESENTATION_RUNTIME_ROOTS = (
+PRODUCTION_PRESENTATION_A_RUNTIME_ROOTS = (
     Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale_20260813"),
     Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale2_20260813"),
     Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale3_20260813"),
     Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale4_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_concurrent_20260814"),
+)
+PRODUCTION_PRESENTATION_C_RUNTIME_ROOTS = (
     Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale_20260813"),
     Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale2_20260813"),
     Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale3_20260813"),
     Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale4_20260813"),
 )
-PRODUCTION_PRESENTATION_NOTIFICATION_ADAPTER = REPO_ROOT / "scripts" / "Invoke-SPresentationDelivery.ps1"
+PRODUCTION_PRESENTATION_RUNTIME_ROOTS = (
+    *PRODUCTION_PRESENTATION_A_RUNTIME_ROOTS,
+    *PRODUCTION_PRESENTATION_C_RUNTIME_ROOTS,
+)
+PRODUCTION_PRESENTATION_NOTIFICATION_ADAPTER = (
+    REPO_ROOT / "scripts" / "Invoke-SPresentationDelivery.ps1"
+)
 PRODUCTION_PRESENTATION_NOTIFICATION_RECEIPT_ROOT = (
     PRODUCTION_CONTEXT_FABRIC_ROOT / CONSUMER_DIR_NAME / "presentation_delivery_receipts"
 )
@@ -105,9 +114,13 @@ _POINTER_TO_CONTROLLER_SCHEMA = {
 _PRODUCTION_PRESENTATION_ROOT_CONTRACTS = {
     os.path.normcase(str(runtime_root)): {
         "pointer_schema": "xinao.cleanroom.perpetual-world-compute-run.v2",
-        "account_slot": "A" if index < 4 else "C",
+        "account_slot": account_slot,
     }
-    for index, runtime_root in enumerate(PRODUCTION_PRESENTATION_RUNTIME_ROOTS)
+    for account_slot, runtime_roots in (
+        ("A", PRODUCTION_PRESENTATION_A_RUNTIME_ROOTS),
+        ("C", PRODUCTION_PRESENTATION_C_RUNTIME_ROOTS),
+    )
+    for runtime_root in runtime_roots
 }
 _MAX_PRESENTATION_POINTER_BYTES = 1024 * 1024
 

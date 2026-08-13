@@ -36,6 +36,7 @@ from services.agent_runtime.current_situation import (
     validate_snapshot,
 )
 from services.agent_runtime.runtime_observation import collect_runtime_observation
+from services.agent_runtime.taste_live_retrieval import render_qualified_taste_context
 
 DEFAULT_CURRENT_SITUATION_ROOT = Path(
     os.environ.get(
@@ -432,7 +433,11 @@ def handle_hook_event(
     if event_name == "UserPromptSubmit":
         diachronic_cognition = render_diachronic_cognition_context()
         action_binding = render_action_binding_context()
-        hot_context = _bounded_join((L0_CONTEXT, diachronic_cognition, action_binding))
+        try:
+            taste = render_qualified_taste_context(str(event.get("prompt") or ""))
+        except Exception:
+            taste = ""
+        hot_context = _bounded_join((L0_CONTEXT, diachronic_cognition, action_binding, taste))
         fabric = _fabric_context(
             event,
             enabled=context_fabric_enabled,
@@ -517,5 +522,6 @@ __all__ = [
     "render_action_binding_context",
     "render_diachronic_cognition_context",
     "render_runtime_context",
+    "render_qualified_taste_context",
     "session_store_path",
 ]

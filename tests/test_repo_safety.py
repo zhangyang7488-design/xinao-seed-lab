@@ -83,6 +83,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "taste_qualification.py",
     "taste_corpus.py",
     "taste_codex_shadow.py",
+    "taste_live_retrieval.py",
     "taste_shadow_runner.py",
     "thin_bootstrap_sandbox.py",
     "thin_evidence_writer.py",
@@ -785,9 +786,7 @@ def test_live_grok_script_calls_use_46_and_model_neutral_worker_when_installed()
 
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
     grok_routes = [
-        route
-        for route in policy["routes"]
-        if route.get("provider_id") == "grok_acpx_headless"
+        route for route in policy["routes"] if route.get("provider_id") == "grok_acpx_headless"
     ]
     assert grok_routes
     assert {route["model_id"] for route in grok_routes} == {"grok-4.6"}

@@ -35,6 +35,7 @@ DEEP_EVIDENCE_TRAJECTORY_INDEX_SCHEMA = "xinao.cleanroom.world-compute-trajector
 DEEP_EVIDENCE_ARTIFACT_MANIFEST_SCHEMA = "xinao.cleanroom.world-compute-artifact-manifest.v1"
 BODY_INCIDENT_SCHEMA = "xinao.cleanroom.world-compute-body-incident.v1"
 BODY_CLASSIFICATION_REVIEW_SCHEMA = "xinao.cleanroom.body-classification-review.v1"
+FAILURE_CLASSIFICATION_REVIEW_SCHEMA = "xinao.cleanroom.failure-classification-review.v1"
 WORLD_ISOLATED_LAUNCHER_SCHEMA = "xinao.cleanroom.world-isolated-launcher.v1"
 WORLD_RUNTIME_BINDING_SCHEMA = "xinao.cleanroom.world-runtime-binding.v1"
 WORLD_RUNTIME_BINDING_APPLIED_SCHEMA = "xinao.cleanroom.world-runtime-binding-applied.v1"
@@ -80,6 +81,26 @@ DEFAULT_POWERSHELL = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershel
 DEFAULT_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute")
 LEGACY_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c")
 DEDICATED_A_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a")
+FRESH_A_CONCURRENT_RUNTIME_ROOT = Path(
+    r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_concurrent_20260814"
+)
+PRESENTATION_RUNTIME_ROOTS = (
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale2_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale3_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale4_20260813"),
+    FRESH_A_CONCURRENT_RUNTIME_ROOT,
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale2_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale3_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale4_20260813"),
+)
+CONTEXT_CONSUMER_ALLOWED_RUNTIME_ROOTS = (
+    DEFAULT_RUNTIME_ROOT,
+    LEGACY_RUNTIME_ROOT,
+    DEDICATED_A_RUNTIME_ROOT,
+    *PRESENTATION_RUNTIME_ROOTS,
+)
 DEFAULT_CLONE_ROOT = Path(r"E:\CODEX_CLEANROOM\research-lineages")
 DEFAULT_MODEL = "gpt-5.6-sol"
 DEFAULT_REASONING_EFFORT = "max"
@@ -122,7 +143,7 @@ def request_context_consumer_wake(
             for value in (
                 allowed_runtime_roots
                 if allowed_runtime_roots is not None
-                else (DEFAULT_RUNTIME_ROOT, LEGACY_RUNTIME_ROOT, DEDICATED_A_RUNTIME_ROOT)
+                else CONTEXT_CONSUMER_ALLOWED_RUNTIME_ROOTS
             )
         )
         if state_path.name != "controller_state.json" or not any(
@@ -189,6 +210,10 @@ _HARD_ERROR_TOKENS = (
     "invalid api key",
     "insufficient quota",
     "usage limit",
+)
+_PROVIDER_POLICY_BLOCK_TOKENS = (
+    "this content was flagged for possible cybersecurity risk",
+    "to get authorized for security work",
 )
 
 _DEEP_EVIDENCE_FORBIDDEN_PARTS = {
@@ -1694,6 +1719,8 @@ def parse_event_line(raw_line: bytes | str) -> dict[str, Any] | None:
 
 def classify_failure(stdout_tail: str, stderr_tail: str) -> str:
     combined = f"{stdout_tail}\n{stderr_tail}".lower()
+    if all(token in combined for token in _PROVIDER_POLICY_BLOCK_TOKENS):
+        return "PROVIDER_POLICY_BLOCKED"
     if any(token in combined for token in _HARD_ERROR_TOKENS):
         return "HARD_RUNTIME_FAILURE"
     if any(token in combined for token in _TRANSIENT_ERROR_TOKENS):
@@ -1913,6 +1940,54 @@ def _load_controller_release_classifier(
     if not callable(classifier):
         raise PerpetualRuntimeError("RECOVERY_CONTROLLER_RELEASE_CLASSIFIER_MISSING")
     return normalized, classifier
+
+
+def _load_controller_release_failure_classifier(
+    config: Mapping[str, Any], reference: Mapping[str, Any]
+) -> tuple[dict[str, str], Callable[[str, str], str]]:
+    normalized = _validate_controller_release_reference(config, reference)
+    cache_key = (normalized["path"], normalized["sha256"])
+    module = _CONTROLLER_RELEASE_CLASSIFIER_CACHE.get(cache_key)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(
+            f"xinao_frozen_controller_classifier_{normalized['sha256']}",
+            normalized["path"],
+        )
+        if spec is None or spec.loader is None:
+            raise PerpetualRuntimeError("RECOVERY_CONTROLLER_RELEASE_IMPORT_FAILED")
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except Exception as exc:
+            raise PerpetualRuntimeError("RECOVERY_CONTROLLER_RELEASE_IMPORT_FAILED") from exc
+        _CONTROLLER_RELEASE_CLASSIFIER_CACHE[cache_key] = module
+    classifier = getattr(module, "classify_failure", None)
+    if not callable(classifier):
+        raise PerpetualRuntimeError("RECOVERY_CONTROLLER_RELEASE_FAILURE_CLASSIFIER_MISSING")
+    return normalized, classifier
+
+
+def _load_reviewing_failure_classifier(
+    config: Mapping[str, Any], reviewing_sha256: object
+) -> Callable[[str, str], str]:
+    if (
+        not isinstance(reviewing_sha256, str)
+        or re.fullmatch(r"[0-9a-fA-F]{64}", reviewing_sha256) is None
+    ):
+        raise PerpetualRuntimeError("FAILURE_CLASSIFICATION_REVIEW_RELEASE_UNKNOWN")
+    digest = reviewing_sha256.casefold()
+    current_source = Path(__file__).resolve()
+    if sha256_file(current_source).casefold() == digest:
+        return classify_failure
+    matches = [
+        reference
+        for reference in _known_controller_release_references(config)
+        if reference["sha256"] == digest
+    ]
+    if not matches:
+        raise PerpetualRuntimeError("FAILURE_CLASSIFICATION_REVIEW_RELEASE_UNKNOWN")
+    _, classifier = _load_controller_release_failure_classifier(config, matches[0])
+    return classifier
 
 
 def build_codex_arguments(
@@ -2671,7 +2746,10 @@ class PerpetualController:
 
     def _wait_parked(self, lineage_id: str, status: str) -> bool:
         wake_path = self._wake_path(lineage_id)
-        self.publish_lineage_state(lineage_id, status=status, active_pid=None)
+        parked_state: dict[str, Any] = {"status": status, "active_pid": None}
+        if status in {"PROVIDER_POLICY_BLOCKED", "ROOT_PROVIDER_POLICY_BLOCKED"}:
+            parked_state["lifecycle_state"] = "BLOCKED"
+        self.publish_lineage_state(lineage_id, **parked_state)
         while not self.stopped():
             if wake_path.exists():
                 consumed = (
@@ -3204,9 +3282,13 @@ class PerpetualController:
                 if result["outcome"] == "FAILED":
                     error_class = str(result.get("error_class", ""))
                     parked_status = (
-                        error_class
-                        if error_class in {"BODY_INCIDENT", "EVIDENCE_INCIDENT"}
-                        else "RUNTIME_PAUSED"
+                        "PROVIDER_POLICY_BLOCKED"
+                        if error_class == "PROVIDER_POLICY_BLOCKED"
+                        else (
+                            error_class
+                            if error_class in {"BODY_INCIDENT", "EVIDENCE_INCIDENT"}
+                            else "RUNTIME_PAUSED"
+                        )
                     )
                     if not self._wait_parked(lineage_id, parked_status):
                         break
@@ -3524,9 +3606,13 @@ class PerpetualController:
                 return result
             error_class = str(result.get("error_class", ""))
             parked_status = (
-                f"ROOT_{error_class}"
-                if error_class in {"BODY_INCIDENT", "EVIDENCE_INCIDENT"}
-                else "ROOT_RUNTIME_PAUSED"
+                "ROOT_PROVIDER_POLICY_BLOCKED"
+                if error_class == "PROVIDER_POLICY_BLOCKED"
+                else (
+                    f"ROOT_{error_class}"
+                    if error_class in {"BODY_INCIDENT", "EVIDENCE_INCIDENT"}
+                    else "ROOT_RUNTIME_PAUSED"
+                )
             )
             if not self._wait_parked(lineage_id, parked_status):
                 return {"outcome": "STOPPED"}
@@ -5266,6 +5352,195 @@ def _apply_body_classification_review_to_state(
     return changed
 
 
+def _read_failure_classification_review(
+    *,
+    config: Mapping[str, Any],
+    spec: Mapping[str, Any],
+    attempt_dir: Path,
+    receipt_path: Path,
+    receipt_sha256: str,
+) -> dict[str, Any] | None:
+    review_path = attempt_dir / "failure_classification_review.json"
+    if not review_path.is_file():
+        return None
+    raw = review_path.read_bytes()
+    review = read_json_object(review_path)
+    if raw != canonical_json_bytes(review):
+        raise PerpetualRuntimeError(f"FAILURE_CLASSIFICATION_REVIEW_BYTES_INVALID: {review_path}")
+    seal = review.get("review_sha256")
+    unsigned = dict(review)
+    unsigned.pop("review_sha256", None)
+    if not isinstance(seal, str) or sha256_bytes(canonical_json_bytes(unsigned)) != seal:
+        raise PerpetualRuntimeError(f"FAILURE_CLASSIFICATION_REVIEW_SEAL_INVALID: {review_path}")
+    root_lineage = config.get("root_lineage")
+    root_lineage_id = root_lineage.get("lineage_id") if isinstance(root_lineage, Mapping) else None
+    projected_status = (
+        "ROOT_PROVIDER_POLICY_BLOCKED"
+        if spec.get("lineage_id") == root_lineage_id
+        else "PROVIDER_POLICY_BLOCKED"
+    )
+    if (
+        review.get("schema") != FAILURE_CLASSIFICATION_REVIEW_SCHEMA
+        or review.get("receipt_path") != str(receipt_path)
+        or review.get("receipt_sha256") != receipt_sha256
+        or review.get("source_failure_class")
+        not in {
+            "HARD_RUNTIME_FAILURE",
+            "UNKNOWN_RUNTIME_FAILURE",
+        }
+        or review.get("reviewed_failure_class") != "PROVIDER_POLICY_BLOCKED"
+        or review.get("projected_status") != projected_status
+        or review.get("decision") != "KEEP_FAILED_ATTEMPT_PROVIDER_POLICY_BLOCKED"
+        or review.get("old_attempt_never_promoted_to_success_or_fusion") is not True
+        or review.get("automatic_retry_allowed") is not False
+        or review.get("original_receipt_and_state_seal_preserved") is not True
+    ):
+        raise PerpetualRuntimeError(
+            f"FAILURE_CLASSIFICATION_REVIEW_IDENTITY_INVALID: {review_path}"
+        )
+    source_release = review.get("source_controller_release")
+    if not isinstance(source_release, Mapping):
+        raise PerpetualRuntimeError(f"FAILURE_CLASSIFICATION_REVIEW_SOURCE_INVALID: {review_path}")
+    _validate_controller_release_reference(config, source_release)
+    for name, expected in (
+        ("exec_stdout.jsonl", review.get("stdout_sha256")),
+        ("exec_stderr.txt", review.get("stderr_sha256")),
+    ):
+        path = attempt_dir / name
+        if not isinstance(expected, str) or not path.is_file() or sha256_file(path) != expected:
+            raise PerpetualRuntimeError(f"FAILURE_CLASSIFICATION_REVIEW_SOURCE_DRIFT: {path}")
+    reviewing_classifier = _load_reviewing_failure_classifier(
+        config, review.get("reviewing_controller_sha256")
+    )
+    if (
+        reviewing_classifier(
+            safe_tail(attempt_dir / "exec_stdout.jsonl"),
+            safe_tail(attempt_dir / "exec_stderr.txt"),
+        )
+        != "PROVIDER_POLICY_BLOCKED"
+    ):
+        raise PerpetualRuntimeError(
+            f"FAILURE_CLASSIFICATION_REVIEW_RELEASE_CLASS_DRIFT: {review_path}"
+        )
+    return review
+
+
+def _failure_reclassification_candidate(
+    *,
+    config: Mapping[str, Any],
+    spec: Mapping[str, Any],
+    attempt_dir: Path,
+    receipt_path: Path,
+    receipt: Mapping[str, Any],
+    receipt_sha256: str,
+    source_release: Mapping[str, str],
+    source_failure_class: str,
+) -> dict[str, Any] | None:
+    stdout_path = attempt_dir / "exec_stdout.jsonl"
+    stderr_path = attempt_dir / "exec_stderr.txt"
+    current_failure_class = classify_failure(safe_tail(stdout_path), safe_tail(stderr_path))
+    if current_failure_class != "PROVIDER_POLICY_BLOCKED":
+        return None
+    root_lineage = config.get("root_lineage")
+    root_lineage_id = root_lineage.get("lineage_id") if isinstance(root_lineage, Mapping) else None
+    return {
+        "schema": FAILURE_CLASSIFICATION_REVIEW_SCHEMA,
+        "run_id": config["run_id"],
+        "lineage_id": spec["lineage_id"],
+        "turn_number": int(receipt["turn_number"]),
+        "attempt_number": int(receipt["attempt_number"]),
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": receipt_sha256,
+        "stdout_sha256": sha256_file(stdout_path),
+        "stderr_sha256": sha256_file(stderr_path),
+        "source_controller_release": dict(source_release),
+        "source_failure_class": source_failure_class,
+        "reviewing_controller_sha256": sha256_file(Path(__file__).resolve()).casefold(),
+        "reviewed_failure_class": current_failure_class,
+        "projected_status": (
+            "ROOT_PROVIDER_POLICY_BLOCKED"
+            if spec.get("lineage_id") == root_lineage_id
+            else "PROVIDER_POLICY_BLOCKED"
+        ),
+        "decision": "KEEP_FAILED_ATTEMPT_PROVIDER_POLICY_BLOCKED",
+        "original_receipt_and_state_seal_preserved": True,
+        "old_attempt_never_promoted_to_success_or_fusion": True,
+        "automatic_retry_allowed": False,
+    }
+
+
+def _ensure_failure_classification_review(
+    *, attempt_dir: Path, candidate: Mapping[str, Any]
+) -> tuple[dict[str, Any], str, bool]:
+    review_path = attempt_dir / "failure_classification_review.json"
+    if review_path.is_file():
+        existing = read_json_object(review_path)
+        immutable = dict(existing)
+        immutable.pop("reviewed_at", None)
+        immutable.pop("review_sha256", None)
+        if immutable != dict(candidate):
+            raise PerpetualRuntimeError(f"FAILURE_CLASSIFICATION_REVIEW_DRIFT: {review_path}")
+        return existing, sha256_file(review_path), True
+    unsigned = {**dict(candidate), "reviewed_at": now_iso()}
+    review = {
+        **unsigned,
+        "review_sha256": sha256_bytes(canonical_json_bytes(unsigned)),
+    }
+    digest = atomic_write_json(review_path, review)
+    return review, digest, False
+
+
+def _apply_failure_classification_review_to_state(
+    *,
+    state_path: Path,
+    state: dict[str, Any],
+    review: Mapping[str, Any],
+    review_path: Path,
+    review_file_sha256: str,
+) -> bool:
+    pointer = {
+        "schema": FAILURE_CLASSIFICATION_REVIEW_SCHEMA,
+        "turn_number": int(review["turn_number"]),
+        "attempt_number": int(review["attempt_number"]),
+        "receipt_sha256": review["receipt_sha256"],
+        "review_path": str(review_path),
+        "review_file_sha256": review_file_sha256,
+        "decision": review["decision"],
+    }
+    raw_reviews = state.get("failure_classification_reviews", [])
+    if not isinstance(raw_reviews, list) or not all(
+        isinstance(item, Mapping) for item in raw_reviews
+    ):
+        raise PerpetualRuntimeError("FAILURE_CLASSIFICATION_REVIEW_LEDGER_INVALID")
+    matches = [
+        item
+        for item in raw_reviews
+        if item.get("turn_number") == pointer["turn_number"]
+        and item.get("attempt_number") == pointer["attempt_number"]
+    ]
+    changed = False
+    if matches:
+        if len(matches) != 1 or dict(matches[0]) != pointer:
+            raise PerpetualRuntimeError("FAILURE_CLASSIFICATION_REVIEW_LEDGER_DRIFT")
+    else:
+        state["failure_classification_reviews"] = [*raw_reviews, pointer]
+        changed = True
+    blocked = {
+        "status": review["projected_status"],
+        "active_pid": None,
+        "lifecycle_state": "BLOCKED",
+        "last_error_class": "PROVIDER_POLICY_BLOCKED",
+        "last_error": "PROVIDER_POLICY_REFUSAL_REQUIRES_WORLD_ROUTE_CHANGE",
+    }
+    if any(state.get(key) != value for key, value in blocked.items()):
+        state.update(blocked)
+        changed = True
+    if changed:
+        state["updated_at"] = now_iso()
+        atomic_write_json(state_path, state)
+    return changed
+
+
 def _validate_attempt_receipt_sources(
     *,
     config: Mapping[str, Any],
@@ -5319,6 +5594,7 @@ def _validate_attempt_receipt_sources(
     )
     if receipt.get("lifecycle_state") != lifecycle:
         raise PerpetualRuntimeError(f"RECOVERY_TURN_RECEIPT_LIFECYCLE_MISMATCH: {receipt_path}")
+    receipt_error = receipt.get("error_class")
     body_review = _read_body_classification_review(
         config=config,
         attempt_dir=attempt_dir,
@@ -5332,10 +5608,39 @@ def _validate_attempt_receipt_sources(
         or body_review.get("attempt_number") != attempt_number
     ):
         raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_ATTEMPT_MISMATCH: {receipt_path}")
+    failure_review = _read_failure_classification_review(
+        config=config,
+        spec=spec,
+        attempt_dir=attempt_dir,
+        receipt_path=receipt_path,
+        receipt_sha256=receipt_sha256,
+    )
+    if failure_review is not None and (
+        failure_review.get("run_id") != config["run_id"]
+        or failure_review.get("lineage_id") != spec["lineage_id"]
+        or failure_review.get("turn_number") != turn_number
+        or failure_review.get("attempt_number") != attempt_number
+    ):
+        raise PerpetualRuntimeError(
+            f"FAILURE_CLASSIFICATION_REVIEW_ATTEMPT_MISMATCH: {receipt_path}"
+        )
+    if body_review is not None and receipt_error != "BODY_INCIDENT":
+        raise PerpetualRuntimeError(
+            f"BODY_CLASSIFICATION_REVIEW_RECEIPT_CLASS_MISMATCH: {receipt_path}"
+        )
+    if failure_review is not None and receipt_error not in {
+        "HARD_RUNTIME_FAILURE",
+        "UNKNOWN_RUNTIME_FAILURE",
+    }:
+        raise PerpetualRuntimeError(
+            f"FAILURE_CLASSIFICATION_REVIEW_RECEIPT_CLASS_MISMATCH: {receipt_path}"
+        )
+    if body_review is not None and failure_review is not None:
+        raise PerpetualRuntimeError(f"CLASSIFICATION_REVIEW_CONFLICT: {receipt_path}")
     raw_receipt_release = receipt.get("controller_release")
     raw_source_release = (
-        body_review.get("source_controller_release")
-        if body_review is not None
+        (body_review or failure_review).get("source_controller_release")
+        if body_review is not None or failure_review is not None
         else raw_receipt_release
     )
     if raw_source_release is None:
@@ -5365,7 +5670,6 @@ def _validate_attempt_receipt_sources(
         raise PerpetualRuntimeError(
             f"RECOVERY_TURN_RECEIPT_CONTROLLER_RELEASE_INVALID: {receipt_path}"
         )
-    receipt_error = receipt.get("error_class")
     if bool(body_incidents) != (receipt_error == "BODY_INCIDENT"):
         raise PerpetualRuntimeError(f"RECOVERY_TURN_RECEIPT_BODY_CLASS_MISMATCH: {receipt_path}")
     review_candidate: dict[str, Any] | None = None
@@ -5390,6 +5694,47 @@ def _validate_attempt_receipt_sources(
             ):
                 raise PerpetualRuntimeError(
                     f"BODY_CLASSIFICATION_REVIEW_SOURCE_CLASS_DRIFT: {receipt_path}"
+                )
+    failure_review_candidate: dict[str, Any] | None = None
+    if (
+        receipt_error
+        in {
+            "HARD_RUNTIME_FAILURE",
+            "UNKNOWN_RUNTIME_FAILURE",
+            "TRANSIENT_RUNTIME_FAILURE",
+            "PROVIDER_POLICY_BLOCKED",
+        }
+        and source_release is not None
+    ):
+        current_sha = sha256_file(Path(__file__).resolve()).casefold()
+        stdout_tail = safe_tail(stdout_path)
+        stderr_tail = safe_tail(attempt_dir / "exec_stderr.txt")
+        source_release, source_failure_classifier = _load_controller_release_failure_classifier(
+            config, source_release
+        )
+        source_failure_class = source_failure_classifier(stdout_tail, stderr_tail)
+        if source_failure_class != receipt_error:
+            raise PerpetualRuntimeError(
+                f"RECOVERY_TURN_RECEIPT_FAILURE_CLASS_MISMATCH: {receipt_path}"
+            )
+        if (
+            receipt_error in {"HARD_RUNTIME_FAILURE", "UNKNOWN_RUNTIME_FAILURE"}
+            and source_release["sha256"] != current_sha
+        ):
+            if failure_review is None:
+                failure_review_candidate = _failure_reclassification_candidate(
+                    config=config,
+                    spec=spec,
+                    attempt_dir=attempt_dir,
+                    receipt_path=receipt_path,
+                    receipt=receipt,
+                    receipt_sha256=receipt_sha256,
+                    source_release=source_release,
+                    source_failure_class=source_failure_class,
+                )
+            elif failure_review.get("source_failure_class") != source_failure_class:
+                raise PerpetualRuntimeError(
+                    f"FAILURE_CLASSIFICATION_REVIEW_SOURCE_CLASS_DRIFT: {receipt_path}"
                 )
     normal_success = (
         receipt_error is None
@@ -5439,6 +5784,8 @@ def _validate_attempt_receipt_sources(
         disposition = "COMMIT_COMPLETED_TURN"
     elif receipt_error in {"BODY_INCIDENT", "EVIDENCE_INCIDENT"}:
         disposition = str(receipt_error)
+    elif receipt_error == "PROVIDER_POLICY_BLOCKED":
+        disposition = "PROVIDER_POLICY_BLOCKED"
     else:
         disposition = "RUNTIME_PAUSED"
     return receipt, {
@@ -5450,6 +5797,8 @@ def _validate_attempt_receipt_sources(
         "body_incident_count": len(body_incidents),
         "body_classification_review": body_review,
         "body_classification_review_candidate": review_candidate,
+        "failure_classification_review": failure_review,
+        "failure_classification_review_candidate": failure_review_candidate,
         "state_turns_before": int(state.get("turns_completed", 0)),
     }
 
@@ -5484,6 +5833,21 @@ def _commit_receipt_bearing_attempt_to_state(
         )
     else:
         body_review_sha256 = None
+    failure_review = verified.get("failure_classification_review")
+    failure_review_path = attempt_dir / "failure_classification_review.json"
+    failure_review_reused = False
+    if failure_review is not None:
+        failure_review_sha256 = sha256_file(failure_review_path)
+        failure_review_reused = True
+    elif verified.get("failure_classification_review_candidate") is not None:
+        failure_review, failure_review_sha256, failure_review_reused = (
+            _ensure_failure_classification_review(
+                attempt_dir=attempt_dir,
+                candidate=verified["failure_classification_review_candidate"],
+            )
+        )
+    else:
+        failure_review_sha256 = None
     turn_dir = attempt_dir.parent
     sealed_commits, legacy_migration_required = _normalized_recovery_state_commits(
         config=config,
@@ -5524,10 +5888,18 @@ def _commit_receipt_bearing_attempt_to_state(
                 review_path=body_review_path,
                 review_file_sha256=body_review_sha256,
             )
+        if failure_review is not None and failure_review_sha256 is not None:
+            _apply_failure_classification_review_to_state(
+                state_path=state_path,
+                state=state,
+                review=failure_review,
+                review_path=failure_review_path,
+                review_file_sha256=failure_review_sha256,
+            )
         effective_disposition = (
             "BODY_INCIDENT_RECLASSIFIED_RETRY"
             if body_review is not None and body_review.get("decision") == "RETRY_SAME_TURN"
-            else disposition
+            else ("PROVIDER_POLICY_BLOCKED" if failure_review is not None else disposition)
         )
         return {
             "lineage_id": spec["lineage_id"],
@@ -5539,6 +5911,7 @@ def _commit_receipt_bearing_attempt_to_state(
             "receipt_sha256": verified["receipt_sha256"],
             "reused": True,
             "body_classification_review_reused": body_review_reused,
+            "failure_classification_review_reused": failure_review_reused,
         }
     sealed_commits = [*sealed_commits, seal]
     common = {
@@ -5578,6 +5951,24 @@ def _commit_receipt_bearing_attempt_to_state(
                 ),
             }
         )
+    elif disposition == "PROVIDER_POLICY_BLOCKED":
+        root_lineage = config.get("root_lineage")
+        root_lineage_id = (
+            root_lineage.get("lineage_id") if isinstance(root_lineage, Mapping) else None
+        )
+        state.update(
+            {
+                **common,
+                "status": (
+                    "ROOT_PROVIDER_POLICY_BLOCKED"
+                    if spec.get("lineage_id") == root_lineage_id
+                    else "PROVIDER_POLICY_BLOCKED"
+                ),
+                "lifecycle_state": "BLOCKED",
+                "last_error_class": "PROVIDER_POLICY_BLOCKED",
+                "last_error": "PROVIDER_POLICY_REFUSAL_REQUIRES_WORLD_ROUTE_CHANGE",
+            }
+        )
     else:
         state.update(
             {
@@ -5596,10 +5987,18 @@ def _commit_receipt_bearing_attempt_to_state(
             review_path=body_review_path,
             review_file_sha256=body_review_sha256,
         )
+    if failure_review is not None and failure_review_sha256 is not None:
+        _apply_failure_classification_review_to_state(
+            state_path=state_path,
+            state=state,
+            review=failure_review,
+            review_path=failure_review_path,
+            review_file_sha256=failure_review_sha256,
+        )
     effective_disposition = (
         "BODY_INCIDENT_RECLASSIFIED_RETRY"
         if body_review is not None and body_review.get("decision") == "RETRY_SAME_TURN"
-        else disposition
+        else ("PROVIDER_POLICY_BLOCKED" if failure_review is not None else disposition)
     )
     return {
         "lineage_id": spec["lineage_id"],
@@ -5611,6 +6010,7 @@ def _commit_receipt_bearing_attempt_to_state(
         "receipt_sha256": verified["receipt_sha256"],
         "reused": False,
         "body_classification_review_reused": body_review_reused,
+        "failure_classification_review_reused": failure_review_reused,
     }
 
 

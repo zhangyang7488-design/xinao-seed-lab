@@ -130,6 +130,11 @@ def fake_observation(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def isolate_live_taste(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(hook_module, "render_qualified_taste_context", lambda _prompt: "")
+
+
 def test_user_prompt_keeps_l0_first_and_adds_labeled_runtime_without_prompt_echo(
     fake_observation: None,
 ) -> None:
@@ -177,11 +182,32 @@ def test_runtime_failure_preserves_l0_and_never_blocks(
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
             "additionalContext": (
-                f"{L0_CONTEXT}\n{DIACHRONIC_COGNITION_CONTEXT}\n"
-                f"{ACTION_BINDING_CONTEXT}"
+                f"{L0_CONTEXT}\n{DIACHRONIC_COGNITION_CONTEXT}\n{ACTION_BINDING_CONTEXT}"
             ),
         },
     }
+
+
+def test_user_prompt_adds_only_retriever_output_and_never_echoes_query(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_observation: None,
+) -> None:
+    seen: list[str] = []
+
+    def render(prompt: str) -> str:
+        seen.append(prompt)
+        return "[QUALIFIED CONTRASTIVE TASTE - NON-AUTHORITATIVE]\nsealed contrast"
+
+    monkeypatch.setattr(hook_module, "render_qualified_taste_context", render)
+    output = handle_hook_event(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "PRIVATE CURRENT QUERY"}
+    )
+    context = output["hookSpecificOutput"]["additionalContext"]
+
+    assert seen == ["PRIVATE CURRENT QUERY"]
+    assert context.count("QUALIFIED CONTRASTIVE TASTE") == 1
+    assert "sealed contrast" in context
+    assert "PRIVATE CURRENT QUERY" not in context
 
 
 def test_action_binding_projection_is_limited_to_the_s_body(tmp_path: Path) -> None:
@@ -193,8 +219,7 @@ def test_action_binding_projection_is_limited_to_the_s_body(tmp_path: Path) -> N
 def test_diachronic_cognition_projection_is_limited_to_the_s_body(tmp_path: Path) -> None:
     assert render_diachronic_cognition_context(cwd=REPO_ROOT) == DIACHRONIC_COGNITION_CONTEXT
     assert (
-        render_diachronic_cognition_context(cwd=REPO_ROOT / "tests")
-        == DIACHRONIC_COGNITION_CONTEXT
+        render_diachronic_cognition_context(cwd=REPO_ROOT / "tests") == DIACHRONIC_COGNITION_CONTEXT
     )
     assert render_diachronic_cognition_context(cwd=tmp_path) == ""
 

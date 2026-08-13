@@ -3,10 +3,10 @@
   "authority": false,
   "source_identity": {
     "application": "xinao-s-context-rollout-consumer",
-    "release": "2026-08-13",
+    "release": "2026-08-14",
     "python_distribution": "cpython-3.13.14-official"
   },
-  "content_id": "ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80",
+  "content_id": "f117fe78c0772a6a1a6c451451f23c154340004b9df74775ac414fbc1729a664",
   "files": [
     {
       "relative_path": "app/scripts/Invoke-SPresentationDelivery.ps1",
@@ -15,8 +15,8 @@
     },
     {
       "relative_path": "app/scripts/context_rollout_consumer.py",
-      "size": 83812,
-      "sha256": "786aa0cc3380cd11b693bc565bcf00de6a44e7fc2f99318307ea734d05f893dd"
+      "size": 84192,
+      "sha256": "861e870ede5f6743a6c13b2c682edb346e3d9a0ff2089f56b4513dbeec8e8eb4"
     },
     {
       "relative_path": "app/services/__init__.py",
@@ -50,8 +50,8 @@
     },
     {
       "relative_path": "app/services/agent_runtime/presentation_observer.py",
-      "size": 43161,
-      "sha256": "0256edf663e051fc90c8acbebc80c8db34a2dfabad3d570a973784d3c820d0ef"
+      "size": 43300,
+      "sha256": "86219fef31eae48dbf4346c2a92a1f837fa3ce77ed4ed5b67355ece9472b6b5b"
     },
     {
       "relative_path": "app/services/agent_runtime/presentation_reducer.py",

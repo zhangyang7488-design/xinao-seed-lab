@@ -31,13 +31,28 @@ def test_production_presentation_roots_are_exact_scale_worlds() -> None:
         Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale2_20260813"),
         Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale3_20260813"),
         Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale4_20260813"),
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_concurrent_20260814"),
         Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale_20260813"),
         Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale2_20260813"),
         Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale3_20260813"),
         Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale4_20260813"),
     )
-    assert all("perpetual_world_compute" not in str(path) for path in consumer.PRODUCTION_PRESENTATION_RUNTIME_ROOTS)
-    assert all(not str(path).endswith(("perpetual_a", "perpetual_c")) for path in consumer.PRODUCTION_PRESENTATION_RUNTIME_ROOTS)
+    assert all(
+        "perpetual_world_compute" not in str(path)
+        for path in consumer.PRODUCTION_PRESENTATION_RUNTIME_ROOTS
+    )
+    assert all(
+        not str(path).endswith(("perpetual_a", "perpetual_c"))
+        for path in consumer.PRODUCTION_PRESENTATION_RUNTIME_ROOTS
+    )
+    assert {
+        contract["account_slot"]
+        for contract in consumer._PRODUCTION_PRESENTATION_ROOT_CONTRACTS.values()
+    } == {"A", "C"}
+    fresh_a = os.path.normcase(
+        r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_concurrent_20260814"
+    )
+    assert consumer._PRODUCTION_PRESENTATION_ROOT_CONTRACTS[fresh_a]["account_slot"] == "A"
 
 
 def _line(value: dict[str, object]) -> bytes:
@@ -356,6 +371,7 @@ def _mock_installer_audit(
                 "afc8ff4d120f1968ad1fbaf4bb096435eba32561859786ee859a5d284c3782aa",
                 "247ddd4bc4925aa2786b84b1495d657f23194b59e013058d8c0e84d200815691",
                 "f1e7525ba72d661a66ef07895cfd662f9473a7c8f1f8bfb8b53b38ec99fed0b1",
+                "5edffee57ec0692972583b8116c4dc7fc19a56d05af04175f1fc410c3f9352f6",
                 "5ed766c971420da10a2b8b4a30d4b13c1954a2fc4930fc2a53ca05677a59c281",
                 "b469bf51ee586a5c3ab9aa595288f3d505f39a4870d7a0f4e3a899ad504006a3",
                 "91f853881f3bfcfbf1b165f0e679b14a7a49d6b6fc9200c5c93e283db533b39f",
@@ -381,7 +397,7 @@ $mockReceipt = @'
 {{"schema_version":"s.context_rollout_consumer.receipt.v1","status":"{receipt_status}","started_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).ToString('o'))","bootstrap":false,"state_recovered":false,"scan_start":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","scan_end":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-1).ToString('o'))","counts":{{"appended":1,"inventoried":1{extra_count_json}}},"files":[{{"carrier_id":"s-primary","locator_sha256":"$($mockLocatorHash)","status":"imported","appended":1,"duplicate":0,"ignored":0,"incomplete_tail":false{extra_file_json}}}],"file_receipts_total":1,"file_receipts_omitted":0,"authority":false{extra_json}}}
 '@
 $mockPresentationReceipt = @'
-{{"schema_version":"s.context_rollout_presentation.receipt.v1","status":"{presentation_receipt_status}","started_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).AddSeconds(-10).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).ToString('o'))","runtime_roots":[{presentation_runtime_receipts}],"counts":{{"absent":8,"notification_attempted":0,"notification_acknowledged":0,"notification_failed":0}},"visible_emitter":"windows_notify_icon.v1","ui_interception_claimed":false,"authority":false{extra_presentation_json}}}
+{{"schema_version":"s.context_rollout_presentation.receipt.v1","status":"{presentation_receipt_status}","started_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).AddSeconds(-10).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).ToString('o'))","runtime_roots":[{presentation_runtime_receipts}],"counts":{{"absent":9,"notification_attempted":0,"notification_acknowledged":0,"notification_failed":0}},"visible_emitter":"windows_notify_icon.v1","ui_interception_claimed":false,"authority":false{extra_presentation_json}}}
 '@
 function Get-ScheduledTask {{
     [CmdletBinding()] param([string]$TaskName, [string]$TaskPath)
@@ -767,9 +783,9 @@ function Test-BundlePayload {{
         [Nullable[int]]$ExpectedFileCount
     )
     [void]($script:bundleBindingValid =
-        $ExpectedContentId -eq 'ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e' -and
-        $ExpectedManifestSha256 -eq 'ae9d1041929a0e6f24f06c1afe6203dc3b1579ad3de457c90c23d8dcce9b983e' -and
-        @($RequiredPaths).Count -eq 7 -and $ExpectedFileCount -eq 1336)
+        $ExpectedContentId -eq 'ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80' -and
+        $ExpectedManifestSha256 -eq '0bd81900d25ff27c1978b130ee39a0586ad926d8b3574bdee33370d333da1d81' -and
+        @($RequiredPaths).Count -eq 12 -and $ExpectedFileCount -eq 1337)
     [pscustomobject]@{{
         valid = $script:bundleBindingValid
         python_path = 'C:\owned\python\python.exe'
@@ -785,8 +801,8 @@ function Get-ScheduledTask {{
     $description = 'XINAO S context rollout consumer v1; registration=' + ('a' * 32) +
         ';registered_at=2026-08-13T10:58:08.7987777+00:00' +
         ';receipt_not_before=2026-08-13T11:08:08.0000000+00:00' +
-        ';content_id=ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e' +
-        ';manifest_sha256=ae9d1041929a0e6f24f06c1afe6203dc3b1579ad3de457c90c23d8dcce9b983e'
+        ';content_id=ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80' +
+        ';manifest_sha256=0bd81900d25ff27c1978b130ee39a0586ad926d8b3574bdee33370d333da1d81'
     $execute = 'C:\owned\python\{action_name}'
     $arguments = '-I -B "C:\owned\app\scripts\context_rollout_consumer.py"'
     $hidden = $false
@@ -2421,11 +2437,11 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
     assert release_lock["authority"] is False
     assert release_lock["source_identity"] == {
         "application": "xinao-s-context-rollout-consumer",
-        "release": "2026-08-13",
+        "release": "2026-08-14",
         "python_distribution": "cpython-3.13.14-official",
     }
     assert release_lock["content_id"] == (
-        "ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80"
+        "f117fe78c0772a6a1a6c451451f23c154340004b9df74775ac414fbc1729a664"
     )
     assert len(release_lock["files"]) == 1337
     locked_paths = [item["relative_path"] for item in release_lock["files"]]
@@ -2547,9 +2563,7 @@ def test_bundle_release_lock_matches_adopted_lf_application_bytes() -> None:
 
 
 def test_official_windowless_python_acquires_stdlib_presentation_lock(tmp_path: Path) -> None:
-    python_path = Path(
-        r"D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official\pythonw.exe"
-    )
+    python_path = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official\pythonw.exe")
     assert python_path.is_file()
     marker_path = tmp_path / "presentation-lock.marker"
     probe = (
@@ -2729,9 +2743,7 @@ def test_installer_upgrade_admits_only_both_exact_managed_predecessor_actions(
     action_name: str,
     expected_variant: str,
 ) -> None:
-    exit_code, result, raw_output = _run_managed_upgrade_source_probe(
-        action_name=action_name
-    )
+    exit_code, result, raw_output = _run_managed_upgrade_source_probe(action_name=action_name)
 
     assert exit_code == 0, raw_output
     assert result == {
@@ -2743,9 +2755,9 @@ def test_installer_upgrade_admits_only_both_exact_managed_predecessor_actions(
 
 
 def test_installer_upgrade_source_identity_does_not_require_target_watchdog_interval() -> None:
-    script = (
-        consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
-    ).read_text(encoding="utf-8")
+    script = (consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1").read_text(
+        encoding="utf-8"
+    )
 
     managed_source = script[
         script.index("function Get-ManagedUpgradeSource") : script.index(
@@ -2758,9 +2770,9 @@ def test_installer_upgrade_source_identity_does_not_require_target_watchdog_inte
 
 
 def test_installer_serializes_all_task_mutations_and_delays_upgrade_first_run() -> None:
-    script = (
-        consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
-    ).read_text(encoding="utf-8-sig")
+    script = (consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1").read_text(
+        encoding="utf-8-sig"
+    )
 
     mutation_gate = "if ($Apply -or $Upgrade -or $Remove)"
     assert "$mutationMutexName = 'Global\\XINAO.S.ContextRolloutConsumer.Mutation.v1'" in script
@@ -2866,9 +2878,7 @@ def test_installer_upgrade_refuses_rollback_over_foreign_concurrent_identity() -
 
 
 def test_installer_upgrade_refuses_rollback_when_owned_description_contract_drifts() -> None:
-    exit_code, result, raw_output = _run_upgrade_state_machine_probe(
-        "owned_description_drift"
-    )
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("owned_description_drift")
 
     assert exit_code == 0, raw_output
     assert result["succeeded"] is False
@@ -2878,9 +2888,7 @@ def test_installer_upgrade_refuses_rollback_when_owned_description_contract_drif
 
 
 def test_installer_upgrade_refuses_rollback_over_running_replacement() -> None:
-    exit_code, result, raw_output = _run_upgrade_state_machine_probe(
-        "running_after_attempt"
-    )
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("running_after_attempt")
 
     assert exit_code == 0, raw_output
     assert result["succeeded"] is False
@@ -3246,9 +3254,12 @@ def test_presentation_notification_failure_does_not_ack(
     assert failed["counts"]["notification_failed"] == 1
     assert failed["runtime_roots"][0]["pending_delivery_count"] == 1
     with sqlite3.connect(root / "context_fabric.sqlite3") as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM events WHERE event_kind='presentation_delivery_ack'"
-        ).fetchone()[0] == 0
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM events WHERE event_kind='presentation_delivery_ack'"
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def test_presentation_notification_does_not_interrupt_for_major_result(
