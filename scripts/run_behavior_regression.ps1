@@ -4,6 +4,8 @@ param(
     [string]$Profile = 'smoke',
     [ValidateSet('contract', 'live')]
     [string]$ContextEvidenceMode = 'contract',
+    [ValidateSet('environment_isolated', 'existing_b_home')]
+    [string]$ContextLiveAuthMode = 'environment_isolated',
     [string]$Domain,
     [string]$CasePattern,
     [string]$FailedFrom,
@@ -39,6 +41,12 @@ if ($List) {
 }
 if ($Profile -ne 'context' -and $PSBoundParameters.ContainsKey('ContextEvidenceMode')) {
     throw 'ContextEvidenceMode applies only to -Profile context.'
+}
+if ($Profile -ne 'context' -and $PSBoundParameters.ContainsKey('ContextLiveAuthMode')) {
+    throw 'ContextLiveAuthMode applies only to -Profile context.'
+}
+if ($ContextEvidenceMode -ne 'live' -and $PSBoundParameters.ContainsKey('ContextLiveAuthMode')) {
+    throw 'ContextLiveAuthMode applies only to live context evidence.'
 }
 if ($Profile -eq 'context') {
     # This trajectory owns one isolated operation root. Parallelism and retries would
@@ -478,8 +486,11 @@ function Get-ContextRuntimeTrajectorySummary {
     $expectedClaimClass = if ($ExpectedMode -eq 'contract') {
         'context_contract_only'
     }
-    else {
+    elseif ($ExitCode -eq 3) {
         'context_live_ineligible'
+    }
+    else {
+        'context_live_observed'
     }
     if ($receipt.claim_class -ne $expectedClaimClass) {
         throw "Context runtime trajectory claim-class drift: expected $expectedClaimClass, got $($receipt.claim_class)"
@@ -502,9 +513,40 @@ function Get-ContextRuntimeTrajectorySummary {
             throw 'A completed deterministic context contract cannot contain live-ineligible rows.'
         }
     }
-    elseif ($receipt.runtime_claim_allowed -ne $true) {
-        if ($receipt.status -ne 'ineligible' -or $ineligible -lt 1) {
-            throw 'A denied live context receipt must be typed ineligible.'
+    elseif ($ExitCode -eq 0) {
+        if (
+            $receipt.status -ne 'passed' -or
+            $receipt.runtime_claim_allowed -ne $true -or
+            $selected -ne 1 -or
+            $passed -ne 1 -or
+            $failed -ne 0 -or
+            $ineligible -ne 0
+        ) {
+            throw 'A passed live context receipt must contain exactly one claim-eligible case.'
+        }
+    }
+    elseif ($ExitCode -eq 1) {
+        if (
+            $receipt.status -ne 'failed' -or
+            $receipt.runtime_claim_allowed -ne $false -or
+            $selected -ne 1 -or
+            $passed -ne 0 -or
+            $failed -ne 1 -or
+            $ineligible -ne 0
+        ) {
+            throw 'A failed live context receipt must contain exactly one observed failed case.'
+        }
+    }
+    elseif ($ExitCode -eq 3) {
+        if (
+            $receipt.status -ne 'ineligible' -or
+            $receipt.runtime_claim_allowed -ne $false -or
+            $selected -ne 0 -or
+            $passed -ne 0 -or
+            $failed -ne 0 -or
+            $ineligible -ne 1
+        ) {
+            throw 'A denied live context receipt must be one typed ineligible result.'
         }
     }
     if ($ExitCode -eq 0 -and $receipt.status -ne 'passed') {
@@ -1100,15 +1142,27 @@ try {
             $contextArguments += @('--case-pattern', $CasePattern)
         }
         if ($ContextEvidenceMode -eq 'live') {
+            $effectiveContextHookSink = $ContextHookSink
+            if ([string]::IsNullOrWhiteSpace($effectiveContextHookSink)) {
+                $effectiveContextHookSink = Join-Path $outputRoot `
+                    'context-live-hook-sink-contract.json'
+                $liveHookSinkContract = [ordered]@{
+                    schema_version = 's.context_runtime_live_hook_sink.v1'
+                    model = 'gpt-5.6-sol'
+                    timeout_seconds = 180
+                    auth_mode = $ContextLiveAuthMode
+                }
+                $liveHookSinkContract | ConvertTo-Json -Depth 4 | Set-Content `
+                    -LiteralPath $effectiveContextHookSink `
+                    -Encoding utf8NoBOM
+            }
             $contextArguments += @(
                 '--codex-path', $codexBinary,
                 '--s-codex-home', $ContextSCodexHome,
                 '--b-codex-home', $ContextBCodexHome,
-                '--working-dir', $repoRoot
+                '--working-dir', $repoRoot,
+                '--hook-sink', $effectiveContextHookSink
             )
-            if (-not [string]::IsNullOrWhiteSpace($ContextHookSink)) {
-                $contextArguments += @('--hook-sink', $ContextHookSink)
-            }
         }
         Push-Location $executionRoot
         try {
@@ -1426,6 +1480,9 @@ $summary = [ordered]@{
     run_id = $runId
     profile = $Profile
     context_evidence_mode = $ContextEvidenceMode
+    context_live_auth_mode = $(
+        if ($ContextEvidenceMode -eq 'live') { $ContextLiveAuthMode } else { $null }
+    )
     domain = $Domain
     case_pattern = $CasePattern
     failed_from = $FailedFrom

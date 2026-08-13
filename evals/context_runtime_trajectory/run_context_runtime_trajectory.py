@@ -1,10 +1,11 @@
 """Isolated S/B context-runtime trajectory receipts.
 
 ``contract`` is a deterministic, no-model preflight.  It proves bounded store,
-mount, rehydration, and non-authority predicates only.  ``live`` is deliberately
-fail-closed until a caller supplies a real Codex 0.147 app-server driver *and* a
-hook-event sink; contract evidence can never be promoted to a live behavior
-claim.
+mount, rehydration, and non-authority predicates only.  ``live`` drives native
+Codex 0.147 through start, compact, and new-process resume while independently
+recording the operation-installed hook sink.  Missing native/auth/sink
+prerequisites fail closed; contract evidence can never be promoted to a live
+behavior claim.
 """
 
 from __future__ import annotations
@@ -13,9 +14,12 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import re
 import sqlite3
+import subprocess
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -34,6 +38,19 @@ LIVE_EVIDENCE = "live_app_server_and_hook_sink"
 EXIT_ASSERTION_FAILED = 1
 EXIT_INFRASTRUCTURE_ERROR = 2
 EXIT_LIVE_INELIGIBLE = 3
+LIVE_HOOK_SINK_SCHEMA = "s.context_runtime_live_hook_sink.v1"
+LIVE_CLAIM_CLASS = "context_live_observed"
+_CODEX_VERSION_RE = re.compile(r"^codex-cli\s+(\d+\.\d+\.\d+)\s*$")
+_LIVE_AUTH_ENV_NAMES = ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN")
+_WINDOWS_CHILD_ENV_NAMES = (
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATH",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+)
 
 SESSION_SEED = "019ff75c-703c-7972-96cd-b0d257b13baa"
 SESSION_FRESH = "019ff778-e326-7b91-9784-4fe809585e03"
@@ -756,43 +773,214 @@ def run_contract(operation_root: Path, case_pattern: str = "") -> dict[str, obje
     }
 
 
-def run_live(
-    operation_root: Path,
+class LiveProtocolError(RuntimeError):
+    """The native app-server stream did not satisfy its bounded protocol."""
+
+
+class _AppServerClient:
+    """Small JSON-lines client for one native Codex app-server process."""
+
+    def __init__(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Path,
+        environ: Mapping[str, str],
+    ) -> None:
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        self.process = subprocess.Popen(
+            list(command),
+            cwd=cwd,
+            env=dict(environ),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            creationflags=creationflags,
+        )
+        if self.process.stdin is None or self.process.stdout is None or self.process.stderr is None:
+            self.close()
+            raise LiveProtocolError("app-server did not expose all stdio pipes")
+        self._incoming: queue.Queue[dict[str, object]] = queue.Queue()
+        self._backlog: list[dict[str, object]] = []
+        self.messages: list[dict[str, object]] = []
+        self.sent_methods: list[str] = []
+        self._stderr_lines = 0
+        self._stderr_digest = hashlib.sha256()
+        self._next_id = 1
+        self._stdout_thread = threading.Thread(target=self._read_stdout, daemon=True)
+        self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
+        self._stdout_thread.start()
+        self._stderr_thread.start()
+
+    @property
+    def pid(self) -> int:
+        return int(self.process.pid)
+
+    @property
+    def stderr_receipt(self) -> dict[str, object]:
+        return {
+            "line_count": self._stderr_lines,
+            "sha256": self._stderr_digest.hexdigest(),
+        }
+
+    def _read_stdout(self) -> None:
+        assert self.process.stdout is not None
+        for line in self.process.stdout:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                self.messages.append(value)
+                self._incoming.put(value)
+
+    def _read_stderr(self) -> None:
+        assert self.process.stderr is not None
+        for line in self.process.stderr:
+            encoded = line.encode("utf-8", errors="replace")
+            self._stderr_lines += 1
+            self._stderr_digest.update(encoded)
+
+    def _take(
+        self,
+        predicate: Callable[[Mapping[str, object]], bool],
+        *,
+        timeout: float,
+        description: str,
+    ) -> dict[str, object]:
+        for index, message in enumerate(self._backlog):
+            if predicate(message):
+                return self._backlog.pop(index)
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise LiveProtocolError(f"timed out waiting for {description}")
+            try:
+                message = self._incoming.get(timeout=remaining)
+            except queue.Empty as error:
+                raise LiveProtocolError(f"timed out waiting for {description}") from error
+            if predicate(message):
+                return message
+            self._backlog.append(message)
+
+    def request(
+        self,
+        method: str,
+        params: Mapping[str, object],
+        *,
+        timeout: float,
+    ) -> object:
+        request_id = self._next_id
+        self._next_id += 1
+        self._write({"method": method, "id": request_id, "params": dict(params)})
+        response = self._take(
+            lambda item: item.get("id") == request_id,
+            timeout=timeout,
+            description=f"{method} response",
+        )
+        if response.get("error") is not None:
+            error = response.get("error")
+            if isinstance(error, Mapping):
+                code = error.get("code")
+                message = error.get("message")
+                raise LiveProtocolError(f"{method} failed: code={code!r} message={message!r}")
+            raise LiveProtocolError(f"{method} failed")
+        return response.get("result")
+
+    def notify(self, method: str, params: Mapping[str, object]) -> None:
+        self._write({"method": method, "params": dict(params)})
+
+    def wait_notification(
+        self,
+        method: str,
+        *,
+        timeout: float,
+        predicate: Callable[[Mapping[str, object]], bool] | None = None,
+    ) -> dict[str, object]:
+        def matches(item: Mapping[str, object]) -> bool:
+            if item.get("method") != method:
+                return False
+            params = item.get("params")
+            if predicate is None:
+                return True
+            return isinstance(params, Mapping) and predicate(params)
+
+        return self._take(matches, timeout=timeout, description=f"{method} notification")
+
+    def _write(self, message: Mapping[str, object]) -> None:
+        if self.process.poll() is not None:
+            raise LiveProtocolError(
+                f"app-server exited before request with code {self.process.returncode}"
+            )
+        assert self.process.stdin is not None
+        method = message.get("method")
+        if isinstance(method, str):
+            self.sent_methods.append(method)
+        self.process.stdin.write(json.dumps(dict(message), separators=(",", ":")) + "\n")
+        self.process.stdin.flush()
+
+    def initialize(self, *, timeout: float) -> None:
+        self.request(
+            "initialize",
+            {
+                "clientInfo": {
+                    "name": "s-context-runtime-live-trajectory",
+                    "title": "S context runtime live trajectory",
+                    "version": "1",
+                },
+                "capabilities": {
+                    "experimentalApi": True,
+                    "optOutNotificationMethods": [],
+                },
+            },
+            timeout=timeout,
+        )
+        self.notify("initialized", {})
+
+    def close(self) -> None:
+        if not hasattr(self, "process"):
+            return
+        if self.process.poll() is None:
+            if self.process.stdin is not None:
+                try:
+                    self.process.stdin.close()
+                except OSError:
+                    pass
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait(timeout=5)
+        if hasattr(self, "_stdout_thread"):
+            self._stdout_thread.join(timeout=1)
+        if hasattr(self, "_stderr_thread"):
+            self._stderr_thread.join(timeout=1)
+
+    def __enter__(self) -> _AppServerClient:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+
+def _live_ineligible(
+    root: Path,
     *,
-    codex_path: Path | None,
-    s_codex_home: Path | None,
-    b_codex_home: Path | None,
-    working_dir: Path | None,
-    hook_sink: Path | None,
-    case_pattern: str = "",
+    case_pattern: str,
+    requirements: Mapping[str, bool],
+    codex_version: str,
+    reason: str,
 ) -> dict[str, object]:
-    """Fail closed until a real app-server plus hook-sink driver is admitted.
-
-    The repository currently has the protocol and installed hooks, but no
-    isolated hook-sink wrapper that can both preserve hook discovery/trust and
-    emit the exact event sequence.  Returning a typed ineligible receipt is
-    safer than silently substituting direct adapter calls.
-    """
-
-    root = _safe_operation_root(operation_root)
-    requirements = {
-        "native_codex_0_147": False,
-        "source_s_codex_home": bool(s_codex_home and s_codex_home.is_dir()),
-        "source_b_codex_home": bool(b_codex_home and b_codex_home.is_dir()),
-        "working_directory": bool(working_dir and working_dir.is_dir()),
-        "hook_sink_contract": bool(hook_sink and hook_sink.is_file()),
-    }
-    codex_version = ""
-    if codex_path and codex_path.is_file() and codex_path.suffix.lower() == ".exe":
-        # Do not launch a model turn here merely to make an eligibility check pass.
-        # The runner must provide a separately verified version receipt when the
-        # hook-sink driver is implemented.
-        codex_version = "native-exe-present-version-not-probed"
-    missing = [key for key, present in requirements.items() if not present]
-    reason = (
-        "live trajectory driver is not implemented; app-server protocol events and "
-        "installed hook-sink events cannot yet be jointly observed"
-    )
+    missing = sorted(key for key, present in requirements.items() if not present)
     return {
         "schema_version": RECEIPT_SCHEMA,
         "mode": "live",
@@ -802,9 +990,13 @@ def run_live(
         "runtime_claim_allowed": False,
         "operation_root": str(root),
         "case_pattern": case_pattern,
+        "existing_account_session_written": False,
+        "auth_content_read": False,
+        "source_credentials_copied": False,
+        "source_credentials_symlinked": False,
         "eligibility": {
-            "requirements": requirements,
-            "missing_or_unverified": sorted(set(missing + ["native_codex_0_147", "live_driver"])),
+            "requirements": dict(requirements),
+            "missing_or_unverified": missing,
             "codex_version": codex_version,
             "reason": reason,
         },
@@ -818,6 +1010,1056 @@ def run_live(
                 "resume_protocol_behavior",
                 "hook_discovery_trust_or_order",
                 "model_behavior_or_user_burden_reduction",
+            ],
+        },
+    }
+
+
+def _minimal_windows_environment(source: Mapping[str, str]) -> dict[str, str]:
+    """Copy only the platform variables needed to start a Windows child."""
+
+    by_upper = {str(key).upper(): str(value) for key, value in source.items()}
+    return {name: by_upper[name] for name in _WINDOWS_CHILD_ENV_NAMES if by_upper.get(name)}
+
+
+def _live_app_server_environment(
+    source: Mapping[str, str],
+    *,
+    codex_home: Path,
+    fabric_root: Path,
+    auth_env: str,
+) -> dict[str, str]:
+    """Build the complete allowlisted environment for a live app-server."""
+
+    if auth_env not in _LIVE_AUTH_ENV_NAMES:
+        raise ValueError("live app-server auth_env is not admitted")
+    by_upper = {str(key).upper(): str(value) for key, value in source.items()}
+    auth_value = by_upper.get(auth_env)
+    if not auth_value:
+        raise ValueError("selected live app-server auth_env is empty")
+    result = _minimal_windows_environment(source)
+    result["CODEX_HOME"] = str(codex_home)
+    result["CODEX_CONTEXT_FABRIC_ROOT"] = str(fabric_root)
+    result[auth_env] = auth_value
+    return result
+
+
+def _existing_account_environment(
+    source: Mapping[str, str],
+    *,
+    codex_home: Path,
+    fabric_root: Path,
+) -> dict[str, str]:
+    """Build a token-free child environment for an existing account home."""
+
+    result = _minimal_windows_environment(source)
+    result["CODEX_HOME"] = str(codex_home)
+    result["CODEX_CONTEXT_FABRIC_ROOT"] = str(fabric_root)
+    return result
+
+
+def _live_failed(
+    root: Path,
+    *,
+    case_pattern: str,
+    requirements: Mapping[str, bool],
+    codex_version: str,
+    error: BaseException,
+    auth_mode: str = "environment_isolated",
+    existing_account_session_written: bool = False,
+    account_configuration_unchanged: bool | None = None,
+    account_protection_before: Mapping[str, object] | None = None,
+    account_protection_after: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Return a failed live observation without persisting a possibly secret error."""
+
+    error_type = type(error).__name__
+    case = {
+        "case_id": "CTX_LIVE_START_COMPACT_RESUME",
+        "status": "failed",
+        "evidence_level": LIVE_EVIDENCE,
+        "runtime_claim_allowed": False,
+        "assertions": {"native_live_protocol_completed": False},
+        "failed_assertions": ["native_live_protocol_completed"],
+        "evidence": {
+            "codex_version": codex_version,
+            "failure_stage": "post_eligibility_native_protocol",
+            "error_type": error_type,
+            "auth_mode": auth_mode,
+            "existing_account_session_written": existing_account_session_written,
+            "b_account_configuration_unchanged": account_configuration_unchanged,
+            "b_account_protection_before": dict(account_protection_before or {}),
+            "b_account_protection_after": dict(account_protection_after or {}),
+            "claim_scope": "failed_native_live_attempt",
+        },
+    }
+    return {
+        "schema_version": RECEIPT_SCHEMA,
+        "mode": "live",
+        "evidence_level": LIVE_EVIDENCE,
+        "claim_class": LIVE_CLAIM_CLASS,
+        "status": "failed",
+        "runtime_claim_allowed": False,
+        "operation_root": str(root),
+        "case_pattern": case_pattern,
+        "existing_account_session_written": existing_account_session_written,
+        "auth_content_read": False,
+        "source_credentials_copied": False,
+        "source_credentials_symlinked": False,
+        "eligibility": {
+            "requirements": dict(requirements),
+            "missing_or_unverified": [],
+            "codex_version": codex_version,
+            "reason": "all prerequisites passed before the native protocol attempt",
+        },
+        "cases": [case],
+        "summary": {"selected": 1, "passed": 0, "failed": 1, "ineligible": 0},
+        "claim_boundary": {
+            "proves": ["eligible_native_live_attempt_failed_during_protocol"],
+            "does_not_prove": [
+                "fresh_app_server_behavior",
+                "compact_protocol_behavior",
+                "resume_protocol_behavior",
+                "model_behavior_or_user_burden_reduction",
+            ],
+        },
+    }
+
+
+def _probe_codex_version(
+    codex_path: Path,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    try:
+        completed = subprocess.run(
+            [str(codex_path), "--version"],
+            env=dict(environ) if environ is not None else None,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    match = _CODEX_VERSION_RE.fullmatch(completed.stdout.strip())
+    return match.group(1) if match else ""
+
+
+def _load_live_sink_contract(path: Path) -> dict[str, object]:
+    if path.stat().st_size > 64 * 1024:
+        raise ValueError("live hook-sink contract exceeds 64 KiB")
+    value = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(value, dict) or value.get("schema_version") != LIVE_HOOK_SINK_SCHEMA:
+        raise ValueError(f"live hook-sink contract must be {LIVE_HOOK_SINK_SCHEMA}")
+    model = value.get("model")
+    if not isinstance(model, str) or not model.strip() or len(model) > 128:
+        raise ValueError("live hook-sink contract requires a bounded model")
+    timeout_seconds = value.get("timeout_seconds", 180)
+    if not isinstance(timeout_seconds, int) or not 15 <= timeout_seconds <= 300:
+        raise ValueError("live hook-sink timeout_seconds must be between 15 and 300")
+    auth_mode = value.get("auth_mode", "environment_isolated")
+    if auth_mode not in {"environment_isolated", "existing_b_home"}:
+        raise ValueError("live hook-sink auth_mode is not admitted")
+    auth_env = value.get("auth_env", "")
+    if auth_env and auth_env not in _LIVE_AUTH_ENV_NAMES:
+        raise ValueError("live hook-sink auth_env is not an admitted credential variable")
+    if auth_mode == "existing_b_home" and auth_env:
+        raise ValueError("existing_b_home cannot also select an auth_env")
+    return {
+        "schema_version": LIVE_HOOK_SINK_SCHEMA,
+        "model": model.strip(),
+        "timeout_seconds": timeout_seconds,
+        "auth_mode": auth_mode,
+        "auth_env": auth_env,
+    }
+
+
+def _write_live_hook_wrapper(
+    path: Path,
+    *,
+    log_path: Path,
+    adapter_path: Path,
+    source_codex_home: Path,
+    fabric_root: Path,
+    working_dir: Path,
+) -> None:
+    source = f"""from __future__ import annotations
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+LOG_PATH = Path({str(log_path)!r})
+ADAPTER_PATH = Path({str(adapter_path)!r})
+SOURCE_CODEX_HOME = {str(source_codex_home)!r}
+FABRIC_ROOT = {str(fabric_root)!r}
+WORKING_DIR = {str(working_dir)!r}
+WINDOWS_CHILD_ENV_NAMES = {_WINDOWS_CHILD_ENV_NAMES!r}
+
+raw = sys.stdin.buffer.read(1_000_001)
+event = {{}}
+try:
+    parsed = json.loads(raw.decode("utf-8"))
+    if isinstance(parsed, dict):
+        event = parsed
+except Exception:
+    pass
+source_env = {{str(key).upper(): str(value) for key, value in os.environ.items()}}
+env = {{
+    name: source_env[name]
+    for name in WINDOWS_CHILD_ENV_NAMES
+    if source_env.get(name)
+}}
+env["CODEX_HOME"] = SOURCE_CODEX_HOME
+env["CODEX_CONTEXT_FABRIC_ROOT"] = FABRIC_ROOT
+completed = subprocess.run(
+    [sys.executable, "-I", "-B", str(ADAPTER_PATH)],
+    input=raw,
+    capture_output=True,
+    cwd=WORKING_DIR,
+    env=env,
+    check=False,
+)
+record = {{
+    "captured_at_ns": time.time_ns(),
+    "event_name": str(event.get("hook_event_name", "")),
+    "session_id": str(event.get("session_id", "")),
+    "turn_id": str(event.get("turn_id", "")),
+    "source": str(event.get("source", "")),
+    "input_sha256": hashlib.sha256(raw).hexdigest(),
+    "output_sha256": hashlib.sha256(completed.stdout).hexdigest(),
+    "adapter_exit_code": completed.returncode,
+}}
+with LOG_PATH.open("a", encoding="utf-8", newline="\\n") as handle:
+    handle.write(json.dumps(record, separators=(",", ":")) + "\\n")
+sys.stdout.buffer.write(completed.stdout or b'{{"continue":true}}\\n')
+raise SystemExit(completed.returncode)
+"""
+    path.write_text(source, encoding="utf-8", newline="\n")
+
+
+def _write_live_hooks(path: Path, *, wrapper: Path) -> None:
+    command = subprocess.list2cmdline([sys.executable, "-I", "-B", str(wrapper)])
+    hooks: dict[str, object] = {}
+    for event_name, matcher, timeout in (
+        ("SessionStart", "startup|resume|compact|clear", 5),
+        ("UserPromptSubmit", "", 5),
+        ("Stop", "", 5),
+        ("PreCompact", "", 5),
+        ("PostCompact", "", 5),
+        ("SessionEnd", "", 3),
+    ):
+        hooks[event_name] = [
+            {
+                "matcher": matcher,
+                "hooks": [{"type": "command", "command": command, "timeout": timeout}],
+            }
+        ]
+    path.write_text(
+        json.dumps({"hooks": hooks}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _write_live_config(path: Path, trusted_hooks: Sequence[Mapping[str, object]]) -> None:
+    lines = [
+        'approval_policy = "never"',
+        'sandbox_mode = "read-only"',
+        "",
+        "[analytics]",
+        "enabled = false",
+        "",
+        "[hooks.state]",
+    ]
+    for hook in trusted_hooks:
+        key = hook.get("key")
+        current_hash = hook.get("currentHash")
+        if not isinstance(key, str) or "'" in key:
+            raise LiveProtocolError("hooks/list returned an unsafe hook key")
+        if not isinstance(current_hash, str) or not re.fullmatch(
+            r"sha256:[0-9a-f]{64}", current_hash
+        ):
+            raise LiveProtocolError("hooks/list returned an invalid currentHash")
+        lines.extend(("", f"[hooks.state.'{key}']", f'trusted_hash = "{current_hash}"'))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+
+
+def _owned_hooks(result: object, hooks_path: Path) -> list[dict[str, object]]:
+    if not isinstance(result, Mapping):
+        return []
+    data = result.get("data")
+    if not isinstance(data, Sequence) or isinstance(data, (str, bytes, bytearray)):
+        return []
+    expected = str(hooks_path.resolve()).casefold()
+    hooks: list[dict[str, object]] = []
+    for entry in data:
+        if not isinstance(entry, Mapping):
+            continue
+        for hook in entry.get("hooks", []):
+            if not isinstance(hook, Mapping):
+                continue
+            source_path = hook.get("sourcePath")
+            try:
+                source_matches = (
+                    isinstance(source_path, str)
+                    and str(Path(source_path).resolve()).casefold() == expected
+                )
+            except (OSError, RuntimeError):
+                source_matches = False
+            if hook.get("source") == "user" and source_matches:
+                hooks.append(dict(hook))
+    return hooks
+
+
+def _hook_event_names(messages: Sequence[Mapping[str, object]]) -> list[str]:
+    result: list[str] = []
+    for message in messages:
+        if message.get("method") != "hook/completed":
+            continue
+        params = message.get("params")
+        run = params.get("run") if isinstance(params, Mapping) else None
+        if isinstance(run, Mapping) and isinstance(run.get("eventName"), str):
+            result.append(str(run["eventName"]))
+    return result
+
+
+def _item_types(messages: Sequence[Mapping[str, object]]) -> list[str]:
+    result: list[str] = []
+    for message in messages:
+        if message.get("method") not in {"item/started", "item/completed"}:
+            continue
+        params = message.get("params")
+        item = params.get("item") if isinstance(params, Mapping) else None
+        if isinstance(item, Mapping) and isinstance(item.get("type"), str):
+            result.append(str(item["type"]))
+    return result
+
+
+def _agent_text(messages: Sequence[Mapping[str, object]]) -> str:
+    texts: list[str] = []
+    for message in messages:
+        if message.get("method") != "item/completed":
+            continue
+        params = message.get("params")
+        item = params.get("item") if isinstance(params, Mapping) else None
+        if not isinstance(item, Mapping) or item.get("type") != "agentMessage":
+            continue
+        text = item.get("text")
+        if isinstance(text, str):
+            texts.append(text)
+    return "\n".join(texts)
+
+
+def _run_live_turn(
+    client: _AppServerClient,
+    *,
+    thread_id: str,
+    prompt: str,
+    working_dir: Path,
+    timeout: float,
+) -> tuple[str, list[dict[str, object]]]:
+    start = len(client.messages)
+    result = client.request(
+        "turn/start",
+        {
+            "threadId": thread_id,
+            "input": [{"type": "text", "text": prompt}],
+            "cwd": str(working_dir),
+        },
+        timeout=timeout,
+    )
+    if not isinstance(result, Mapping) or not isinstance(result.get("turn"), Mapping):
+        raise LiveProtocolError("turn/start returned no turn")
+    turn_id = str(result["turn"].get("id", ""))
+    completed = client.wait_notification(
+        "turn/completed",
+        timeout=timeout,
+        predicate=lambda params: (
+            isinstance(params.get("turn"), Mapping) and params["turn"].get("id") == turn_id
+        ),
+    )
+    params = completed.get("params")
+    turn = params.get("turn") if isinstance(params, Mapping) else None
+    if not isinstance(turn, Mapping) or turn.get("status") != "completed":
+        raise LiveProtocolError("native Codex turn did not complete")
+    messages = client.messages[start:]
+    return _agent_text(messages), messages
+
+
+def _read_sink_records(path: Path) -> list[dict[str, object]]:
+    if not path.is_file():
+        return []
+    records: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            records.append(value)
+    return records
+
+
+def _nonsecret_home_fingerprint(home: Path) -> str:
+    values: dict[str, str] = {}
+    for name in ("AGENTS.md", "config.toml", "hooks.json"):
+        path = home / name
+        values[name] = _sha256_file(path) if path.is_file() else "missing"
+    return _sha256_bytes(_canonical_bytes(values))
+
+
+def _account_protection_receipt(home: Path) -> dict[str, object]:
+    """Hash non-secret configuration and observe auth presence without reading it."""
+
+    configuration: dict[str, dict[str, object]] = {}
+    for name in ("AGENTS.md", "config.toml", "hooks.json"):
+        path = home / name
+        present = path.is_file()
+        configuration[name] = {
+            "present": present,
+            "sha256": _sha256_file(path) if present else "",
+        }
+    return {
+        "configuration": configuration,
+        "auth": {
+            "present": (home / "auth.json").is_file(),
+            "content_read": False,
+        },
+    }
+
+
+def _session_rollout_paths(home: Path) -> set[str]:
+    sessions = home / "sessions"
+    if not sessions.is_dir():
+        return set()
+    return {
+        str(path.relative_to(sessions)).replace("\\", "/")
+        for path in sessions.rglob("rollout-*.jsonl")
+        if path.is_file()
+    }
+
+
+def _fabric_session_evidence(root: Path, session_id: str) -> dict[str, object]:
+    database = root / "context_fabric.sqlite3"
+    if not database.is_file():
+        raise LiveProtocolError("isolated Context Fabric database was not created")
+    connection = sqlite3.connect(database, timeout=1.2)
+    connection.row_factory = sqlite3.Row
+    try:
+        rows = connection.execute(
+            "SELECT carrier_id,session_id,event_kind,metadata_json "
+            "FROM events WHERE session_id=? ORDER BY seq",
+            (session_id,),
+        ).fetchall()
+    except sqlite3.Error as error:
+        raise LiveProtocolError("isolated Context Fabric events could not be read") from error
+    finally:
+        connection.close()
+    sources: list[str] = []
+    for row in rows:
+        try:
+            metadata = json.loads(row["metadata_json"])
+        except json.JSONDecodeError:
+            metadata = {}
+        if row["event_kind"] == "session_start" and isinstance(metadata, Mapping):
+            source = metadata.get("source")
+            if isinstance(source, str):
+                sources.append(source)
+    return {
+        "event_count": len(rows),
+        "event_kinds": [str(row["event_kind"]) for row in rows],
+        "session_start_sources": sources,
+        "carrier_ids": sorted({str(row["carrier_id"]) for row in rows}),
+        "all_rows_match_session": all(str(row["session_id"]) == session_id for row in rows),
+    }
+
+
+def run_live(
+    operation_root: Path,
+    *,
+    codex_path: Path | None,
+    s_codex_home: Path | None,
+    b_codex_home: Path | None,
+    working_dir: Path | None,
+    hook_sink: Path | None,
+    case_pattern: str = "",
+) -> dict[str, object]:
+    """Run one bounded native 0.147 start/compact/resume trajectory.
+
+    The default app-server owns a fresh operation-scoped ``CODEX_HOME`` and one
+    admitted authentication environment variable.  An explicit
+    ``existing_b_home`` contract instead uses B's configured account home in
+    place, without copying credentials, and keeps Context Fabric operation
+    scoped.
+    """
+
+    started_ns = time.time_ns()
+    root = _safe_operation_root(operation_root)
+    if case_pattern and not re.search(case_pattern, "CTX_LIVE_START_COMPACT_RESUME"):
+        raise ValueError(f"case pattern selected no live cases: {case_pattern}")
+    codex_version = ""
+    native_present = bool(
+        codex_path and codex_path.is_file() and codex_path.suffix.lower() == ".exe"
+    )
+    if native_present and codex_path is not None:
+        codex_version = _probe_codex_version(
+            codex_path,
+            environ=_minimal_windows_environment(os.environ),
+        )
+    allowed_by_carrier = {
+        carrier: Path(path).resolve()
+        for path, carrier in context_runtime.DEFAULT_ALLOWED_CODEX_HOMES.items()
+    }
+    requirements = {
+        "native_codex_0_147": codex_version == "0.147.0",
+        "source_s_codex_home": bool(
+            s_codex_home
+            and s_codex_home.is_dir()
+            and s_codex_home.resolve() == allowed_by_carrier.get("s-primary")
+        ),
+        "source_b_codex_home": bool(
+            b_codex_home
+            and b_codex_home.is_dir()
+            and b_codex_home.resolve() == allowed_by_carrier.get("s-account-b")
+        ),
+        "working_directory": bool(working_dir and working_dir.is_dir()),
+        "hook_sink_contract": bool(hook_sink and hook_sink.is_file()),
+    }
+    contract: dict[str, object] | None = None
+    contract_error = ""
+    if requirements["hook_sink_contract"] and hook_sink is not None:
+        try:
+            contract = _load_live_sink_contract(hook_sink)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            contract_error = str(error)
+    auth_mode = str(contract.get("auth_mode", "environment_isolated")) if contract else ""
+    auth_env = str(contract.get("auth_env", "")) if contract else ""
+    if auth_mode == "environment_isolated":
+        if not auth_env:
+            auth_env = next((name for name in _LIVE_AUTH_ENV_NAMES if os.environ.get(name)), "")
+        requirements["isolated_auth_environment"] = bool(auth_env and os.environ.get(auth_env))
+    elif auth_mode == "existing_b_home":
+        requirements["existing_b_home_auth_present"] = bool(
+            b_codex_home and (b_codex_home / "auth.json").is_file()
+        )
+        requirements["existing_b_home_runtime_files_present"] = bool(
+            b_codex_home
+            and all(
+                (b_codex_home / name).is_file()
+                for name in ("AGENTS.md", "config.toml", "hooks.json")
+            )
+        )
+    if contract_error or not all(requirements.values()):
+        reason = contract_error or (
+            "live trajectory requires native 0.147, valid S/B mount identities, a hook-sink "
+            "contract, and the selected environment or existing-B authentication prerequisite"
+        )
+        return _live_ineligible(
+            root,
+            case_pattern=case_pattern,
+            requirements=requirements,
+            codex_version=codex_version,
+            reason=reason,
+        )
+    assert codex_path is not None
+    assert s_codex_home is not None
+    assert b_codex_home is not None
+    assert working_dir is not None
+    assert contract is not None
+    use_existing_b_home = auth_mode == "existing_b_home"
+    fabric_root = root / "isolated-context-fabric"
+    hook_log = root / "hook-sink.jsonl"
+    source_home_fingerprints_before = {
+        "S": _nonsecret_home_fingerprint(s_codex_home),
+        "B": _nonsecret_home_fingerprint(b_codex_home),
+    }
+    protected_before = _account_protection_receipt(b_codex_home) if use_existing_b_home else {}
+    session_rollouts_before = _session_rollout_paths(b_codex_home) if use_existing_b_home else set()
+    if use_existing_b_home:
+        live_home = b_codex_home
+        hooks_path = b_codex_home / "hooks.json"
+        environ = _existing_account_environment(
+            os.environ,
+            codex_home=b_codex_home,
+            fabric_root=fabric_root,
+        )
+    else:
+        live_home = root / "isolated-codex-home"
+        live_home.mkdir()
+        wrapper = root / "hook_sink_wrapper.py"
+        hooks_path = live_home / "hooks.json"
+        config_path = live_home / "config.toml"
+        adapter_path = REPO_ROOT / "scripts" / "codex_situation_context_hook.py"
+        _write_live_hook_wrapper(
+            wrapper,
+            log_path=hook_log,
+            adapter_path=adapter_path,
+            source_codex_home=s_codex_home,
+            fabric_root=fabric_root,
+            working_dir=working_dir,
+        )
+        _write_live_hooks(hooks_path, wrapper=wrapper)
+        _write_live_config(config_path, [])
+        environ = _live_app_server_environment(
+            os.environ,
+            codex_home=live_home,
+            fabric_root=fabric_root,
+            auth_env=auth_env,
+        )
+    timeout = float(contract["timeout_seconds"])
+    command = [str(codex_path), "app-server", "--stdio"]
+    thread_id = ""
+    test_thread_name = ""
+
+    def post_eligibility_failure(error: BaseException) -> dict[str, object]:
+        protected_unchanged: bool | None = None
+        protected_after_failure: dict[str, object] = {}
+        existing_account_session_written = False
+        if use_existing_b_home:
+            try:
+                protected_after_failure = _account_protection_receipt(b_codex_home)
+                protected_unchanged = protected_before.get(
+                    "configuration"
+                ) == protected_after_failure.get("configuration")
+                new_rollouts = sorted(
+                    _session_rollout_paths(b_codex_home) - session_rollouts_before
+                )
+                existing_account_session_written = bool(
+                    thread_id and len(new_rollouts) == 1 and thread_id in Path(new_rollouts[0]).name
+                )
+            except (OSError, RuntimeError):
+                protected_unchanged = False
+        return _live_failed(
+            root,
+            case_pattern=case_pattern,
+            requirements=requirements,
+            codex_version=codex_version,
+            error=error,
+            auth_mode=auth_mode,
+            existing_account_session_written=existing_account_session_written,
+            account_configuration_unchanged=protected_unchanged,
+            account_protection_before=protected_before,
+            account_protection_after=protected_after_failure,
+        )
+
+    try:
+        if not use_existing_b_home:
+            with _AppServerClient(command, cwd=working_dir, environ=environ) as discovery:
+                discovery.initialize(timeout=15)
+                discovered_result = discovery.request(
+                    "hooks/list", {"cwds": [str(working_dir)]}, timeout=15
+                )
+                discovered = _owned_hooks(discovered_result, hooks_path)
+            if len(discovered) != 6:
+                raise LiveProtocolError(
+                    f"expected six operation hooks, discovered {len(discovered)}"
+                )
+            _write_live_config(config_path, discovered)
+
+        anchor = _nonce("LIVE-ANCHOR")
+        old_referent = _nonce("LIVE-OLD")
+        current_referent = _nonce("LIVE-CURRENT")
+        all_messages: list[dict[str, object]] = []
+        sent_methods: list[str] = []
+        process_pids: list[int] = []
+        with _AppServerClient(command, cwd=working_dir, environ=environ) as first:
+            process_pids.append(first.pid)
+            first.initialize(timeout=15)
+            trusted_result = first.request("hooks/list", {"cwds": [str(working_dir)]}, timeout=15)
+            trusted = _owned_hooks(trusted_result, hooks_path)
+            if len(trusted) != 6 or any(hook.get("trustStatus") != "trusted" for hook in trusted):
+                raise LiveProtocolError("the selected account did not expose six trusted hooks")
+            start_result = first.request(
+                "thread/start",
+                {
+                    "cwd": str(working_dir),
+                    "model": contract["model"],
+                    "approvalPolicy": "never",
+                    "sandbox": "read-only",
+                    "ephemeral": False,
+                    "sessionStartSource": "startup",
+                },
+                timeout=timeout,
+            )
+            if not isinstance(start_result, Mapping) or not isinstance(
+                start_result.get("thread"), Mapping
+            ):
+                raise LiveProtocolError("thread/start returned no thread")
+            thread_id = str(start_result["thread"].get("id", ""))
+            if not thread_id:
+                raise LiveProtocolError("thread/start returned an empty thread id")
+            test_thread_name = f"context-runtime-live-{uuid.uuid4().hex[:12]}"
+            first.request(
+                "thread/name/set",
+                {"threadId": thread_id, "name": test_thread_name},
+                timeout=15,
+            )
+            first.wait_notification(
+                "thread/name/updated",
+                timeout=15,
+                predicate=lambda params: (
+                    params.get("threadId") == thread_id
+                    and params.get("threadName") == test_thread_name
+                ),
+            )
+            first.wait_notification(
+                "hook/completed",
+                timeout=15,
+                predicate=lambda params: (
+                    isinstance(params.get("run"), Mapping)
+                    and params["run"].get("eventName") == "sessionStart"
+                ),
+            )
+            seed_text, _ = _run_live_turn(
+                first,
+                thread_id=thread_id,
+                prompt=(
+                    f"Remember hidden anchor {anchor}. Its referent is {old_referent}. "
+                    f"Reply exactly {old_referent}. Do not use tools."
+                ),
+                working_dir=working_dir,
+                timeout=timeout,
+            )
+            correction_text, _ = _run_live_turn(
+                first,
+                thread_id=thread_id,
+                prompt=(
+                    f"Correction for {anchor}: the current referent is {current_referent}; "
+                    f"{old_referent} is obsolete. Reply exactly {current_referent}. Do not use tools."
+                ),
+                working_dir=working_dir,
+                timeout=timeout,
+            )
+            compact_start = len(first.messages)
+            first.request("thread/compact/start", {"threadId": thread_id}, timeout=timeout)
+            first.wait_notification(
+                "item/completed",
+                timeout=timeout,
+                predicate=lambda params: (
+                    params.get("threadId") == thread_id
+                    and isinstance(params.get("item"), Mapping)
+                    and params["item"].get("type") == "contextCompaction"
+                ),
+            )
+            first.wait_notification(
+                "turn/completed",
+                timeout=timeout,
+                predicate=lambda params: (
+                    params.get("threadId") == thread_id
+                    and isinstance(params.get("turn"), Mapping)
+                    and params["turn"].get("status") == "completed"
+                ),
+            )
+            first.wait_notification(
+                "hook/completed",
+                timeout=15,
+                predicate=lambda params: (
+                    isinstance(params.get("run"), Mapping)
+                    and params["run"].get("eventName") == "sessionStart"
+                ),
+            )
+            compact_messages = first.messages[compact_start:]
+            compact_text, _ = _run_live_turn(
+                first,
+                thread_id=thread_id,
+                prompt=(
+                    f"For hidden anchor {anchor}, reply with the current referent token only. "
+                    "Do not use tools."
+                ),
+                working_dir=working_dir,
+                timeout=timeout,
+            )
+        all_messages.extend(first.messages)
+        sent_methods.extend(first.sent_methods)
+        first_stderr = first.stderr_receipt
+
+        with _AppServerClient(command, cwd=working_dir, environ=environ) as resumed:
+            process_pids.append(resumed.pid)
+            resumed.initialize(timeout=15)
+            resume_result = resumed.request(
+                "thread/resume",
+                {
+                    "threadId": thread_id,
+                    "cwd": str(working_dir),
+                    "model": contract["model"],
+                    "approvalPolicy": "never",
+                    "sandbox": "read-only",
+                },
+                timeout=timeout,
+            )
+            if not isinstance(resume_result, Mapping) or not isinstance(
+                resume_result.get("thread"), Mapping
+            ):
+                raise LiveProtocolError("thread/resume returned no thread")
+            resumed_thread_id = str(resume_result["thread"].get("id", ""))
+            if not resumed_thread_id:
+                raise LiveProtocolError("thread/resume returned an empty thread id")
+            resumed.wait_notification(
+                "hook/completed",
+                timeout=15,
+                predicate=lambda params: (
+                    isinstance(params.get("run"), Mapping)
+                    and params["run"].get("eventName") == "sessionStart"
+                ),
+            )
+            resume_text, _ = _run_live_turn(
+                resumed,
+                thread_id=thread_id,
+                prompt=(
+                    f"For hidden anchor {anchor}, reply with the current referent token only. "
+                    "Do not use tools."
+                ),
+                working_dir=working_dir,
+                timeout=timeout,
+            )
+        all_messages.extend(resumed.messages)
+        sent_methods.extend(resumed.sent_methods)
+        resumed_stderr = resumed.stderr_receipt
+    except (OSError, subprocess.SubprocessError, LiveProtocolError) as error:
+        return post_eligibility_failure(error)
+
+    try:
+        sink_records = [] if use_existing_b_home else _read_sink_records(hook_log)
+        source_home_fingerprints_after = {
+            "S": _nonsecret_home_fingerprint(s_codex_home),
+            "B": _nonsecret_home_fingerprint(b_codex_home),
+        }
+        isolated_inventory = context_runtime.store_inventory(fabric_root)
+        fabric_session = _fabric_session_evidence(fabric_root, thread_id)
+        protected_after = _account_protection_receipt(b_codex_home) if use_existing_b_home else {}
+        session_rollouts_after = (
+            _session_rollout_paths(b_codex_home) if use_existing_b_home else set()
+        )
+        hook_sink_sha256 = _sha256_file(hook_log) if hook_log.is_file() else ""
+    except (OSError, sqlite3.Error, ValueError, LiveProtocolError) as error:
+        return post_eligibility_failure(error)
+    new_session_rollouts = sorted(session_rollouts_after - session_rollouts_before)
+    existing_account_session_written = bool(
+        use_existing_b_home
+        and len(new_session_rollouts) == 1
+        and thread_id in Path(new_session_rollouts[0]).name
+    )
+    sink_names = [str(record.get("event_name", "")) for record in sink_records]
+    sink_session_sources = [
+        str(record.get("source", ""))
+        for record in sink_records
+        if record.get("event_name") == "SessionStart"
+    ]
+    app_hook_names = _hook_event_names(all_messages)
+    item_types = _item_types(all_messages)
+    compact_item_types = _item_types(compact_messages)
+    tool_types = {
+        "commandExecution",
+        "fileChange",
+        "mcpToolCall",
+        "dynamicToolCall",
+        "webSearch",
+    }
+    trusted_events = {
+        str(item.get("eventName", "")) for item in trusted if item.get("trustStatus") == "trusted"
+    }
+    assertions = {
+        "native_codex_version_exact": codex_version == "0.147.0",
+        "six_operation_hooks_discovered_and_trusted": trusted_events
+        == {
+            "sessionStart",
+            "userPromptSubmit",
+            "stop",
+            "preCompact",
+            "postCompact",
+            "sessionEnd",
+        },
+        "fresh_thread_and_turn_observed": "thread/started"
+        in [str(item.get("method", "")) for item in all_messages]
+        and "turn/started" in [str(item.get("method", "")) for item in all_messages],
+        "compact_item_and_turn_completed_observed": "contextCompaction" in compact_item_types
+        and "turn/completed" in [str(item.get("method", "")) for item in compact_messages],
+        "pre_and_post_compact_hooks_observed_by_app_server": "preCompact" in app_hook_names
+        and "postCompact" in app_hook_names,
+        "resume_used_new_native_process": len(process_pids) == 2
+        and process_pids[0] != process_pids[1]
+        and resumed_thread_id == thread_id
+        and "thread/resume" in sent_methods,
+        "seed_turn_echoed_hidden_referent": old_referent in seed_text,
+        "correction_turn_echoed_current_referent": current_referent in correction_text,
+        "post_compact_turn_kept_current_not_obsolete": current_referent in compact_text
+        and old_referent not in compact_text,
+        "resumed_turn_kept_current_not_obsolete": current_referent in resume_text
+        and old_referent not in resume_text,
+        "model_turns_exposed_no_tool_items": not tool_types.intersection(item_types),
+        "isolated_context_store_received_hook_events": int(isolated_inventory.get("events", 0)) > 0,
+        "source_home_nonsecret_configuration_unchanged": source_home_fingerprints_before
+        == source_home_fingerprints_after,
+        "operation_context_store_isolated": fabric_root.resolve().is_relative_to(root.resolve()),
+    }
+    if use_existing_b_home:
+        assertions.update(
+            {
+                "installed_hook_events_reached_isolated_fabric": {
+                    "session_start",
+                    "user_message",
+                    "assistant_message",
+                    "pre_compact",
+                    "post_compact",
+                }.issubset(set(fabric_session["event_kinds"])),
+                "startup_compact_and_resume_reached_isolated_fabric": {
+                    "startup",
+                    "compact",
+                    "resume",
+                }.issubset(set(fabric_session["session_start_sources"])),
+                "isolated_fabric_bound_to_b_session_only": fabric_session["carrier_ids"]
+                == ["s-account-b"]
+                and fabric_session["all_rows_match_session"] is True,
+                "existing_b_nonsecret_configuration_unchanged": protected_before.get(
+                    "configuration"
+                )
+                == protected_after.get("configuration"),
+                "existing_b_auth_presence_retained_without_content_read": protected_before.get(
+                    "auth"
+                )
+                == {"present": True, "content_read": False}
+                and protected_after.get("auth") == {"present": True, "content_read": False},
+                "exactly_one_named_existing_account_rollout_written": existing_account_session_written,
+                "no_temporary_hook_wrapper_or_home_created": not hook_log.exists()
+                and not (root / "hook_sink_wrapper.py").exists()
+                and not (root / "isolated-codex-home").exists(),
+                "no_environment_credential_forwarded": not any(
+                    name in environ for name in _LIVE_AUTH_ENV_NAMES
+                ),
+            }
+        )
+    else:
+        assertions.update(
+            {
+                "pre_and_post_compact_hooks_observed_by_sink": "PreCompact" in sink_names
+                and "PostCompact" in sink_names,
+                "startup_compact_and_resume_session_start_reached_sink": sink_names.count(
+                    "SessionStart"
+                )
+                >= 3
+                and "compact" in sink_session_sources
+                and "resume" in sink_session_sources,
+                "sink_adapter_completed_every_record": bool(sink_records)
+                and all(record.get("adapter_exit_code") == 0 for record in sink_records),
+                "credential_not_persisted_in_operation_home": not (
+                    live_home / "auth.json"
+                ).exists(),
+                "operation_codex_home_isolated_from_source_homes": live_home.resolve()
+                not in {s_codex_home.resolve(), b_codex_home.resolve()},
+            }
+        )
+    failed = sorted(key for key, value in assertions.items() if value is not True)
+    status = "passed" if not failed else "failed"
+    case = {
+        "case_id": "CTX_LIVE_START_COMPACT_RESUME",
+        "status": status,
+        "evidence_level": LIVE_EVIDENCE,
+        "runtime_claim_allowed": not failed,
+        "assertions": assertions,
+        "failed_assertions": failed,
+        "evidence": {
+            "codex_version": codex_version,
+            "model": contract["model"],
+            "auth_mode": auth_mode,
+            "thread_id_sha256": _sha256_text(thread_id),
+            "test_thread_name": test_thread_name,
+            "process_count": len(process_pids),
+            "processes_distinct": len(set(process_pids)) == len(process_pids),
+            "app_server_hook_order": app_hook_names,
+            "hook_sink_order": sink_names,
+            "hook_sink_session_start_sources": sink_session_sources,
+            "sent_method_counts": {
+                method: sent_methods.count(method) for method in sorted(set(sent_methods))
+            },
+            "item_types": item_types,
+            "hook_sink_record_count": len(sink_records),
+            "protocol_trace_sha256": _sha256_bytes(_canonical_bytes(all_messages)),
+            "hook_sink_sha256": hook_sink_sha256,
+            "isolated_context_inventory": isolated_inventory,
+            "isolated_fabric_session": fabric_session,
+            "source_home_fingerprint_sha256": source_home_fingerprints_after,
+            "b_account_protection_before": protected_before,
+            "b_account_protection_after": protected_after,
+            "new_session_rollout_count": len(new_session_rollouts),
+            "new_session_rollout_path_sha256": [
+                _sha256_text(path) for path in new_session_rollouts
+            ],
+            "existing_account_session_written": existing_account_session_written,
+            "first_stderr": first_stderr,
+            "resumed_stderr": resumed_stderr,
+            "claim_scope": (
+                "one_bounded_existing_b_account_start_compact_resume_trajectory"
+                if use_existing_b_home
+                else "one_bounded_isolated_environment_start_compact_resume_trajectory"
+            ),
+        },
+    }
+    finished_ns = time.time_ns()
+    return {
+        "schema_version": RECEIPT_SCHEMA,
+        "mode": "live",
+        "evidence_level": LIVE_EVIDENCE,
+        "claim_class": LIVE_CLAIM_CLASS,
+        "status": status,
+        "runtime_claim_allowed": not failed,
+        "operation_root": str(root),
+        "case_pattern": case_pattern,
+        "existing_account_session_written": existing_account_session_written,
+        "auth_content_read": False,
+        "source_credentials_copied": False,
+        "source_credentials_symlinked": False,
+        "isolation": {
+            "operation_scoped_codex_home": not use_existing_b_home,
+            "existing_b_account_home_used": use_existing_b_home,
+            "operation_scoped_context_store": True,
+            "auth_content_read": False,
+            "source_credentials_copied": False,
+            "source_credentials_symlinked": False,
+            "credential_transport": (
+                "existing_account_home" if use_existing_b_home else f"environment:{auth_env}"
+            ),
+            "production_store_used": False,
+        },
+        "cases": [case],
+        "summary": {
+            "selected": 1,
+            "passed": 0 if failed else 1,
+            "failed": 1 if failed else 0,
+            "ineligible": 0,
+            "duration_ms": (finished_ns - started_ns) // 1_000_000,
+        },
+        "claim_boundary": {
+            "proves": [
+                "native_0_147_json_stdio_start_compact_resume_protocol",
+                (
+                    "existing_b_installed_hook_notifications_and_isolated_fabric_readback"
+                    if use_existing_b_home
+                    else "installed_operation_hook_discovery_trust_and_sink_execution"
+                ),
+                "bounded_hidden_referent_survival_in_this_live_trajectory",
+                (
+                    "existing_b_nonsecret_configuration_unchanged_and_one_named_session_written"
+                    if use_existing_b_home
+                    else "operation_scoped_codex_home_and_context_store"
+                ),
+            ]
+            if not failed
+            else ["native_live_trajectory_was_observed_but_assertions_failed"],
+            "does_not_prove": [
+                "context_fabric_alone_caused_model_recall",
+                "longitudinal_reduction_of_user_correction_burden",
+                "permanent_uptake_or_same_subject",
+                "behavior_of_other_models_accounts_or_future_codex_versions",
+                "authorization_to_continue_a_historical_task",
             ],
         },
     }
@@ -866,7 +2108,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 hook_sink=args.hook_sink,
                 case_pattern=args.case_pattern,
             )
-            exit_code = EXIT_LIVE_INELIGIBLE
+            if receipt["status"] == "passed":
+                exit_code = 0
+            elif receipt["status"] == "ineligible":
+                exit_code = EXIT_LIVE_INELIGIBLE
+            else:
+                exit_code = EXIT_ASSERTION_FAILED
     except ContractFailure as error:
         receipt = {
             "schema_version": RECEIPT_SCHEMA,

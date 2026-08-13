@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +16,7 @@ HARNESS_PATH = (
     REPO_ROOT / "evals" / "context_runtime_trajectory" / "run_context_runtime_trajectory.py"
 )
 SCHEMA_PATH = REPO_ROOT / "evals" / "context_runtime_trajectory" / "receipt.schema.json"
+RUNNER_PATH = REPO_ROOT / "scripts" / "run_behavior_regression.ps1"
 
 
 def _load_harness():
@@ -133,10 +137,635 @@ def test_live_mode_is_typed_ineligible_and_never_inherits_contract_pass(tmp_path
     assert receipt["status"] == "ineligible"
     assert receipt["runtime_claim_allowed"] is False
     assert receipt["cases"] == []
-    assert "live_driver" in receipt["eligibility"]["missing_or_unverified"]
+    assert "native_codex_0_147" in receipt["eligibility"]["missing_or_unverified"]
+    assert "hook_sink_contract" in receipt["eligibility"]["missing_or_unverified"]
     assert receipt["claim_boundary"]["proves"] == [
         "live_mode_failed_closed_before_model_or_protocol_claim"
     ]
+
+
+def test_live_case_pattern_fails_before_eligibility_checks(tmp_path: Path) -> None:
+    harness = _load_harness()
+    with pytest.raises(ValueError, match="selected no live cases"):
+        harness.run_live(
+            tmp_path / "live-operation",
+            codex_path=None,
+            s_codex_home=None,
+            b_codex_home=None,
+            working_dir=None,
+            hook_sink=None,
+            case_pattern=r"^DOES_NOT_EXIST$",
+        )
+
+
+def test_app_server_json_stdio_client_parses_interleaved_protocol(tmp_path: Path) -> None:
+    harness = _load_harness()
+    fake_server = tmp_path / "fake_app_server.py"
+    fake_server.write_text(
+        """\
+import json
+import sys
+
+for line in sys.stdin:
+    message = json.loads(line)
+    method = message.get("method")
+    request_id = message.get("id")
+    if method == "initialize":
+        print(json.dumps({"method": "config/warning", "params": {"message": "fixture"}}), flush=True)
+        print(json.dumps({"id": request_id, "result": {"userAgent": "fixture"}}), flush=True)
+    elif method == "hooks/list":
+        print(json.dumps({"id": request_id, "result": {"data": []}}), flush=True)
+    elif method == "turn/start":
+        turn = {"id": "turn-fixture", "items": [], "status": "inProgress"}
+        print(json.dumps({"id": request_id, "result": {"turn": turn}}), flush=True)
+        print(json.dumps({"method": "turn/started", "params": {"threadId": "thread-fixture", "turn": turn}}), flush=True)
+        print(json.dumps({"method": "item/completed", "params": {"threadId": "thread-fixture", "turnId": "turn-fixture", "item": {"id": "item-fixture", "type": "agentMessage", "text": "FIXTURE-NONCE"}}}), flush=True)
+        turn["status"] = "completed"
+        print(json.dumps({"method": "turn/completed", "params": {"threadId": "thread-fixture", "turn": turn}}), flush=True)
+""",
+        encoding="utf-8",
+    )
+
+    with harness._AppServerClient(
+        [sys.executable, str(fake_server)],
+        cwd=tmp_path,
+        environ=harness._minimal_windows_environment(os.environ),
+    ) as client:
+        client.initialize(timeout=5)
+        assert client.request("hooks/list", {"cwds": [str(tmp_path)]}, timeout=5) == {"data": []}
+        text, messages = harness._run_live_turn(
+            client,
+            thread_id="thread-fixture",
+            prompt="fixture prompt",
+            working_dir=tmp_path,
+            timeout=5,
+        )
+
+    assert text == "FIXTURE-NONCE"
+    assert "turn/started" in [message.get("method") for message in messages]
+    assert client.stderr_receipt["line_count"] == 0
+
+
+def test_live_protocol_extractors_require_real_compaction_and_hook_shapes() -> None:
+    harness = _load_harness()
+    messages = [
+        {
+            "method": "item/completed",
+            "params": {"item": {"id": "compact-1", "type": "contextCompaction"}},
+        },
+        {
+            "method": "hook/completed",
+            "params": {"run": {"eventName": "preCompact", "status": "completed"}},
+        },
+        {
+            "method": "hook/completed",
+            "params": {"run": {"eventName": "postCompact", "status": "completed"}},
+        },
+    ]
+
+    assert harness._item_types(messages) == ["contextCompaction"]
+    assert harness._hook_event_names(messages) == ["preCompact", "postCompact"]
+    assert 'wait_notification("thread/compacted"' not in HARNESS_PATH.read_text(encoding="utf-8")
+
+
+def test_live_sink_contract_rejects_unadmitted_credential_channels(tmp_path: Path) -> None:
+    harness = _load_harness()
+    contract = tmp_path / "sink.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "s.context_runtime_live_hook_sink.v1",
+                "model": "gpt-5.6-sol",
+                "timeout_seconds": 30,
+                "auth_env": "UNSAFE_SECRET_PATH",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="not an admitted credential variable"):
+        harness._load_live_sink_contract(contract)
+
+
+def test_live_sink_contract_defaults_to_isolated_environment_and_opts_into_existing_b(
+    tmp_path: Path,
+) -> None:
+    harness = _load_harness()
+    contract = tmp_path / "sink.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "s.context_runtime_live_hook_sink.v1",
+                "model": "gpt-5.6-sol",
+                "timeout_seconds": 30,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    isolated = harness._load_live_sink_contract(contract)
+    assert isolated["auth_mode"] == "environment_isolated"
+    assert isolated["auth_env"] == ""
+
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "s.context_runtime_live_hook_sink.v1",
+                "model": "gpt-5.6-sol",
+                "timeout_seconds": 30,
+                "auth_mode": "existing_b_home",
+            }
+        ),
+        encoding="utf-8",
+    )
+    existing = harness._load_live_sink_contract(contract)
+    assert existing["auth_mode"] == "existing_b_home"
+    assert existing["auth_env"] == ""
+
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "s.context_runtime_live_hook_sink.v1",
+                "model": "gpt-5.6-sol",
+                "timeout_seconds": 30,
+                "auth_mode": "existing_b_home",
+                "auth_env": "OPENAI_API_KEY",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="cannot also select an auth_env"):
+        harness._load_live_sink_contract(contract)
+
+
+def test_existing_b_home_without_configured_auth_is_prelaunch_ineligible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _load_harness()
+    codex_exe = tmp_path / "codex.exe"
+    codex_exe.write_bytes(b"fixture")
+    source_s = tmp_path / "source-s"
+    source_b = tmp_path / "source-b"
+    working_dir = tmp_path / "working"
+    source_s.mkdir()
+    source_b.mkdir()
+    working_dir.mkdir()
+    for name in ("AGENTS.md", "config.toml", "hooks.json"):
+        (source_b / name).write_text("fixture\n", encoding="utf-8")
+    contract = tmp_path / "sink.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "s.context_runtime_live_hook_sink.v1",
+                "model": "gpt-5.6-sol",
+                "timeout_seconds": 30,
+                "auth_mode": "existing_b_home",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        harness.context_runtime,
+        "DEFAULT_ALLOWED_CODEX_HOMES",
+        {str(source_s): "s-primary", str(source_b): "s-account-b"},
+    )
+    monkeypatch.setattr(harness, "_probe_codex_version", lambda *args, **kwargs: "0.147.0")
+
+    class MustNotLaunch:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("native process must not launch before auth prerequisite")
+
+    monkeypatch.setattr(harness, "_AppServerClient", MustNotLaunch)
+    receipt = harness.run_live(
+        tmp_path / "operation",
+        codex_path=codex_exe,
+        s_codex_home=source_s,
+        b_codex_home=source_b,
+        working_dir=working_dir,
+        hook_sink=contract,
+    )
+
+    assert receipt["status"] == "ineligible"
+    assert receipt["claim_class"] == "context_live_ineligible"
+    assert receipt["summary"]["ineligible"] == 1
+    assert "existing_b_home_auth_present" in receipt["eligibility"]["missing_or_unverified"]
+
+
+def test_live_app_server_child_receives_only_selected_fake_auth(tmp_path: Path) -> None:
+    harness = _load_harness()
+    fake_server = tmp_path / "fake_env_server.py"
+    fake_server.write_text(
+        """\
+import json
+import os
+import sys
+
+for line in sys.stdin:
+    message = json.loads(line)
+    request_id = message.get("id")
+    if message.get("method") == "initialize":
+        result = {"userAgent": "fixture"}
+    else:
+        result = {"environment": dict(os.environ)}
+    print(json.dumps({"id": request_id, "result": result}), flush=True)
+""",
+        encoding="utf-8",
+    )
+    live_home = tmp_path / "isolated-home"
+    fabric_root = tmp_path / "isolated-fabric"
+    source = harness._minimal_windows_environment(os.environ)
+    source["OPENAI_API_KEY"] = "sk-fake-selected-auth-value"
+    source["CODEX_ACCESS_TOKEN"] = "fake-nonselected-auth-value"
+    source["FAKE_AMBIENT_SECRET"] = "fake-must-not-cross"
+    child_env = harness._live_app_server_environment(
+        source,
+        codex_home=live_home,
+        fabric_root=fabric_root,
+        auth_env="OPENAI_API_KEY",
+    )
+
+    with harness._AppServerClient(
+        [sys.executable, str(fake_server)],
+        cwd=tmp_path,
+        environ=child_env,
+    ) as client:
+        client.initialize(timeout=5)
+        result = client.request("fixture/environment", {}, timeout=5)
+
+    observed = result["environment"]
+    assert observed["OPENAI_API_KEY"] == "sk-fake-selected-auth-value"
+    assert "CODEX_ACCESS_TOKEN" not in observed
+    assert "FAKE_AMBIENT_SECRET" not in observed
+    assert observed["CODEX_HOME"] == str(live_home)
+    assert observed["CODEX_CONTEXT_FABRIC_ROOT"] == str(fabric_root)
+    assert not (live_home / "auth.json").exists()
+    assert set(child_env).issubset(
+        set(harness._WINDOWS_CHILD_ENV_NAMES)
+        | {"CODEX_HOME", "CODEX_CONTEXT_FABRIC_ROOT", "OPENAI_API_KEY"}
+    )
+
+
+def test_hook_wrapper_strips_all_auth_and_ambient_secrets_from_adapter(
+    tmp_path: Path,
+) -> None:
+    harness = _load_harness()
+    adapter_env_path = tmp_path / "adapter-environment.json"
+    fake_adapter = tmp_path / "fake_adapter.py"
+    fake_adapter.write_text(
+        f"""\
+import json
+import os
+from pathlib import Path
+import sys
+
+Path({str(adapter_env_path)!r}).write_text(json.dumps(dict(os.environ)), encoding="utf-8")
+sys.stdin.buffer.read()
+sys.stdout.write('{{"continue":true}}\\n')
+""",
+        encoding="utf-8",
+    )
+    source_home = tmp_path / "source-s-home"
+    source_home.mkdir()
+    fabric_root = tmp_path / "fabric"
+    wrapper = tmp_path / "hook_sink_wrapper.py"
+    harness._write_live_hook_wrapper(
+        wrapper,
+        log_path=tmp_path / "hook-sink.jsonl",
+        adapter_path=fake_adapter,
+        source_codex_home=source_home,
+        fabric_root=fabric_root,
+        working_dir=tmp_path,
+    )
+    wrapper_env = harness._minimal_windows_environment(os.environ)
+    wrapper_env["OPENAI_API_KEY"] = "sk-fake-wrapper-auth"
+    wrapper_env["CODEX_ACCESS_TOKEN"] = "fake-wrapper-access-token"
+    wrapper_env["FAKE_AMBIENT_SECRET"] = "fake-wrapper-ambient"
+    completed = subprocess.run(
+        [sys.executable, "-I", "-B", str(wrapper)],
+        input=json.dumps(
+            {
+                "hook_event_name": "UserPromptSubmit",
+                "session_id": "019ff75c-703c-7972-96cd-b0d257b13baa",
+            }
+        ),
+        cwd=tmp_path,
+        env=wrapper_env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    adapter_env = json.loads(adapter_env_path.read_text(encoding="utf-8"))
+    assert "OPENAI_API_KEY" not in adapter_env
+    assert "CODEX_ACCESS_TOKEN" not in adapter_env
+    assert "FAKE_AMBIENT_SECRET" not in adapter_env
+    assert adapter_env["CODEX_HOME"] == str(source_home)
+    assert adapter_env["CODEX_CONTEXT_FABRIC_ROOT"] == str(fabric_root)
+
+
+def test_post_eligibility_protocol_error_is_observed_failure_and_cli_exit_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _load_harness()
+    codex_exe = tmp_path / "codex.exe"
+    codex_exe.write_bytes(b"fixture")
+    source_s = tmp_path / "source-s"
+    source_b = tmp_path / "source-b"
+    source_s.mkdir()
+    source_b.mkdir()
+    working_dir = tmp_path / "working"
+    working_dir.mkdir()
+    sink_contract = tmp_path / "hook-sink-contract.json"
+    sink_contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "s.context_runtime_live_hook_sink.v1",
+                "model": "gpt-5.6-sol",
+                "timeout_seconds": 30,
+                "auth_env": "OPENAI_API_KEY",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        harness.context_runtime,
+        "DEFAULT_ALLOWED_CODEX_HOMES",
+        {str(source_s): "s-primary", str(source_b): "s-account-b"},
+    )
+    monkeypatch.setattr(harness, "_probe_codex_version", lambda *args, **kwargs: "0.147.0")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-protocol-auth")
+    monkeypatch.setenv("FAKE_AMBIENT_SECRET", "fake-protocol-ambient")
+    observed_child_env: dict[str, str] = {}
+
+    class BrokenProtocolClient:
+        def __init__(self, command, *, cwd, environ):
+            observed_child_env.update(environ)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def initialize(self, *, timeout):
+            raise harness.LiveProtocolError("fixture protocol failure")
+
+    monkeypatch.setattr(harness, "_AppServerClient", BrokenProtocolClient)
+    operation_root = tmp_path / "operation"
+    output = tmp_path / "receipt.json"
+    exit_code = harness.main(
+        [
+            "--mode",
+            "live",
+            "--operation-root",
+            str(operation_root),
+            "--output",
+            str(output),
+            "--codex-path",
+            str(codex_exe),
+            "--s-codex-home",
+            str(source_s),
+            "--b-codex-home",
+            str(source_b),
+            "--working-dir",
+            str(working_dir),
+            "--hook-sink",
+            str(sink_contract),
+        ]
+    )
+
+    receipt = json.loads(output.read_text(encoding="utf-8"))
+    serialized = json.dumps(receipt)
+    assert exit_code == 1
+    assert receipt["claim_class"] == "context_live_observed"
+    assert receipt["status"] == "failed"
+    assert receipt["runtime_claim_allowed"] is False
+    assert receipt["summary"] == {
+        "selected": 1,
+        "passed": 0,
+        "failed": 1,
+        "ineligible": 0,
+    }
+    assert receipt["cases"][0]["failed_assertions"] == ["native_live_protocol_completed"]
+    assert "OPENAI_API_KEY" in observed_child_env
+    assert "FAKE_AMBIENT_SECRET" not in observed_child_env
+    assert "sk-fake-protocol-auth" not in serialized
+    assert "fake-protocol-ambient" not in serialized
+    assert not (operation_root / "isolated-codex-home" / "auth.json").exists()
+
+
+def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_secrets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _load_harness()
+    codex_exe = tmp_path / "codex.exe"
+    codex_exe.write_bytes(b"fixture")
+    source_s = tmp_path / "source-s"
+    source_b = tmp_path / "source-b"
+    source_s.mkdir()
+    source_b.mkdir()
+    working_dir = tmp_path / "working"
+    working_dir.mkdir()
+    protected_contents = {
+        "AGENTS.md": b"fixture agents\n",
+        "config.toml": b"model = 'fixture'\n",
+        "hooks.json": b'{"hooks": []}\n',
+        "auth.json": b'{"fixture": "opaque-test-account-state"}\n',
+    }
+    for name, contents in protected_contents.items():
+        (source_b / name).write_bytes(contents)
+    hashed_paths: list[Path] = []
+    original_sha256_file = harness._sha256_file
+
+    def tracked_sha256_file(path: Path) -> str:
+        hashed_paths.append(path)
+        return original_sha256_file(path)
+
+    monkeypatch.setattr(harness, "_sha256_file", tracked_sha256_file)
+    protected_before = harness._account_protection_receipt(source_b)
+    sink_contract = tmp_path / "hook-sink-contract.json"
+    sink_contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "s.context_runtime_live_hook_sink.v1",
+                "model": "gpt-5.6-sol",
+                "timeout_seconds": 30,
+                "auth_mode": "existing_b_home",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        harness.context_runtime,
+        "DEFAULT_ALLOWED_CODEX_HOMES",
+        {str(source_s): "s-primary", str(source_b): "s-account-b"},
+    )
+    monkeypatch.setattr(harness, "_probe_codex_version", lambda *args, **kwargs: "0.147.0")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-must-not-reach-existing-home-child")
+    monkeypatch.setenv("CODEX_ACCESS_TOKEN", "fake-access-token-must-not-reach-child")
+    monkeypatch.setenv("FAKE_AMBIENT_SECRET", "fake-ambient-must-not-reach-child")
+    observed_child_env: dict[str, str] = {}
+
+    class BrokenProtocolClient:
+        pid = 43210
+
+        def __init__(self, command, *, cwd, environ):
+            observed_child_env.update(environ)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def initialize(self, *, timeout):
+            (source_b / "auth.json").write_bytes(b"fixture refreshed opaque account state\n")
+            raise harness.LiveProtocolError("fixture protocol failure after native launch")
+
+    monkeypatch.setattr(harness, "_AppServerClient", BrokenProtocolClient)
+    operation_root = tmp_path / "operation"
+    output = tmp_path / "receipt.json"
+    exit_code = harness.main(
+        [
+            "--mode",
+            "live",
+            "--operation-root",
+            str(operation_root),
+            "--output",
+            str(output),
+            "--codex-path",
+            str(codex_exe),
+            "--s-codex-home",
+            str(source_s),
+            "--b-codex-home",
+            str(source_b),
+            "--working-dir",
+            str(working_dir),
+            "--hook-sink",
+            str(sink_contract),
+        ]
+    )
+
+    receipt = json.loads(output.read_text(encoding="utf-8"))
+    serialized = json.dumps(receipt)
+    assert exit_code == 1
+    assert receipt["claim_class"] == "context_live_observed"
+    assert receipt["status"] == "failed"
+    assert receipt["auth_content_read"] is False
+    assert receipt["source_credentials_copied"] is False
+    assert receipt["source_credentials_symlinked"] is False
+    assert receipt["existing_account_session_written"] is False
+    evidence = receipt["cases"][0]["evidence"]
+    assert evidence["auth_mode"] == "existing_b_home"
+    assert evidence["b_account_configuration_unchanged"] is True
+    assert evidence["b_account_protection_before"] == protected_before
+    assert evidence["b_account_protection_after"] == protected_before
+    assert observed_child_env["CODEX_HOME"] == str(source_b)
+    assert observed_child_env["CODEX_CONTEXT_FABRIC_ROOT"] == str(
+        operation_root / "isolated-context-fabric"
+    )
+    assert "OPENAI_API_KEY" not in observed_child_env
+    assert "CODEX_ACCESS_TOKEN" not in observed_child_env
+    assert "FAKE_AMBIENT_SECRET" not in observed_child_env
+    assert set(observed_child_env).issubset(
+        set(harness._WINDOWS_CHILD_ENV_NAMES) | {"CODEX_HOME", "CODEX_CONTEXT_FABRIC_ROOT"}
+    )
+    assert harness._account_protection_receipt(source_b) == protected_before
+    assert protected_before["auth"] == {"present": True, "content_read": False}
+    assert all(path.name.casefold() != "auth.json" for path in hashed_paths)
+    assert not (operation_root / "isolated-codex-home").exists()
+    assert not (operation_root / "hook_sink_wrapper.py").exists()
+    assert not (operation_root / "hook-sink.jsonl").exists()
+    assert not (operation_root / "auth.json").exists()
+    assert "sk-fake-must-not-reach-existing-home-child" not in serialized
+    assert "fake-access-token-must-not-reach-child" not in serialized
+    assert "fake-ambient-must-not-reach-child" not in serialized
+
+
+def test_fabric_session_evidence_reads_only_bounded_metadata(tmp_path: Path) -> None:
+    harness = _load_harness()
+    fabric_root = tmp_path / "fabric"
+    fabric_root.mkdir()
+    session_id = "019ff75c-703c-7972-96cd-b0d257b13baa"
+    connection = harness.sqlite3.connect(fabric_root / "context_fabric.sqlite3")
+    connection.execute(
+        "CREATE TABLE events("
+        "seq INTEGER PRIMARY KEY,carrier_id TEXT,session_id TEXT,"
+        "event_kind TEXT,metadata_json TEXT)"
+    )
+    connection.executemany(
+        "INSERT INTO events(seq,carrier_id,session_id,event_kind,metadata_json) VALUES(?,?,?,?,?)",
+        [
+            (1, "s-account-b", session_id, "session_start", '{"source":"startup"}'),
+            (2, "s-account-b", session_id, "user_message", "{}"),
+            (3, "s-account-b", session_id, "session_start", '{"source":"compact"}'),
+            (4, "s-account-b", session_id, "session_start", '{"source":"resume"}'),
+        ],
+    )
+    connection.commit()
+    connection.close()
+
+    evidence = harness._fabric_session_evidence(fabric_root, session_id)
+
+    assert evidence == {
+        "event_count": 4,
+        "event_kinds": ["session_start", "user_message", "session_start", "session_start"],
+        "session_start_sources": ["startup", "compact", "resume"],
+        "carrier_ids": ["s-account-b"],
+        "all_rows_match_session": True,
+    }
+
+
+def test_native_0147_discovers_and_trusts_operation_scoped_hooks(tmp_path: Path) -> None:
+    harness = _load_harness()
+    codex_exe = Path(
+        r"D:\XINAO_RESEARCH_RUNTIME\tools\npm-global\node_modules\@openai\codex"
+        r"\node_modules\@openai\codex-win32-x64\vendor"
+        r"\x86_64-pc-windows-msvc\bin\codex.exe"
+    )
+    if not codex_exe.is_file():
+        pytest.skip("installed native Codex binary is unavailable")
+    source_home = Path(r"C:\Users\xx363\.codex")
+    if not source_home.is_dir():
+        pytest.skip("S Codex home is unavailable")
+    live_home = tmp_path / "isolated-home"
+    live_home.mkdir()
+    wrapper = tmp_path / "hook_sink_wrapper.py"
+    hooks_path = live_home / "hooks.json"
+    config_path = live_home / "config.toml"
+    harness._write_live_hook_wrapper(
+        wrapper,
+        log_path=tmp_path / "hook-sink.jsonl",
+        adapter_path=REPO_ROOT / "scripts" / "codex_situation_context_hook.py",
+        source_codex_home=source_home,
+        fabric_root=tmp_path / "fabric",
+        working_dir=REPO_ROOT,
+    )
+    harness._write_live_hooks(hooks_path, wrapper=wrapper)
+    harness._write_live_config(config_path, [])
+    env = harness._minimal_windows_environment(os.environ)
+    env["CODEX_HOME"] = str(live_home)
+    command = [str(codex_exe), "app-server", "--stdio"]
+
+    with harness._AppServerClient(command, cwd=REPO_ROOT, environ=env) as discovery:
+        discovery.initialize(timeout=10)
+        result = discovery.request("hooks/list", {"cwds": [str(REPO_ROOT)]}, timeout=10)
+        hooks = harness._owned_hooks(result, hooks_path)
+    assert len(hooks) == 6
+    assert {hook["trustStatus"] for hook in hooks} == {"untrusted"}
+
+    harness._write_live_config(config_path, hooks)
+    with harness._AppServerClient(command, cwd=REPO_ROOT, environ=env) as trusted_client:
+        trusted_client.initialize(timeout=10)
+        result = trusted_client.request("hooks/list", {"cwds": [str(REPO_ROOT)]}, timeout=10)
+        trusted = harness._owned_hooks(result, hooks_path)
+    assert len(trusted) == 6
+    assert {hook["trustStatus"] for hook in trusted} == {"trusted"}
 
 
 def test_cli_writes_receipt_and_uses_documented_exit_codes(tmp_path: Path) -> None:
@@ -209,3 +838,137 @@ def test_receipt_schema_accepts_contract_and_live_receipts(tmp_path: Path) -> No
     )
     jsonschema.validate(contract, schema)
     jsonschema.validate(live, schema)
+    observed_live = {
+        "schema_version": "s.context_runtime_trajectory_receipt.v1",
+        "mode": "live",
+        "evidence_level": "live_app_server_and_hook_sink",
+        "claim_class": "context_live_observed",
+        "status": "passed",
+        "runtime_claim_allowed": True,
+        "operation_root": str(tmp_path / "observed-live"),
+        "cases": [
+            {
+                "case_id": "CTX_LIVE_START_COMPACT_RESUME",
+                "status": "passed",
+                "evidence_level": "live_app_server_and_hook_sink",
+                "runtime_claim_allowed": True,
+                "assertions": {"native_trace": True},
+                "failed_assertions": [],
+                "evidence": {"claim_scope": "fixture"},
+            }
+        ],
+        "summary": {"selected": 1, "passed": 1, "failed": 0, "ineligible": 0},
+        "claim_boundary": {"proves": ["fixture"], "does_not_prove": []},
+    }
+    jsonschema.validate(observed_live, schema)
+
+
+@pytest.mark.parametrize(
+    ("exit_code", "status", "claim_class", "runtime_allowed", "summary"),
+    [
+        (0, "passed", "context_live_observed", True, (1, 1, 0, 0)),
+        (1, "failed", "context_live_observed", False, (1, 0, 1, 0)),
+        (3, "ineligible", "context_live_ineligible", False, (0, 0, 0, 1)),
+    ],
+)
+def test_shared_runner_accepts_only_typed_live_receipt_outcomes(
+    tmp_path: Path,
+    exit_code: int,
+    status: str,
+    claim_class: str,
+    runtime_allowed: bool,
+    summary: tuple[int, int, int, int],
+) -> None:
+    powershell = shutil.which("pwsh")
+    if powershell is None:
+        pinned = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
+        if not pinned.is_file():
+            pytest.skip("PowerShell 7 is unavailable")
+        powershell = str(pinned)
+    source = RUNNER_PATH.read_text(encoding="utf-8-sig")
+    match = re.search(
+        r"(?ms)^function Get-ContextRuntimeTrajectorySummary \{.*?(?=^function Invoke-PromptfooSuite \{)",
+        source,
+    )
+    assert match is not None
+    selected, passed, failed, ineligible = summary
+    cases = (
+        [] if selected == 0 else [{"case_id": "CTX_LIVE_START_COMPACT_RESUME", "status": status}]
+    )
+    receipt = {
+        "schema_version": "s.context_runtime_trajectory_receipt.v1",
+        "mode": "live",
+        "evidence_level": "live_app_server_and_hook_sink",
+        "claim_class": claim_class,
+        "status": status,
+        "runtime_claim_allowed": runtime_allowed,
+        "operation_root": str(tmp_path / "operation"),
+        "cases": cases,
+        "summary": {
+            "selected": selected,
+            "passed": passed,
+            "failed": failed,
+            "ineligible": ineligible,
+        },
+        "claim_boundary": {"proves": [], "does_not_prove": []},
+    }
+    receipt_path = tmp_path / f"receipt-{exit_code}.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    quoted_receipt = str(receipt_path).replace("'", "''")
+    probe = tmp_path / f"runner-probe-{exit_code}.ps1"
+    probe.write_text(
+        match.group(0)
+        + "\n$result = Get-ContextRuntimeTrajectorySummary "
+        + f"-ReceiptPath '{quoted_receipt}' -ExpectedMode live -ExitCode {exit_code}\n"
+        + "$result | ConvertTo-Json -Depth 8 -Compress\n",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-File", str(probe)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=20,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout.lstrip("\ufeff").strip())
+    assert result["claim_class"] == claim_class
+    assert result["status"] == status
+    assert result["runtime_pass_claim_eligible"] is (exit_code == 0)
+
+
+def test_shared_runner_generates_explicit_nonsecret_live_auth_contract() -> None:
+    source = RUNNER_PATH.read_text(encoding="utf-8-sig")
+    assert re.search(
+        r"\[ValidateSet\('environment_isolated',\s*'existing_b_home'\)\]\s*"
+        r"\[string\]\$ContextLiveAuthMode\s*=\s*'environment_isolated'",
+        source,
+    )
+    assert (
+        "if ($Profile -ne 'context' -and "
+        "$PSBoundParameters.ContainsKey('ContextLiveAuthMode'))" in source
+    )
+    assert (
+        "if ($ContextEvidenceMode -ne 'live' -and "
+        "$PSBoundParameters.ContainsKey('ContextLiveAuthMode'))" in source
+    )
+    block_match = re.search(
+        r"(?ms)\$effectiveContextHookSink\s*=\s*\$ContextHookSink\s*"
+        r"if \(\[string\]::IsNullOrWhiteSpace\(\$effectiveContextHookSink\)\) \{"
+        r"(?P<body>.*?)^\s*\}\s*"
+        r"\$contextArguments\s*\+=\s*@\((?P<arguments>.*?)^\s*\)",
+        source,
+    )
+    assert block_match is not None
+    body = block_match.group("body")
+    arguments = block_match.group("arguments")
+    assert "Join-Path $outputRoot" in body
+    assert "context-live-hook-sink-contract.json" in body
+    assert "schema_version = 's.context_runtime_live_hook_sink.v1'" in body
+    assert "auth_mode = $ContextLiveAuthMode" in body
+    assert "auth_env" not in body
+    assert "Set-Content" in body
+    assert "-LiteralPath $effectiveContextHookSink" in body
+    assert "'--hook-sink', $effectiveContextHookSink" in arguments

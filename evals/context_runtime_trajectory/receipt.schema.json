@@ -27,7 +27,11 @@
       "enum": ["deterministic_contract", "live_app_server_and_hook_sink"]
     },
     "claim_class": {
-      "enum": ["context_contract_only", "context_live_ineligible"]
+      "enum": [
+        "context_contract_only",
+        "context_live_ineligible",
+        "context_live_observed"
+      ]
     },
     "status": {
       "enum": ["passed", "failed", "ineligible"]
@@ -38,6 +42,22 @@
     "operation_root": {
       "type": "string",
       "minLength": 1
+    },
+    "existing_account_session_written": {
+      "type": "boolean"
+    },
+    "auth_content_read": {
+      "const": false
+    },
+    "source_credentials_copied": {
+      "const": false
+    },
+    "source_credentials_symlinked": {
+      "const": false
+    },
+    "isolation": {
+      "type": "object",
+      "additionalProperties": true
     },
     "cases": {
       "type": "array",
@@ -84,6 +104,20 @@
         "properties": {
           "claim_class": {"const": "context_live_ineligible"},
           "runtime_claim_allowed": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {"const": "live"},
+          "status": {"enum": ["passed", "failed"]}
+        },
+        "required": ["mode", "status"]
+      },
+      "then": {
+        "properties": {
+          "claim_class": {"const": "context_live_observed"}
         }
       }
     }
