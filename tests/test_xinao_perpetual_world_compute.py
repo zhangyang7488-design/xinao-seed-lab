@@ -1966,6 +1966,39 @@ def test_world_turn_quota_remains_bound_when_controller_dies_but_child_lives(
     assert replacement["lease_id"] != lease["lease_id"]
 
 
+def test_world_turn_quota_is_not_recycled_while_owner_is_releasing_dead_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "first").mkdir()
+    (tmp_path / "second").mkdir()
+    first, first_branches, _ = make_test_controller(
+        tmp_path / "first", run_id="run-first", branch_count=1
+    )
+    second, second_branches, _ = make_test_controller(
+        tmp_path / "second", run_id="run-second", branch_count=1
+    )
+    quota_root = tmp_path / "shared-quota"
+    for controller in (first, second):
+        controller.config["world_turn_concurrency_limit"] = 1
+        controller.config["world_turn_quota_root"] = str(quota_root)
+
+    lease = first.try_reserve_world_turn_quota(first_branches[0])
+    assert lease is not None
+    first.bind_world_turn_quota_child(first_branches[0], child_pid=4242)
+    monkeypatch.setattr(
+        "services.xinao_perpetual_world_compute.controller.is_process_alive",
+        lambda pid: pid == lease["controller_pid"],
+    )
+
+    # The child has exited, but the owner is still alive and has not run its
+    # context-manager finalizer.  A peer must not overwrite the live lease.
+    assert second.try_reserve_world_turn_quota(second_branches[0]) is None
+    assert first.release_world_turn_quota(first_branches[0]) is True
+    replacement = second.try_reserve_world_turn_quota(second_branches[0])
+    assert replacement is not None
+    assert replacement["lease_id"] != lease["lease_id"]
+
+
 def test_recovery_liveness_reads_bound_child_from_durable_quota_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
