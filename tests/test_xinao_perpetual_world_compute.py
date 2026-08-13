@@ -2316,6 +2316,73 @@ def test_reconcile_commits_later_receipt_after_prior_attempt_was_quarantined(
     assert state["status"] == "EVIDENCE_INCIDENT"
 
 
+def test_reconcile_preserves_receipted_prior_quarantine_across_classifier_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    first_attempt = controller.lineage_dir("world-01") / "turns" / "turn-000001" / "attempt-01"
+    first_attempt.mkdir(parents=True)
+    (first_attempt / "prompt.txt").write_text("research", encoding="utf-8")
+    (first_attempt / "exec_stderr.txt").write_text("", encoding="utf-8")
+    (first_attempt / "exec_stdout.jsonl").write_text(
+        json.dumps({"type": "turn.failed"}) + "\n", encoding="utf-8"
+    )
+    config = {**controller.config, "branch_lineages": branches}
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["classify_body_incident_events"],
+    )
+    legacy_incident = {
+        "event_sequence": 1,
+        "failure_class": "WRITE_DOMAIN_DENIED",
+        "legacy_global_scan": True,
+    }
+    with monkeypatch.context() as context:
+        context.setattr(
+            controller_module,
+            "classify_body_incident_events",
+            lambda _path, *, workspace: [dict(legacy_incident)],
+        )
+        first = reconcile_incomplete_attempts(
+            config,
+            recovery_dir=controller.run_dir / "recovery" / "first",
+        )
+    disposition_path = first_attempt / "recovery_disposition.json"
+    disposition_before = disposition_path.read_bytes()
+    recovery_receipt_dir = controller.run_dir / "recovery" / "sealed-first"
+    recovery_receipt_dir.mkdir(parents=True)
+    (recovery_receipt_dir / "receipt.json").write_text(
+        json.dumps(
+            {
+                "schema": "xinao.cleanroom.world-compute-controller-recovery.v1",
+                "run_id": controller.config["run_id"],
+                "status": "RECOVERED",
+                "attempt_reconciliation": {
+                    "quarantined": [first["quarantined"][0]],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_uncommitted_receipt(
+        controller,
+        error_class="EVIDENCE_INCIDENT",
+        attempt_number=2,
+    )
+
+    result = reconcile_incomplete_attempts(
+        config,
+        recovery_dir=controller.run_dir / "recovery" / "second",
+    )
+
+    assert result["receipt_state_commits"][0]["attempt_number"] == 2
+    assert result["receipt_state_commits"][0]["disposition"] == "EVIDENCE_INCIDENT"
+    assert disposition_path.read_bytes() == disposition_before
+    state = json.loads(controller.lineage_state_path("world-01").read_text(encoding="utf-8"))
+    assert state["turns_completed"] == 0
+    assert state["status"] == "EVIDENCE_INCIDENT"
+
+
 def test_reconcile_new_evidence_required_turn_cannot_be_laundered_to_legacy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

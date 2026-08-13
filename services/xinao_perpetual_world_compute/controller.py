@@ -4849,6 +4849,63 @@ def _validate_prior_quarantined_attempt(
         lifecycle=lifecycle,
         body_incidents=body_incidents,
     )
+    sealed_body_incidents = disposition.get("body_incidents")
+    if not isinstance(sealed_body_incidents, list) or not all(
+        isinstance(item, Mapping) for item in sealed_body_incidents
+    ):
+        raise PerpetualRuntimeError(
+            f"RECOVERY_DISPOSITION_BODY_EVIDENCE_INVALID: {disposition_path}"
+        )
+    sealed_body_incidents = [dict(item) for item in sealed_body_incidents]
+    if body_incidents != sealed_body_incidents:
+        disposition_sha256 = sha256_file(disposition_path)
+        recovery_root = resolve_path(config["run_dir"]) / "recovery"
+        provenance_matches: list[Path] = []
+        for receipt_path in recovery_root.glob("*/receipt.json"):
+            receipt = read_json_object(receipt_path)
+            if (
+                receipt.get("schema") != RECOVERY_SCHEMA
+                or receipt.get("run_id") != config["run_id"]
+                or receipt.get("status") != "RECOVERED"
+            ):
+                continue
+            reconciliation = receipt.get("attempt_reconciliation")
+            if not isinstance(reconciliation, Mapping):
+                continue
+            quarantined = reconciliation.get("quarantined")
+            if not isinstance(quarantined, list):
+                continue
+            for item in quarantined:
+                if not isinstance(item, Mapping):
+                    continue
+                if (
+                    item.get("attempt_dir") == str(attempt_dir)
+                    and item.get("attempt_number") == attempt_number
+                    and item.get("lineage_id") == lineage_id
+                    and item.get("turn_number") == turn_number
+                    and item.get("disposition_sha256") == disposition_sha256
+                ):
+                    provenance_matches.append(receipt_path)
+                    break
+        if not provenance_matches:
+            raise PerpetualRuntimeError(
+                f"RECOVERY_DISPOSITION_CLASSIFICATION_DRIFT_UNSEALED: {disposition_path}"
+            )
+        if len(provenance_matches) != 1:
+            raise PerpetualRuntimeError(
+                f"RECOVERY_DISPOSITION_CLASSIFICATION_PROVENANCE_AMBIGUOUS: {disposition_path}"
+            )
+        # A later classifier is allowed to understand the old output differently,
+        # but it cannot rewrite or promote an already sealed quarantine.  Rebuild
+        # every non-classification source fact from the live attempt bytes while
+        # preserving the exact incident list named by the completed recovery
+        # receipt that first quarantined it.
+        source_identity = _attempt_recovery_source_identity(
+            attempt_dir,
+            event_summary=event_summary,
+            lifecycle=lifecycle,
+            body_incidents=sealed_body_incidents,
+        )
     expected = {
         "schema": ATTEMPT_RECOVERY_SCHEMA,
         "run_id": config["run_id"],
@@ -4860,7 +4917,7 @@ def _validate_prior_quarantined_attempt(
         "last_message_present": message_path.is_file(),
         "lifecycle_state": lifecycle,
         "source_identity": source_identity,
-        "body_incidents": body_incidents,
+        "body_incidents": sealed_body_incidents,
     }
     if any(disposition.get(key) != value for key, value in expected.items()):
         raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_SOURCE_DRIFT: {disposition_path}")
@@ -4875,7 +4932,7 @@ def _validate_prior_quarantined_attempt(
     terminal_events = expected["observed_terminal_events"]
     mechanically_complete = terminal_events == ["turn.completed"] and lifecycle is not None
     reason = disposition.get("reason")
-    if body_incidents:
+    if sealed_body_incidents:
         expected_reason = "BODY_INCIDENT_DETECTED_DURING_RECOVERY"
         if reason != expected_reason:
             raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_REASON_DRIFT: {disposition_path}")
