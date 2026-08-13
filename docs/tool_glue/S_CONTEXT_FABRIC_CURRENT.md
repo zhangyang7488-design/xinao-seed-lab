@@ -50,7 +50,7 @@ The state is local plaintext protected by the runtime ACL; it is not an encrypte
 
 Explicit projections retain their exact source event IDs and source-span hash. Completion adds three deterministic structural producers:
 
-- `s.context_runtime.closed_round@v1` creates a structural envelope only for a closed surfaced user/assistant turn; it does not infer a new fact.
+- `s.context_runtime.closed_round@v2` creates one structural envelope per closed turn from the latest surfaced user and assistant records; commentary/final surfaces in the same turn cannot multiply the round. It does not infer a new fact.
 - `s.context_runtime.lineage_segment@v1` creates a bounded structural `activity_compact` only at an observed `PostCompact` or `SessionEnd` boundary; it records event kinds and source refs but does not infer a human activity, parent, goal, or open frontier.
 - `s.context_runtime.current_seed@v1` creates a source-tip seed describing the canonical boundary; it is not a task or an understanding.
 

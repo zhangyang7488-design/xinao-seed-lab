@@ -571,6 +571,129 @@ def test_automatic_projections_are_replay_idempotent_and_pin_exact_source_proven
         assert projection["producer_version"]
 
 
+def test_full_replay_uses_only_latest_surfaced_assistant_for_a_closed_round(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "runtime"
+    context_runtime.initialize_context_fabric(root)
+    append = _public_api("append_context_event")
+    user_marker = "FULL-REPLAY-USER-31d4"
+    commentary_marker = "FULL-REPLAY-COMMENTARY-82ae"
+    final_marker = "FULL-REPLAY-FINAL-f9c7"
+
+    def surfaced_event(
+        *,
+        event_kind: str,
+        speaker: str,
+        text: str,
+        occurred_at: str,
+        item_id: str,
+        phase: str = "",
+    ) -> Any:
+        metadata = {"item_type": "UserMessage" if speaker == "user" else "AgentMessage"}
+        if phase:
+            metadata["phase"] = phase
+        return append(
+            {
+                "carrier_id": "s-primary",
+                "session_id": SESSION_A,
+                "turn_id": TURN_A,
+                "event_kind": event_kind,
+                "speaker": speaker,
+                "occurred_at": occurred_at,
+                "raw_text": text,
+                "authority_class": (
+                    "human_raw_evidence" if speaker == "user" else "assistant_history_evidence"
+                ),
+                "source_kind": "codex_rollout",
+                "source_locator": f"rollout:item_completed:{item_id}",
+                "source_record_sha256": _sha256_text(f"surface:{item_id}:{text}"),
+                "source_key": f"completion:full-replay:{item_id}",
+                "metadata": metadata,
+            },
+            root=root,
+        )
+
+    user = surfaced_event(
+        event_kind="user_message",
+        speaker="user",
+        text=user_marker,
+        occurred_at="2026-08-13T00:00:00Z",
+        item_id="user",
+    )
+    commentary = surfaced_event(
+        event_kind="assistant_message",
+        speaker="assistant",
+        text=commentary_marker,
+        occurred_at="2026-08-13T00:00:01Z",
+        item_id="assistant-commentary",
+        phase="commentary",
+    )
+    final = surfaced_event(
+        event_kind="assistant_message",
+        speaker="assistant",
+        text=final_marker,
+        occurred_at="2026-08-13T00:00:02Z",
+        item_id="assistant-final",
+        phase="final_answer",
+    )
+
+    first = context_runtime.run_projection_producers(root=root)
+    assert first["status"] == "appended"
+    semantic_key = f"round:s-primary:{SESSION_A}:{TURN_A}"
+    database = root / "context_fabric.sqlite3"
+
+    def current_round_rows() -> list[sqlite3.Row]:
+        with sqlite3.connect(database) as connection:
+            connection.row_factory = sqlite3.Row
+            return connection.execute(
+                "SELECT p.projection_id,p.version,p.statement "
+                "FROM projections p JOIN projection_metadata pm "
+                "ON pm.projection_id=p.projection_id "
+                "WHERE p.kind='local_compact' AND p.semantic_key=? "
+                "AND p.status_label='current' AND pm.scope_key=? ORDER BY p.version",
+                (semantic_key, f"session:{SESSION_A}"),
+            ).fetchall()
+
+    rows = current_round_rows()
+    assert len(rows) == 1
+    assert rows[0]["version"] == 1
+    with sqlite3.connect(database) as connection:
+        source_ids = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT event_id FROM projection_sources WHERE projection_id=?",
+                (rows[0]["projection_id"],),
+            )
+        }
+    assert source_ids == {user.event_id, final.event_id}
+    assert commentary.event_id not in source_ids
+
+    replay = context_runtime.run_projection_producers(root=root)
+    assert replay["status"] == "duplicate"
+    replay_rows = current_round_rows()
+    assert [(row["projection_id"], row["version"]) for row in replay_rows] == [
+        (rows[0]["projection_id"], 1)
+    ]
+
+    materialized = context_runtime.materialize_context(
+        query=user_marker,
+        session_id=SESSION_A,
+        carrier_id="s-primary",
+        root=root,
+        persist=False,
+    )
+    payload = _materialized_payload(materialized["rendered_context"])
+    selected_rounds = [
+        item
+        for item in payload["derived_projections"]
+        if item["kind"] == "local_compact" and item["semantic_key"] == semantic_key
+    ]
+    assert len(selected_rounds) == 1
+    assert final_marker in selected_rounds[0]["statement"]
+    assert commentary_marker not in selected_rounds[0]["statement"]
+
+
 def test_hook_path_runs_trigger_scoped_structural_producers_without_full_replay(
     tmp_path: Path,
 ) -> None:

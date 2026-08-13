@@ -1111,8 +1111,8 @@ def _projection_descriptors() -> list[dict[str, str]]:
     return [
         {
             "producer_id": "s.context_runtime.closed_round",
-            "producer_version": "v1",
-            "config_sha256": fabric._sha256_text("closed-round-structural-v1"),
+            "producer_version": "v2",
+            "config_sha256": fabric._sha256_text("closed-round-latest-surface-v2"),
         },
         {
             "producer_id": "s.context_runtime.lineage_segment",
@@ -1219,19 +1219,6 @@ def run_projection_producers(
         closed = descriptor_by_id.get("s.context_runtime.closed_round")
         if closed is not None:
             connection = producer_connection
-            existing_round_keys = (
-                {
-                    str(row["semantic_key"])
-                    for row in connection.execute(
-                        "SELECT p.semantic_key FROM projections p JOIN projection_metadata pm "
-                        "ON pm.projection_id=p.projection_id WHERE p.kind='local_compact' "
-                        "AND pm.producer_id=?",
-                        (closed["producer_id"],),
-                    )
-                }
-                if triggered is None
-                else set()
-            )
             if triggered is not None:
                 if triggered["event_kind"] != "assistant_message" or not triggered["turn_id"]:
                     rounds = []
@@ -1248,20 +1235,24 @@ def run_projection_producers(
                     ).fetchall()
             else:
                 rounds = connection.execute(
+                    "WITH latest_user AS ("
+                    "SELECT carrier_id,session_id,turn_id,MAX(seq) AS event_seq FROM events "
+                    "WHERE event_kind='user_message' AND turn_id<>'' AND seq<=? "
+                    "GROUP BY carrier_id,session_id,turn_id),"
+                    "latest_assistant AS ("
+                    "SELECT carrier_id,session_id,turn_id,MAX(seq) AS event_seq FROM events "
+                    "WHERE event_kind='assistant_message' AND turn_id<>'' AND seq<=? "
+                    "GROUP BY carrier_id,session_id,turn_id) "
                     "SELECT u.carrier_id,u.session_id,u.turn_id,u.event_id AS user_id,"
-                    "u.raw_text AS user_text,"
-                    "a.event_id AS assistant_id,a.raw_text AS assistant_text "
-                    "FROM events u JOIN events a ON a.session_id=u.session_id "
-                    "AND a.carrier_id=u.carrier_id AND a.turn_id=u.turn_id "
-                    "AND a.event_kind='assistant_message' "
-                    "WHERE u.event_kind='user_message' AND u.turn_id<>'' "
-                    "AND u.seq<=? AND a.seq<=? ORDER BY a.seq",
+                    "u.raw_text AS user_text,a.event_id AS assistant_id,a.raw_text AS assistant_text "
+                    "FROM latest_user lu JOIN latest_assistant la "
+                    "ON la.carrier_id=lu.carrier_id AND la.session_id=lu.session_id "
+                    "AND la.turn_id=lu.turn_id JOIN events u ON u.seq=lu.event_seq "
+                    "JOIN events a ON a.seq=la.event_seq WHERE u.seq<a.seq ORDER BY a.seq",
                     (through_seq, through_seq),
                 ).fetchall()
             for row in rounds:
                 semantic_key = f"round:{row['carrier_id']}:{row['session_id']}:{row['turn_id']}"
-                if semantic_key in existing_round_keys:
-                    continue
                 # sqlite aliases do not satisfy _event_text's raw_text key;
                 # decode the bounded structural source directly instead.
                 raw_user = row["user_text"]
