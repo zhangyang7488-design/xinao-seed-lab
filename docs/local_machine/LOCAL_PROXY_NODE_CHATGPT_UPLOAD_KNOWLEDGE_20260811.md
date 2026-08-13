@@ -1,7 +1,7 @@
 本机代理系统完整认识论
 ======================
 
-更新时间：2026-08-13 16:24（Asia/Shanghai）
+更新时间：2026-08-13 17:24（Asia/Shanghai）
 
 这份文本是以后处理这台机器上代理、网络、Vortex/Mihomo、7897、浏览器、网页 ChatGPT、Codex、Cloudflare 验证和文件上传时的第一入口。
 
@@ -402,7 +402,7 @@
 
 7. 把 Grok_一键恢复 当网络恢复包
 
-   那是已撤的窗口/身份包，不是网络药。网络入口是 C:\Users\xx363\Network_一键恢复。
+   那是已撤的窗口/身份包，不是网络药。当前唯一网络恢复入口是 C:\Users\xx363\当前网络_一键恢复。
 
 8. 把报告绿、延迟榜、队列空、HTTP 200 当成系统完成
 
@@ -538,12 +538,14 @@ Codex 窗口完成：目标窗口自己的 WebSocket 或 HTTPS fallback 能完�
 当前唯一仓库入口（本文件的去秘密同步正文）：
   E:\XINAO_RESEARCH_WORKSPACES\S\docs\local_machine\LOCAL_PROXY_NODE_CHATGPT_UPLOAD_KNOWLEDGE_20260811.md
 
-历史可恢复网络快照：
-  D:\XINAO_RESEARCH_RUNTIME\backups\network_profile\history\snapshot_20260709-172958
+当前唯一恢复快照（2026-08-13，约 10 MiB 日常门槛已验收；100/200 MiB 未验收）：
+  D:\XINAO_RESEARCH_RUNTIME\backups\current_network_recovery\snapshot
 
-网络恢复入口：
-  C:\Users\xx363\Network_一键恢复
-  D:\XINAO_RESEARCH_RUNTIME\backups\network_profile\
+当前唯一恢复入口与后端：
+  C:\Users\xx363\当前网络_一键恢复
+  D:\XINAO_RESEARCH_RUNTIME\backups\current_network_recovery\
+
+旧的 C:\Users\xx363\Network_一键恢复、C:\Users\xx363\网络_一键恢复 与 D:\XINAO_RESEARCH_RUNTIME\backups\network_profile 已在新快照真实恢复并回读成功后退役。旧 2026-07 快照把磁盘模板 mode: direct 当成恢复依据，不能再用来覆盖当前 live rule 形状。
 
 秘密边界：
   订阅地址、密码、token、UUID、auth、.store.json 等只在本机精确恢复面使用，不复制到聊天或公开仓库。仓库只保存去秘密的因果认识、操作边界和证据索引。
