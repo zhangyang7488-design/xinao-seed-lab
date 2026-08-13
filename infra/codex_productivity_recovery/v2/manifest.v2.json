@@ -13,8 +13,8 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "e70d5732ddfb72afe8b487d0a16e554428a73f7de82a6bad021226ce90bb5436",
-  "entry_count": 124,
+  "archive_sha256": "7e50796830af08a27fb19848478e8c4660266f9635296bc9bf0fd9e23aa771cc",
+  "entry_count": 125,
   "entries": [
     {
       "archive_path": "contracts/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
@@ -650,8 +650,8 @@
       "archive_path": "repository/scripts/Install-SContextRolloutConsumer.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\Install-SContextRolloutConsumer.ps1",
       "role": "context_rollout_consumer_installer",
-      "size": 66003,
-      "sha256": "897f08f193eb55dd0e4776a297b7e351f21ebd3213ef4b1bc744345bf8254e74"
+      "size": 72137,
+      "sha256": "22e760bf3b80c70aecdd21d441726db62777eb9846475d4752ef2c993f901e5c"
     },
     {
       "archive_path": "repository/scripts/Protect-SContextFabricState.ps1",
@@ -666,6 +666,13 @@
       "role": "situation_hook_adapter",
       "size": 1537,
       "sha256": "8482195f25b516ec4de7294873a7a4beef88bf1e5f188eb195bd293a78c35e20"
+    },
+    {
+      "archive_path": "repository/scripts/context_rollout_consumer.bundle.lock.json",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\context_rollout_consumer.bundle.lock.json",
+      "role": "context_rollout_consumer_release_lock",
+      "size": 245387,
+      "sha256": "d4e810609ed614694e0deba0b7c1e817043432f495e1b9d61869bfc39c137920"
     },
     {
       "archive_path": "repository/scripts/context_rollout_consumer.py",

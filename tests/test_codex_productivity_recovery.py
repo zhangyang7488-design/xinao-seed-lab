@@ -134,6 +134,9 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         "repository/scripts/Install-SContextRolloutConsumer.ps1": (
             "context_rollout_consumer_installer"
         ),
+        "repository/scripts/context_rollout_consumer.bundle.lock.json": (
+            "context_rollout_consumer_release_lock"
+        ),
         "contracts/CODEX_SITUATION_CONTEXT_PRODUCTION.md": "situation_context_contract",
         "contracts/S_CONTEXT_FABRIC_CURRENT.md": "context_fabric_contract",
         "repository/evals/context_runtime_trajectory/run_context_runtime_trajectory.py": (

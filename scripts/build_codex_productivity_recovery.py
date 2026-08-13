@@ -168,6 +168,11 @@ SITUATION_RUNTIME_SOURCES = (
         "context_rollout_consumer_installer",
     ),
     (
+        REPO_ROOT / "scripts" / "context_rollout_consumer.bundle.lock.json",
+        "repository/scripts/context_rollout_consumer.bundle.lock.json",
+        "context_rollout_consumer_release_lock",
+    ),
+    (
         REPO_ROOT / "docs" / "tool_glue" / "CODEX_SITUATION_CONTEXT_PRODUCTION.md",
         "contracts/CODEX_SITUATION_CONTEXT_PRODUCTION.md",
         "situation_context_contract",
