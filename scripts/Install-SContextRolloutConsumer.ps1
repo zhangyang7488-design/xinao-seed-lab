@@ -29,10 +29,10 @@ $officialPythonwSha256 = '95225ed035643523e8c586c11981e276541dce4949eb35cf8cf574
 $expectedBundleLockSha256 = '3448f1db0532cb515c04fe7f25c67175a8be63babb2e139d2d07d9e3c67429c3'
 $expectedBundleContentId = 'ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e'
 $expectedBundleFileCount = 1336
-$managedUpgradeSourceContentId = '882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823'
-$managedUpgradeSourceManifestSha256 = 'db7516e59cdf11ecef3a1b25e88b709136f29da9fd49aba0c53b1137ea5e51b0'
-$managedUpgradeSourceFileCount = 1332
-$managedUpgradeSourceNormalizedXmlSha256 = '6230ff8ef337769d49161c90d48207ed868aff5cf8b2d9e73f1fd5f161522e56'
+$managedUpgradeSourceContentId = 'd11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e'
+$managedUpgradeSourceManifestSha256 = '60f3c9c455452783c1a083a97b1125eadf444026b405a5fb8661c3cc42d4dbcc'
+$managedUpgradeSourceFileCount = 1336
+$managedUpgradeSourceNormalizedXmlSha256 = 'b018a2e0e81c1357567be9840e6b69e0219ed6a494b556969c6fc3caec5342ca'
 $mutationMutexName = 'Global\XINAO.S.ContextRolloutConsumer.Mutation.v1'
 $bundleLockSchema = 's.context_rollout_consumer.bundle_lock.v1'
 $requiredLockedFilePaths = @(
@@ -1137,7 +1137,8 @@ function Get-ManagedUpgradeSource {
 
     $description = [string]$task.Description
     $descriptionPattern = '^' + [regex]::Escape($descriptionPrefix) +
-        '(?<token>[0-9a-f]{32});content_id=(?<content>[0-9a-f]{64});manifest_sha256=(?<manifest>[0-9a-f]{64})$'
+        '(?<token>[0-9a-f]{32});registered_at=(?<registered>[^;]+);content_id=' +
+        '(?<content>[0-9a-f]{64});manifest_sha256=(?<manifest>[0-9a-f]{64})$'
     $descriptionMatch = [regex]::Match($description, $descriptionPattern)
     if (-not $descriptionMatch.Success -or
         -not [string]::Equals(

@@ -726,9 +726,9 @@ function Test-BundlePayload {{
         [Nullable[int]]$ExpectedFileCount
     )
     [void]($script:bundleBindingValid =
-        $ExpectedContentId -eq '882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823' -and
-        $ExpectedManifestSha256 -eq 'db7516e59cdf11ecef3a1b25e88b709136f29da9fd49aba0c53b1137ea5e51b0' -and
-        @($RequiredPaths).Count -eq 7 -and $ExpectedFileCount -eq 1332)
+        $ExpectedContentId -eq 'd11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e' -and
+        $ExpectedManifestSha256 -eq '60f3c9c455452783c1a083a97b1125eadf444026b405a5fb8661c3cc42d4dbcc' -and
+        @($RequiredPaths).Count -eq 7 -and $ExpectedFileCount -eq 1336)
     [pscustomobject]@{{
         valid = $script:bundleBindingValid
         python_path = 'C:\owned\python\python.exe'
@@ -742,8 +742,9 @@ function Resolve-IdentitySid {{ param([string]$Identity); return 'S-1-5-21-test'
 function Export-ScheduledTask {{ return $script:mockManagedXml }}
 function Get-ScheduledTask {{
     $description = 'XINAO S context rollout consumer v1; registration=' + ('a' * 32) +
-        ';content_id=882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823' +
-        ';manifest_sha256=db7516e59cdf11ecef3a1b25e88b709136f29da9fd49aba0c53b1137ea5e51b0'
+        ';registered_at=2026-08-13T10:58:08.7987777+00:00' +
+        ';content_id=d11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e' +
+        ';manifest_sha256=60f3c9c455452783c1a083a97b1125eadf444026b405a5fb8661c3cc42d4dbcc'
     $execute = 'C:\owned\python\{action_name}'
     $arguments = '-I -B "C:\owned\app\scripts\context_rollout_consumer.py"'
     $hidden = $false
