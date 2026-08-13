@@ -266,6 +266,7 @@ def _mock_installer_audit(
     action_console_python: bool = False,
     extra_bundle_file: bool = False,
     task_interval_minutes: int = 2,
+    task_state: str = "Ready",
 ) -> tuple[int, dict[str, object], str]:
     powershell = shutil.which("pwsh") or shutil.which("powershell")
     if powershell is None:
@@ -403,7 +404,7 @@ function Get-ScheduledTask {{
     [CmdletBinding()] param([string]$TaskName, [string]$TaskPath)
     [pscustomobject]@{{
         Description = $mockDescription
-        State = 'Ready'
+        State = '{task_state}'
         Principal = [pscustomobject]@{{ UserId = $mockSid; RunLevel = 'Limited'; LogonType = 'Interactive' }}
         Actions = @([pscustomobject]@{{
             Execute = '{str(action_execute).replace("'", "''")}'
@@ -2955,6 +2956,39 @@ def test_installer_audit_accepts_only_fresh_completed_receipt_and_zero_task_resu
     assert audit["consumer_receipt_schema_valid"] is True
     assert audit["consumer_receipt_fresh"] is True
     assert audit["consumer_health"] == "healthy"
+
+
+@pytest.mark.parametrize("running_result", [267009, 2147946720])
+def test_installer_audit_accepts_inflight_ignore_new_wake_with_fresh_receipt(
+    running_result: int,
+) -> None:
+    exit_code, audit, raw_output = _mock_installer_audit(
+        last_task_result=running_result,
+        receipt_age_minutes=0,
+        trusted_acl=True,
+        task_state="Running",
+    )
+
+    assert exit_code == 0, raw_output
+    assert audit["status"] == "installed_valid"
+    assert audit["valid"] is True
+    assert audit["task_state"] == "Running"
+    assert audit["task_running"] is True
+    assert audit["task_result_health"] == "task_running"
+    assert audit["consumer_health"] == "healthy"
+
+
+def test_installer_audit_running_task_still_requires_fresh_receipt() -> None:
+    exit_code, audit, _raw_output = _mock_installer_audit(
+        last_task_result=267009,
+        receipt_age_minutes=30,
+        trusted_acl=True,
+        task_state="Running",
+    )
+
+    assert exit_code != 0
+    assert audit["valid"] is False
+    assert audit["consumer_health"] == "receipt_stale"
 
 
 def test_installer_audit_accepts_fifteen_minute_watchdog_contract() -> None:

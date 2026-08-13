@@ -1314,6 +1314,12 @@ function Get-ConsumerTaskAudit {
     }
     $taskInfoValid = $null -ne $taskInfo
     $lastTaskResult = if ($taskInfoValid) { [long]$taskInfo.LastTaskResult } else { $null }
+    $taskState = [string]$task.State
+    $taskRunning = [string]::Equals(
+        $taskState,
+        'Running',
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
     $lastRunAt = [DateTimeOffset]::MinValue
     if ($taskInfoValid -and $taskInfo.LastRunTime -is [DateTimeOffset] -and
         ([DateTimeOffset]$taskInfo.LastRunTime).Year -ge 2025) {
@@ -1331,6 +1337,8 @@ function Get-ConsumerTaskAudit {
         'task_not_yet_run'
     } elseif ($lastTaskResult -eq 0) {
         'task_last_result_ok'
+    } elseif ($taskRunning) {
+        'task_running'
     } else {
         'task_last_result_nonzero'
     }
@@ -1875,7 +1883,7 @@ function Get-ConsumerTaskAudit {
         'installation_drifted'
     } elseif (-not $taskHasRun) {
         'pending_first_run'
-    } elseif ($lastTaskResult -ne 0) {
+    } elseif ($lastTaskResult -ne 0 -and -not $taskRunning) {
         'task_last_result_nonzero'
     } elseif (-not $consumerReceiptSchemaValid) {
         if ($consumerReceiptStatus -eq 'absent') { 'receipt_absent' } else { 'receipt_invalid' }
@@ -1929,6 +1937,8 @@ function Get-ConsumerTaskAudit {
         settings_valid = $settingsValid
         trigger_valid = $triggerValid
         task_info_valid = $taskInfoValid
+        task_state = $taskState
+        task_running = $taskRunning
         last_task_result = $lastTaskResult
         task_result_health = $taskResultHealth
         last_run_time = if ($taskInfoValid) { $taskInfo.LastRunTime } else { $null }
