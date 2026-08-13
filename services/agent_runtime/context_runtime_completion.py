@@ -9,6 +9,7 @@ can evolve as one bounded unit.
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import re
@@ -74,6 +75,162 @@ def _write_manifest(path: Path, value: Mapping[str, object]) -> tuple[Path, str]
         os.fsync(handle.fileno())
     os.replace(temporary, path)
     return path, fabric._sha256_file(path)
+
+
+def _capture_windows_path_security(path: Path) -> dict[str, object] | None:
+    """Capture owner/group/DACL bytes plus a stable readback identity on Windows."""
+
+    if os.name != "nt":
+        return None
+    from ctypes import wintypes
+
+    owner_information = 0x00000001
+    group_information = 0x00000002
+    dacl_information = 0x00000004
+    requested = owner_information | group_information | dacl_information
+    error_insufficient_buffer = 122
+    se_dacl_protected = 0x1000
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    get_file_security = advapi32.GetFileSecurityW
+    get_file_security.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    get_file_security.restype = wintypes.BOOL
+    get_control = advapi32.GetSecurityDescriptorControl
+    get_control.argtypes = (
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.WORD),
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    get_control.restype = wintypes.BOOL
+    to_sddl = advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW
+    to_sddl.argtypes = (
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPWSTR),
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    to_sddl.restype = wintypes.BOOL
+    local_free = kernel32.LocalFree
+    local_free.argtypes = (ctypes.c_void_p,)
+    local_free.restype = ctypes.c_void_p
+
+    required = wintypes.DWORD()
+    ctypes.set_last_error(0)
+    get_file_security(str(path), requested, None, 0, ctypes.byref(required))
+    error = ctypes.get_last_error()
+    if error != error_insufficient_buffer or required.value <= 0:
+        raise ctypes.WinError(error)
+    descriptor = ctypes.create_string_buffer(required.value)
+    if not get_file_security(
+        str(path), requested, descriptor, required.value, ctypes.byref(required)
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    control = wintypes.WORD()
+    revision = wintypes.DWORD()
+    if not get_control(descriptor, ctypes.byref(control), ctypes.byref(revision)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    sddl_pointer = wintypes.LPWSTR()
+    if not to_sddl(
+        descriptor,
+        1,
+        requested,
+        ctypes.byref(sddl_pointer),
+        None,
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        sddl = str(sddl_pointer.value or "")
+    finally:
+        local_free(ctypes.cast(sddl_pointer, ctypes.c_void_p))
+    return {
+        "descriptor": bytes(descriptor.raw[: required.value]),
+        "dacl_protected": bool(control.value & se_dacl_protected),
+        "sddl": sddl,
+    }
+
+
+def _apply_windows_path_security(path: Path, state: Mapping[str, object] | None) -> None:
+    """Apply a captured directory security descriptor and verify exact readback."""
+
+    if state is None or os.name != "nt":
+        return
+    from ctypes import wintypes
+
+    owner_information = 0x00000001
+    group_information = 0x00000002
+    dacl_information = 0x00000004
+    protected_dacl_information = 0x80000000
+    unprotected_dacl_information = 0x20000000
+    requested = owner_information | group_information | dacl_information
+    requested |= (
+        protected_dacl_information
+        if bool(state["dacl_protected"])
+        else unprotected_dacl_information
+    )
+    raw = state.get("descriptor")
+    if not isinstance(raw, bytes) or not raw:
+        raise fabric.ContextFabricError("captured restore target ACL is invalid")
+    descriptor = ctypes.create_string_buffer(raw, len(raw))
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    get_owner = advapi32.GetSecurityDescriptorOwner
+    get_owner.argtypes = (
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.BOOL),
+    )
+    get_owner.restype = wintypes.BOOL
+    get_group = advapi32.GetSecurityDescriptorGroup
+    get_group.argtypes = get_owner.argtypes
+    get_group.restype = wintypes.BOOL
+    get_dacl = advapi32.GetSecurityDescriptorDacl
+    get_dacl.argtypes = (
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.BOOL),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.BOOL),
+    )
+    get_dacl.restype = wintypes.BOOL
+    owner = ctypes.c_void_p()
+    group = ctypes.c_void_p()
+    dacl = ctypes.c_void_p()
+    defaulted = wintypes.BOOL()
+    present = wintypes.BOOL()
+    if not get_owner(descriptor, ctypes.byref(owner), ctypes.byref(defaulted)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not get_group(descriptor, ctypes.byref(group), ctypes.byref(defaulted)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if (
+        not get_dacl(descriptor, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted))
+        or not present.value
+    ):
+        raise fabric.ContextFabricError("captured restore target DACL is unavailable")
+    set_named_security = advapi32.SetNamedSecurityInfoW
+    set_named_security.argtypes = (
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    )
+    set_named_security.restype = wintypes.DWORD
+    status = set_named_security(str(path), 1, requested, owner, group, dacl, None)
+    if status:
+        raise ctypes.WinError(status)
+    observed = _capture_windows_path_security(path)
+    if observed is None or (
+        observed["dacl_protected"] != state["dacl_protected"] or observed["sddl"] != state["sddl"]
+    ):
+        raise fabric.ContextFabricError("restore target ACL readback mismatch")
 
 
 def _legacy_preimage_snapshot(root: Path, output_root: Path) -> dict[str, object]:
@@ -182,15 +339,18 @@ def restore_migration_preimage(
 
     target = Path(target_root).absolute()
     target_existed = target.exists()
+    target_security: dict[str, object] | None = None
     if target_existed:
         if not target.is_dir() or fabric._path_is_link(target) or any(target.iterdir()):
             raise fabric.ContextFabricError("migration restore target must be empty and non-link")
+        target_security = _capture_windows_path_security(target)
     if not target.parent.is_dir() or fabric._path_is_link(target.parent):
         raise fabric.ContextFabricError("migration restore target parent is unavailable")
     staging = target.parent / f".{target.name}.restore-{time.time_ns()}"
     removed_empty_target = False
     try:
         _, staging_database = fabric._validate_store_root(staging, create=True)
+        _apply_windows_path_security(staging, target_security)
         shutil.copy2(database, staging_database)
         staged = _verify_legacy_fabric(staging)
         if staged["tip_event_hash"] != manifest["tip_event_hash"]:
@@ -209,11 +369,13 @@ def restore_migration_preimage(
             target.rmdir()
             removed_empty_target = True
         os.replace(staging, target)
+        _apply_windows_path_security(target, target_security)
     except Exception:
         if staging.exists() and staging.is_dir() and not fabric._path_is_link(staging):
             shutil.rmtree(staging)
         if removed_empty_target and not target.exists():
             target.mkdir()
+            _apply_windows_path_security(target, target_security)
         raise
     return {
         "status": "restored_legacy_preimage",
@@ -2854,11 +3016,13 @@ def restore_snapshot(
 
     target = Path(target_root).absolute()
     target_existed = target.exists()
+    target_security: dict[str, object] | None = None
     if target.exists():
         if not target.is_dir() or fabric._path_is_link(target):
             raise fabric.ContextFabricError("restore target is not a regular directory")
         if require_empty and any(target.iterdir()):
             raise fabric.ContextFabricError("restore target must be empty; live overwrite refused")
+        target_security = _capture_windows_path_security(target)
     if not target.parent.is_dir() or fabric._path_is_link(target.parent):
         raise fabric.ContextFabricError("restore target parent is unavailable or redirected")
     for ancestor in (target.parent, *target.parent.parents):
@@ -2885,6 +3049,7 @@ def restore_snapshot(
     removed_empty_target = False
     try:
         staging.mkdir()
+        _apply_windows_path_security(staging, target_security)
         _, target_database = fabric._validate_store_root(staging, create=False)
         shutil.copy2(source / "context_fabric.sqlite3", target_database)
         for item in manifest["artifacts"]:
@@ -2910,11 +3075,13 @@ def restore_snapshot(
             target.rmdir()
             removed_empty_target = True
         os.replace(staging, target)
+        _apply_windows_path_security(target, target_security)
     except Exception:
         if staging.exists():
             shutil.rmtree(staging)
         if removed_empty_target and not target.exists():
             target.mkdir()
+            _apply_windows_path_security(target, target_security)
         raise
     return {
         "status": "restored",

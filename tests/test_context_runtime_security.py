@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from services.agent_runtime.codex_situation_hook import L0_CONTEXT, handle_hook_
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = REPO_ROOT / "scripts" / "codex_situation_context_hook.py"
 MANAGER = REPO_ROOT / "scripts" / "manage_context_fabric.py"
+PINNED_LOCAL_PWSH = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
 SESSION_ID = "019ff75c-703c-7972-96cd-b0d257b13baa"
 TURN_ID = "019ff75d-1749-7662-9e80-aafa605718ab"
 
@@ -149,6 +151,116 @@ def _child_environment(**overrides: str) -> dict[str, str]:
     environ = {name: os.environ[name] for name in allowed if name in os.environ}
     environ.update({"PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1", **overrides})
     return environ
+
+
+def _powershell_executable() -> str:
+    on_path = shutil.which("pwsh")
+    if on_path:
+        return on_path
+    if PINNED_LOCAL_PWSH.is_file():
+        return str(PINNED_LOCAL_PWSH)
+    pytest.skip("PowerShell 7 is unavailable on this Windows test host")
+
+
+def _directory_acl_state(path: Path, *, apply_protected_acl: bool = False) -> dict[str, object]:
+    script = r"""
+$ErrorActionPreference = 'Stop'
+$literalPath = $env:CONTEXT_RUNTIME_ACL_TEST_PATH
+$currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$expectedSids = @(
+    $currentSid,
+    [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'),
+    [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+)
+if ($env:CONTEXT_RUNTIME_ACL_TEST_APPLY -eq '1') {
+    $acl = Get-Acl -LiteralPath $literalPath
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetOwner($currentSid)
+    foreach ($rule in @($acl.Access)) {
+        [void]$acl.RemoveAccessRuleSpecific($rule)
+    }
+    $inheritance = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
+    $propagation = [System.Security.AccessControl.PropagationFlags]::None
+    $allow = [System.Security.AccessControl.AccessControlType]::Allow
+    $fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
+    foreach ($sid in $expectedSids) {
+        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+            $sid,
+            $fullControl,
+            $inheritance,
+            $propagation,
+            $allow
+        )
+        $acl.SetAccessRule($rule)
+    }
+    Set-Acl -LiteralPath $literalPath -AclObject $acl
+}
+$readback = Get-Acl -LiteralPath $literalPath
+$allowSids = @(
+    $readback.Access |
+        Where-Object AccessControlType -eq 'Allow' |
+        ForEach-Object {
+            $_.IdentityReference.Translate(
+                [System.Security.Principal.SecurityIdentifier]
+            ).Value
+        } |
+        Sort-Object -Unique
+)
+[ordered]@{
+    owner_sid = $readback.GetOwner(
+        [System.Security.Principal.SecurityIdentifier]
+    ).Value
+    protected = [bool]$readback.AreAccessRulesProtected
+    access_sddl = $readback.GetSecurityDescriptorSddlForm(
+        [System.Security.AccessControl.AccessControlSections]::Access
+    )
+    allow_sids = $allowSids
+    expected_sids = @($expectedSids | ForEach-Object Value | Sort-Object -Unique)
+    deny_count = @(
+        $readback.Access | Where-Object AccessControlType -eq 'Deny'
+    ).Count
+} | ConvertTo-Json -Depth 4 -Compress
+"""
+    completed = subprocess.run(
+        [_powershell_executable(), "-NoProfile", "-NonInteractive", "-Command", script],
+        env=_child_environment(
+            CONTEXT_RUNTIME_ACL_TEST_PATH=str(path),
+            CONTEXT_RUNTIME_ACL_TEST_APPLY="1" if apply_protected_acl else "0",
+        ),
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+    if completed.returncode != 0:
+        combined = (completed.stdout + completed.stderr).decode("utf-8", errors="replace")
+        pytest.fail(f"PowerShell ACL probe failed: {combined}")
+    decoded = completed.stdout.decode("utf-8", errors="replace").lstrip("\ufeff").strip()
+    state = json.loads(decoded)
+    assert isinstance(state, dict)
+    return state
+
+
+def _assert_acl_identity_preserved(before: dict[str, object], after: dict[str, object]) -> None:
+    expected_sids = set(before["expected_sids"])
+    assert before["protected"] is True
+    assert set(before["allow_sids"]) == expected_sids
+    assert before["deny_count"] == 0
+    identity_fields = ("owner_sid", "protected", "access_sddl", "deny_count")
+    mismatches = {
+        field: {"before": before[field], "after": after[field]}
+        for field in identity_fields
+        if after[field] != before[field]
+    }
+    if set(after["allow_sids"]) != expected_sids:
+        mismatches["allow_sids"] = {
+            "before": sorted(expected_sids),
+            "after": sorted(after["allow_sids"]),
+        }
+    broad_allow_sids = {"S-1-5-11", "S-1-5-32-545"} & set(after["allow_sids"])
+    assert not mismatches and not broad_allow_sids, (
+        f"restore changed target ACL: mismatches={mismatches}, "
+        f"broad_allow_sids={sorted(broad_allow_sids)}"
+    )
 
 
 def _manager(root: Path, command: str) -> subprocess.CompletedProcess[str]:
@@ -386,6 +498,32 @@ def test_migration_backup_round_trips_through_public_legacy_restore(tmp_path: Pa
             connection.execute("SELECT value FROM fabric_meta WHERE key='feature_level'").fetchone()
             is None
         )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows DACL semantics are required")
+def test_migration_preimage_restore_preserves_preexisting_empty_target_protected_acl(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "legacy"
+    _seed_legacy_v1(root)
+    _, event_hash = _append_legacy_event(root)
+    backup = tmp_path / "external-backup"
+    migrated = context_runtime.migrate_context_fabric(root, backup_root=backup)
+    target = tmp_path / "restored-legacy"
+    target.mkdir()
+    before = _directory_acl_state(target, apply_protected_acl=True)
+
+    receipt = context_runtime.restore_migration_preimage(
+        backup,
+        target,
+        expected_manifest_sha256=str(migrated["backup_manifest_sha256"]),
+    )
+
+    after = _directory_acl_state(target)
+    _assert_acl_identity_preserved(before, after)
+    assert receipt["status"] == "restored_legacy_preimage"
+    assert receipt["tip_event_hash"] == event_hash
+    assert context_runtime.verify_event_chain(target)["tip_event_hash"] == event_hash
 
 
 def test_migration_rejects_external_backup_through_directory_link(tmp_path: Path) -> None:
@@ -1271,6 +1409,56 @@ def test_snapshot_and_restore_refuse_nonempty_targets_without_overwrite(tmp_path
         context_runtime.restore_snapshot(snapshot, occupied_restore)
     assert restore_sentinel.read_text(encoding="utf-8") == "keep"
     assert not (occupied_restore / "restore.complete.v1.json").exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows DACL semantics are required")
+def test_restore_preserves_preexisting_empty_target_protected_acl(tmp_path: Path) -> None:
+    root = tmp_path / "fabric"
+    context_runtime.initialize_context_fabric(root)
+    _seed_event(root)
+    snapshot = tmp_path / "snapshot"
+    context_runtime.create_snapshot(snapshot, root=root)
+    target = tmp_path / "restore-target"
+    target.mkdir()
+    before = _directory_acl_state(target, apply_protected_acl=True)
+
+    context_runtime.restore_snapshot(snapshot, target)
+
+    after = _directory_acl_state(target)
+    _assert_acl_identity_preserved(before, after)
+    assert context_runtime.verify_context_fabric(target)["event_count"] == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows DACL semantics are required")
+def test_restore_final_replace_failure_retains_empty_target_protected_acl(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "fabric"
+    context_runtime.initialize_context_fabric(root)
+    _seed_event(root)
+    snapshot = tmp_path / "snapshot"
+    context_runtime.create_snapshot(snapshot, root=root)
+    target = tmp_path / "restore-target"
+    target.mkdir()
+    before = _directory_acl_state(target, apply_protected_acl=True)
+    real_replace = completion_module.os.replace
+
+    def fail_final_replace(
+        source: str | os.PathLike[str], destination: str | os.PathLike[str]
+    ) -> None:
+        if Path(destination).absolute() == target.absolute():
+            raise OSError("forced final restore replacement failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(completion_module.os, "replace", fail_final_replace)
+    with pytest.raises(OSError, match="forced final restore replacement failure"):
+        context_runtime.restore_snapshot(snapshot, target)
+
+    assert target.is_dir()
+    assert not any(target.iterdir())
+    assert not list(tmp_path.glob(f".{target.name}.restore-*"))
+    after = _directory_acl_state(target)
+    _assert_acl_identity_preserved(before, after)
 
 
 def test_snapshot_output_and_restore_target_refuse_directory_links(tmp_path: Path) -> None:
