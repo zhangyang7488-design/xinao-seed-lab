@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,6 +102,31 @@ def test_hook_wake_failure_is_fail_open(tmp_path: Path, monkeypatch) -> None:
         runner=fail,
         system_root=str(root),
     )
+
+
+def test_hook_adapter_still_requests_recovery_wake_when_capture_fails(
+    monkeypatch,
+) -> None:
+    event = {"hook_event_name": "SessionEnd", "cwd": str(hook_adapter.REPO_ROOT)}
+    observed: list[dict[str, object]] = []
+    output = io.StringIO()
+
+    monkeypatch.setattr(hook_adapter.sys, "stdin", io.StringIO(json.dumps(event)))
+    monkeypatch.setattr(hook_adapter.sys, "stdout", output)
+    monkeypatch.setattr(
+        hook_adapter,
+        "handle_hook_event",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("capture failed")),
+    )
+    monkeypatch.setattr(
+        hook_adapter,
+        "request_context_consumer_wake",
+        lambda value: observed.append(dict(value)) or True,
+    )
+
+    assert hook_adapter.main() == 0
+    assert observed[0]["hook_event_name"] == "SessionEnd"
+    assert json.loads(output.getvalue()) == {"continue": True}
 
 
 def test_controller_wake_is_limited_to_named_runtime_state(

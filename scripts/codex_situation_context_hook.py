@@ -78,8 +78,12 @@ def main() -> int:
         # well as the event-reported cwd.  Direct unit callers can omit this
         # private field; the installed consumer never does.
         event["_context_fabric_actual_cwd"] = str(Path.cwd())
-        payload = handle_hook_event(event, context_fabric_enabled=True)
-        request_context_consumer_wake(event)
+        try:
+            payload = handle_hook_event(event, context_fabric_enabled=True)
+        finally:
+            # A valid mounted lifecycle event should still wake the disk
+            # recovery consumer if synchronous capture itself fails.
+            request_context_consumer_wake(event)
     except Exception:
         payload = {"continue": True}
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
