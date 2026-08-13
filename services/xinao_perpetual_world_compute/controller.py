@@ -19,7 +19,7 @@ import traceback
 import uuid
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 RUN_SCHEMA = "xinao.cleanroom.perpetual-world-compute-run.v2"
 CONTROLLER_SCHEMA = "xinao.cleanroom.perpetual-world-compute-controller-state.v2"
@@ -92,6 +92,58 @@ DEFAULT_WORLD_TURN_QUOTA_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_wor
 DEFAULT_XINAO_LIVE_REALITY_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\xinao\live-reality")
 DEFAULT_XINAO_WORLD_COMPUTE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\xinao\world-compute")
 ACCOUNT_SLOTS = ("A", "C")
+CONTEXT_CONSUMER_TASK_NAME = r"\XINAO-S-Context-Rollout-Consumer-v1"
+
+
+def request_context_consumer_wake(
+    *,
+    controller_state_path: Path | None = None,
+    allowed_runtime_roots: Sequence[Path] | None = None,
+    runner: Callable[..., object] | None = None,
+    system_root: str | None = None,
+) -> bool:
+    """Best-effort notification for the optional S presentation sidecar.
+
+    The frozen world-compute controller remains independent of S Context.  It
+    only asks the already-installed current-user task to observe the state that
+    was just committed; failure is contained and the scheduled watchdog can
+    catch up later.
+    """
+
+    try:
+        if controller_state_path is None:
+            return False
+        state_path = controller_state_path.resolve(strict=False)
+        runtime_roots = tuple(
+            Path(value).resolve(strict=False)
+            for value in (
+                allowed_runtime_roots
+                if allowed_runtime_roots is not None
+                else (DEFAULT_RUNTIME_ROOT, LEGACY_RUNTIME_ROOT, DEDICATED_A_RUNTIME_ROOT)
+            )
+        )
+        if state_path.name != "controller_state.json" or not any(
+            state_path != root and state_path.is_relative_to(root) for root in runtime_roots
+        ):
+            return False
+        windows_root = system_root or os.environ.get("SystemRoot", "")
+        if not windows_root:
+            return False
+        schtasks = Path(windows_root) / "System32" / "schtasks.exe"
+        if not schtasks.is_file():
+            return False
+        invoke = runner or subprocess.Popen
+        invoke(
+            [str(schtasks), "/Run", "/TN", CONTEXT_CONSUMER_TASK_NAME],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return True
+    except Exception:
+        return False
 
 LIFECYCLE_STATES = (
     "CONTINUE",
@@ -2110,6 +2162,7 @@ class PerpetualController:
                 "lineages": lineages,
             }
             atomic_write_json(self.controller_state_path, payload)
+        request_context_consumer_wake(controller_state_path=self.controller_state_path)
 
     def publish_lineage_state(self, lineage_id: str, **changes: Any) -> None:
         with self._state_lock:

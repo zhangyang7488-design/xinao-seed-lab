@@ -17,8 +17,9 @@ import re
 import sqlite3
 import sys
 import threading
+import time
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -66,6 +67,7 @@ INTEGRITY_RECHECK_INTERVAL = timedelta(hours=6)
 TRACKED_STABLE_PRUNE_AFTER = timedelta(days=2)
 IMPORT_RETRY_BASE = timedelta(minutes=5)
 IMPORT_RETRY_MAX = timedelta(hours=6)
+QUIESCENCE_RETRY_DELAYS_SECONDS = (0.25, 0.75)
 ROLLOUT_LOCAL_TIMEZONE = timezone(timedelta(hours=8))
 LOCATOR_PAYLOAD_TOLERANCE = timedelta(seconds=5)
 FUTURE_CLOCK_TOLERANCE = timedelta(seconds=5)
@@ -1773,6 +1775,47 @@ def run_consumer(
         lock.release()
 
 
+def _needs_quiescence_retry(receipt: Mapping[str, object]) -> bool:
+    if receipt.get("status") not in {"completed", "completed_with_errors"}:
+        return False
+    counts = receipt.get("counts")
+    if not isinstance(counts, Mapping):
+        return False
+    return int(counts.get("awaiting_stable", 0)) > 0 or int(counts.get("deferred", 0)) > 0
+
+
+def run_consumer_to_quiescence(
+    *,
+    root: Path = PRODUCTION_CONTEXT_FABRIC_ROOT,
+    allowed_homes: Mapping[str, str] | None = None,
+    now: datetime | None = None,
+    sleeper: Callable[[float], object] = time.sleep,
+) -> dict[str, object]:
+    """Drain one event wake through a bounded stable-observation retry.
+
+    The public ``run_consumer`` transaction deliberately requires a later
+    stable observation before importing a growing rollout.  Task Scheduler is
+    now also woken by real lifecycle events, so the one-shot task performs up
+    to two short background retries instead of waiting for the low-frequency
+    watchdog to provide that later observation.
+    """
+
+    elapsed = 0.0
+    receipt = run_consumer(root=root, allowed_homes=allowed_homes, now=now)
+    for delay_seconds in QUIESCENCE_RETRY_DELAYS_SECONDS:
+        if not _needs_quiescence_retry(receipt):
+            break
+        sleeper(delay_seconds)
+        elapsed += delay_seconds
+        retry_now = None if now is None else now + timedelta(seconds=elapsed)
+        receipt = run_consumer(
+            root=root,
+            allowed_homes=allowed_homes,
+            now=retry_now,
+        )
+    return receipt
+
+
 def _parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
         description="Consume new S/B root CLI rollouts into the default context fabric."
@@ -1784,7 +1827,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     try:
-        receipt = run_consumer()
+        receipt = run_consumer_to_quiescence()
         presentation_status = "not_run"
         if receipt.get("status") in {"completed", "completed_with_errors"}:
             presentation_receipt = run_presentation_step()
