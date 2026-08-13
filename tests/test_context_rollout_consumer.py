@@ -563,6 +563,64 @@ exit 9
     )
 
 
+@pytest.mark.parametrize("engine_name", ["pwsh", "powershell"])
+def test_installer_removes_only_the_exact_owned_staging_path(
+    tmp_path: Path,
+    engine_name: str,
+) -> None:
+    engine = shutil.which(engine_name)
+    if engine is None:
+        pytest.skip(f"{engine_name} is unavailable")
+    installer = consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
+    bundle_base = (tmp_path / "bundle[literal]").resolve()
+    content_id = "a" * 64
+    registration_token = "b" * 32
+    staging = bundle_base / f".{content_id}.staging.{registration_token}"
+    sibling = bundle_base / f".{content_id}.staging.{'c' * 32}"
+    command = rf"""
+$ErrorActionPreference = 'Stop'
+$installerText = [System.IO.File]::ReadAllText('{str(installer).replace("'", "''")}')
+$prefix = $installerText.Substring(0, $installerText.IndexOf('function New-ProtectedConsumerBundle'))
+. ([scriptblock]::Create($prefix))
+$bundleBase = '{str(bundle_base).replace("'", "''")}'
+$staging = '{str(staging).replace("'", "''")}'
+$sibling = '{str(sibling).replace("'", "''")}'
+[void][System.IO.Directory]::CreateDirectory($staging)
+[void][System.IO.Directory]::CreateDirectory($sibling)
+[System.IO.File]::WriteAllText((Join-Path $staging 'owned.txt'), 'owned')
+[System.IO.File]::WriteAllText((Join-Path $sibling 'sibling.txt'), 'sibling')
+Remove-OwnedBundleStaging $staging '{content_id}' '{registration_token}'
+[ordered]@{{
+    staging_absent = -not (Test-Path -LiteralPath $staging)
+    sibling_present = Test-Path -LiteralPath $sibling
+    sibling_body = [System.IO.File]::ReadAllText((Join-Path $sibling 'sibling.txt'))
+}} | ConvertTo-Json -Compress
+"""
+    completed = subprocess.run(
+        [
+            engine,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            base64.b64encode(command.encode("utf-16-le")).decode(),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    output_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert output_lines, completed.stderr
+    assert json.loads(output_lines[-1]) == {
+        "staging_absent": True,
+        "sibling_present": True,
+        "sibling_body": "sibling",
+    }
+
+
 def test_bootstrap_imports_only_latest_recent_root_and_never_opens_old_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

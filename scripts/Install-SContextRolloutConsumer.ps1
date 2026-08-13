@@ -880,7 +880,10 @@ function Remove-OwnedBundleStaging {
         [string]$RegistrationToken
     )
     $expectedName = ".$ContentId.staging.$RegistrationToken"
-    if (-not (Test-OrdinalPathEqual (Split-Path -LiteralPath $StagingPath -Parent) $bundleBase) -or
+    $stagingParent = [System.IO.Path]::GetDirectoryName(
+        [System.IO.Path]::GetFullPath($StagingPath)
+    )
+    if (-not (Test-OrdinalPathEqual $stagingParent $bundleBase) -or
         -not [string]::Equals(
             [System.IO.Path]::GetFileName($StagingPath),
             $expectedName,
