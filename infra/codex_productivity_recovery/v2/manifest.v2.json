@@ -13,7 +13,7 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "7e50796830af08a27fb19848478e8c4660266f9635296bc9bf0fd9e23aa771cc",
+  "archive_sha256": "c075314a53b1c026bf83e5cb2aaa82eb789790600cf4097465031dad540bb9e5",
   "entry_count": 125,
   "entries": [
     {
@@ -48,8 +48,8 @@
       "archive_path": "contracts/S_CONTEXT_FABRIC_CURRENT.md",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\docs\\tool_glue\\S_CONTEXT_FABRIC_CURRENT.md",
       "role": "context_fabric_contract",
-      "size": 15543,
-      "sha256": "ada031c8d9962a4032edbb5f85ddcfe48d6caf9e268c392593024e63698998bc"
+      "size": 17425,
+      "sha256": "32224484932b9e428086d334ce77dc89b661bebfc874a120e832bdb5579b6f28"
     },
     {
       "archive_path": "human-entries/持续上下文运行时.txt",
@@ -650,8 +650,8 @@
       "archive_path": "repository/scripts/Install-SContextRolloutConsumer.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\Install-SContextRolloutConsumer.ps1",
       "role": "context_rollout_consumer_installer",
-      "size": 72137,
-      "sha256": "22e760bf3b80c70aecdd21d441726db62777eb9846475d4752ef2c993f901e5c"
+      "size": 72336,
+      "sha256": "2d74598636424b2cd92f61f46062d6c044f71bd5dc68379876e53fee9ea6a8ee"
     },
     {
       "archive_path": "repository/scripts/Protect-SContextFabricState.ps1",
@@ -671,8 +671,8 @@
       "archive_path": "repository/scripts/context_rollout_consumer.bundle.lock.json",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\worktrees\\s-context-runtime-full-20260813\\scripts\\context_rollout_consumer.bundle.lock.json",
       "role": "context_rollout_consumer_release_lock",
-      "size": 245387,
-      "sha256": "d4e810609ed614694e0deba0b7c1e817043432f495e1b9d61869bfc39c137920"
+      "size": 245386,
+      "sha256": "6a95d1ae9d66969522c4ba0e46b27f37dde9039f891a2420318927f102c32846"
     },
     {
       "archive_path": "repository/scripts/context_rollout_consumer.py",
