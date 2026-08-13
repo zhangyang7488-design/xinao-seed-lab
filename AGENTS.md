@@ -10,7 +10,7 @@
 
 在 clean-room 热运行语义中，`A 并发研究` / `C 并发研究` 只表示同一套持续 world-owning compute protocol 选择 `account_slot=A|C`；A/C 不定义研究模式、cognition、branch 拓扑或历史 experiment arm。历史 one-shot 的 A/B/C/D arm 标签只作归档身份，不能取得当前运行路由权。
 
-涉及本机代理、节点、`7897`、Vortex/TUN 或 ChatGPT 上传时，先读 `docs/local_machine/LOCAL_PROXY_NODE_CHATGPT_UPLOAD_KNOWLEDGE_20260811.md`，不要先全机搜索。
+涉及本机代理、网络、节点、`7897`、Vortex/Mihomo、TUN、浏览器/Codex 联网、Cloudflare 验证或 ChatGPT 上传时，先完整读取 `docs/local_machine/LOCAL_PROXY_NODE_CHATGPT_UPLOAD_KNOWLEDGE_20260811.md`，再按其证据索引读取具名历史事故；不要先全机搜索，也不要把当前节点、单次绿灯或旧报告当成整套认识。该路径虽保留原日期名，文件内容直接维护当前完整认识，不另立并列总入口。
 
 S 只承载通用工程实现：launcher、WorkerPool、工具胶水、测试、发布与可复用组件。它不保存或选择人的父意图、科学课题、研究路线、认知生命周期或完成结论。当前工作确实需要 S 的工程能力时才修改这里；局部工程结果必须回到其真实消费者验证。
 
