@@ -86,6 +86,7 @@ def synthetic_old_x(tmp_path: Path) -> dict[str, object]:
     _write(cas_path, '{"payload":"unique artifact"}\n')
     event = {
         "schema_version": "xinao.artifact-journal-event.v1",
+        "previous_sha256": None,
         "payload": {
             "artifact_id": "sha256:" + ("cd" * 32),
             "cas_sha256": cas_id,

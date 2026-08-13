@@ -751,7 +751,7 @@ function Assert-GitDirectoryHasNoSensitiveCarrier {
 
 function Assert-NoSensitiveJsonValue {
     param(
-        [Parameter(Mandatory)]$Value,
+        [Parameter(Mandatory)][AllowNull()]$Value,
         [Parameter(Mandatory)][string]$SourcePath,
         [string]$JsonPath = '$'
     )
