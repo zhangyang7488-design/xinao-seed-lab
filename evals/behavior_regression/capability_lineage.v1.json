@@ -400,7 +400,7 @@
     {
       "id": "quota_endpoint_dependency_failure_isolation",
       "pain": "A quota query, provider drift, seal mismatch, one lane failure, or local wait can poison the whole parent or silently switch transport.",
-      "causal_work": "Cache bounded routing facts, fail closed on identity drift, isolate only the dependency cone, and reroute only on an explicit fact-backed event.",
+      "causal_work": "Cache bounded routing facts, fail closed on identity drift, and isolate only the dependency cone. After Grok has been selected, its failure is not a provider-substitution event: repair the named Grok dependency and retry the same public entry before rerouting; release only on an explicit fact-backed condition.",
       "historical_carriers": [
         "git:4096f52^:evals/context_intent_alignment/cases.yaml"
       ],
@@ -408,6 +408,9 @@
         "services/agent_runtime/quota_dispatch_epoch.py",
         "services/agent_runtime/supervisor_worker_selector.py",
         "services/agent_runtime/dispatch_economics.py",
+        "external:Invoke-Codex-GrokWorkerPool.ps1 repair-first failure receipt",
+        "external:dispatch-grok-worker-pool repair-first consumer",
+        "evals/parent_frame_admission/cases.yaml",
         "tests/test_quota_dispatch_epoch.py",
         "tests/test_supervisor_worker_selector.py",
         "tests/test_dispatch_economics.py"
@@ -415,7 +418,7 @@
       "current_state": "VERIFIED_COMPONENT_NOT_PARENT",
       "disposition": "KEEP_CONDITIONAL",
       "cost_and_failure_radius": "Deterministic code is cheaper and safer than live language cases; a bad route event should affect only its dispatch cone.",
-      "rollback": "Retain the last hash-bound route receipt or choose another healthy route without altering the parent task.",
+      "rollback": "Restore the preceding public launcher and dispatch Skill from recovery media; choose another healthy route only after an explicit release condition, without altering the parent task.",
       "unknowns": [
         "Current provider behavior and quota catalogs remain time-specific."
       ]

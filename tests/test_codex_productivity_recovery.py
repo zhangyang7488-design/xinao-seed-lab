@@ -229,8 +229,17 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         assert "普通 Grok 是可分离正收益劳动的默认" in operator_text
         assert "world-owning Sol 的研究不因该入口存在" in operator_text
         assert "默认 cognition 路线" in operator_text
+        assert "选中 Grok 后，失败先修 Grok" in operator_text
+        assert "native_codex_subagent_substitution_allowed=false" in operator_text
         launcher_text = archive.read("launchers/Invoke-Codex-GrokWorkerPool.ps1").decode("utf-8")
         assert "New-CodexGrokTemporaryWorktree" in launcher_text
+        assert "xinao.grok.repair_first_failure.v1" in launcher_text
+        assert "failure_is_provider_substitution_evidence = $false" in launcher_text
+        dispatch_skill_text = archive.read(
+            "main-home/skills/dispatch-grok-worker-pool/SKILL.md"
+        ).decode("utf-8")
+        assert "Repair the selected Grok route before substitution" in dispatch_skill_text
+        assert "native_codex_subagent_substitution_allowed=false" in dispatch_skill_text
         worker_text = archive.read(
             "runtime/grok-worker-pool/bridge/Invoke-GrokComposer25Worker.ps1"
         ).decode("utf-8")

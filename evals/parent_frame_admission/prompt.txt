@@ -69,6 +69,16 @@ write task. Once the task is legally bound, the current effect Owner still choos
 technical route dynamically without asking the user to approve chain-internal
 steps.
 
+Keep initial route choice separate from a failure after route selection. If an
+ordinary Grok public route is already selected and its typed repair-first
+receipt says the failure is not provider-substitution evidence, repair the
+named Grok dependency and retry the same public entry before any native Codex,
+Terra, or Luna substitution. A failed call alone cannot open a native-subagent
+exception. This sticky repair step is released only by a capability mismatch
+that preceded Grok selection, explicit Pause/Stop, a new account/secret/major
+external effect boundary, or bounded same-entry proof that Grok is unavailable
+under a parent contract that permits rerouting.
+
 `object_graph` is the minimal current projection, not a full stored model.
 Assign levels by their relation in this case, not by nouns. It must show that
 the admitted action still serves a current parent result, reaches a real

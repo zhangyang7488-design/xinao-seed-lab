@@ -13,7 +13,7 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "c075314a53b1c026bf83e5cb2aaa82eb789790600cf4097465031dad540bb9e5",
+  "archive_sha256": "e3d0840b0b0cceb787f3475e876f34345c7121fd36be4496142174e63c08fd12",
   "entry_count": 125,
   "entries": [
     {
@@ -27,8 +27,8 @@
       "archive_path": "contracts/CODEX_GROK_WORKER_POOL_OPERATOR.md",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_GROK_WORKER_POOL_OPERATOR.md",
       "role": "grok_worker_pool_operator_contract",
-      "size": 5368,
-      "sha256": "7cb69053c1591afe6668cc7d39c15d4fa9cbbebd527979efb76d6d6e864f6fae"
+      "size": 6655,
+      "sha256": "ad09e1797f97d2594de1cdbee5111cc6dd245af1ca3092bb9af7575014a71259"
     },
     {
       "archive_path": "contracts/CODEX_SHARED_RUNTIME_ACCOUNT_SLOTS_CURRENT.md",
@@ -53,7 +53,7 @@
     },
     {
       "archive_path": "human-entries/持续上下文运行时.txt",
-      "live_source": "C:\\Users\\xx363\\Desktop\\持续上下文运行时.txt",
+      "live_source": "C:\\Users\\xx363\\Desktop\\新澳原始直觉意图\\持续上下文运行时.txt",
       "role": "context_runtime_source_brief",
       "size": 25760,
       "sha256": "d5d42ccece491cd3937aca940733b92a72f3f54c08bc3f73138a6e8f006bfc62"
@@ -69,8 +69,8 @@
       "archive_path": "launchers/Invoke-Codex-GrokWorkerPool.ps1",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-Codex-GrokWorkerPool.ps1",
       "role": "grok_worker_pool_public_launcher",
-      "size": 39694,
-      "sha256": "864069c41e7869fe0b03fd2cf51bce287dca240481404dc29f2a668d40ef795e"
+      "size": 44802,
+      "sha256": "99c2f953eca216b5986aa429ed09300b2f1b541d4e44947eb4acbd5ec3434906"
     },
     {
       "archive_path": "launchers/Invoke-GrokWorkerOAuthRecovery.ps1",
@@ -104,8 +104,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 12373,
-      "sha256": "e705d91feebe486bb1383a5c815f90b209b1491afa9a4262532761825ed09cfa"
+      "size": 13660,
+      "sha256": "13e1233b5310852ffec7ff47a6e235239af56a34139213277737ae3d6ac41510"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -202,15 +202,15 @@
       "archive_path": "main-home/skills/dispatch-grok-worker-pool/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-grok-worker-pool\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 12880,
-      "sha256": "4879d69149a7e1e0ef7f21bc413e81d570ed396814487afc4485197445c42dee"
+      "size": 15021,
+      "sha256": "d4c117dbc9e8d8017267dc056be71472401d67d3e523a9efd31892fedc85c2f1"
     },
     {
       "archive_path": "main-home/skills/dispatch-grok-worker-pool/agents/openai.yaml",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-grok-worker-pool\\agents\\openai.yaml",
       "role": "generic_custom_skill",
-      "size": 365,
-      "sha256": "c89067adb89bb909fe2217581bcae4e64fb49c16bed91f7c8d46b9192cedefd1"
+      "size": 394,
+      "sha256": "75aecb67a58920a76365b60d2ec174070766fdd290623eeaa9cd2cc40fd6bcda"
     },
     {
       "archive_path": "main-home/skills/dispatch-grok-worker-pool/assets/artifact-worker-result.v1.schema.json",
@@ -496,22 +496,22 @@
       "archive_path": "main-home/skills/productivity/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\productivity\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 8151,
-      "sha256": "59d56a8e071baf67e99e1289d5e0f1e7515dfa7ef70b7d1aee8a48f4e44acc75"
+      "size": 10674,
+      "sha256": "b547ad5356bf982228260b6e79773eaaa846d86789d5fbe9003b7c3f90a28d54"
     },
     {
       "archive_path": "main-home/skills/productivity/agents/openai.yaml",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\productivity\\agents\\openai.yaml",
       "role": "generic_custom_skill",
-      "size": 268,
-      "sha256": "ff614da192bae4807a0063a8ceacaac6e8dbcb93eeab7f1583ad51d06cd57270"
+      "size": 367,
+      "sha256": "caa45817545887731c26334eefd6e3a5502ca52ef7cb780e9c9055a220ebc0a1"
     },
     {
       "archive_path": "main-home/skills/productivity/references/protocol.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\productivity\\references\\protocol.md",
       "role": "generic_custom_skill",
-      "size": 6522,
-      "sha256": "727f2a3961127954507697d2bbc908a5a4434e9de87cbd6b48592d0728c7b035"
+      "size": 8184,
+      "sha256": "18a376141fd4ed15b237922695b8729adaea53adee6a50a02234d7a8abdd62bb"
     },
     {
       "archive_path": "main-home/skills/productivity/references/skill-ecology.md",
@@ -538,36 +538,36 @@
       "archive_path": "main-home/skills/repair-agent-behavior/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 22136,
-      "sha256": "0af5cc13d6f7d94578cbfc011100b99295be7ba35922e022880b329fcc96e285"
+      "size": 22688,
+      "sha256": "86108d8e216d83fe69f4b5e2a3262b1ffd10de3bbadc41277d114deac8101786"
     },
     {
       "archive_path": "main-home/skills/repair-agent-behavior/agents/openai.yaml",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\agents\\openai.yaml",
       "role": "generic_custom_skill",
-      "size": 668,
-      "sha256": "39800ef32b00a11ce60c82db7c51900055a21d7d0d2090b14a15fd89d1ed94df"
+      "size": 689,
+      "sha256": "5d2d7a8b356f33359236a5d0b20ac2c4623db94fafbf0a4203a425e37f24fad7"
     },
     {
       "archive_path": "main-home/skills/repair-agent-behavior/references/evaluation-cases.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\references\\evaluation-cases.md",
       "role": "generic_custom_skill",
-      "size": 17562,
-      "sha256": "06b746c1569449799854864ccb46e1877b55b1f032cff2be202384d3b68eb6be"
+      "size": 19223,
+      "sha256": "3b2a031c4d250afed682f19f8387cc31c512d0e841989864ccabe7f73d707812"
     },
     {
       "archive_path": "main-home/skills/repair-agent-behavior/references/maintenance-contract.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\references\\maintenance-contract.md",
       "role": "generic_custom_skill",
-      "size": 9272,
-      "sha256": "7b37b6a2fff772a2bc1c6f8f1eb36e3643f8239fd6a02ba2f0e5ceb5b7b7f5cb"
+      "size": 9690,
+      "sha256": "2678a2da0c923207c2b6a4343047551e93241ba856671548c7f9412ad6d5f732"
     },
     {
       "archive_path": "main-home/skills/repair-agent-behavior/references/value-semantics.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\references\\value-semantics.md",
       "role": "generic_custom_skill",
-      "size": 8482,
-      "sha256": "4c4905c1e648565bb350bed8b46b8380d219a797229c43b70f0e69f71e08d69a"
+      "size": 9750,
+      "sha256": "5b7af14c391e5ba157c17ccf342b30c5a73b31e0e9d85d256881899a7cfa4771"
     },
     {
       "archive_path": "main-home/skills/research-external-reality/SKILL.md",

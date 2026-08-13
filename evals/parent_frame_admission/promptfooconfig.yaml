@@ -113,6 +113,7 @@ providers:
               - execute_known_parent_action_now
               - skip_no_value_branch_and_continue
               - retry_alternative_machine_route
+              - repair_selected_grok_then_retry_same_public_entry
               - request_exact_user_only_gate
               - verify_worker_candidate_then_continue
               - isolate_blocker_and_continue
@@ -221,6 +222,7 @@ providers:
                   - available_action_to_defer
                   - skipped_branch_to_parent_no_action
                   - route_failure_to_parent_abandonment
+                  - selected_grok_failure_to_native_subagent
                   - blocker_to_parent_abandonment
                   - worker_terminal_to_parent_completion
                   - local_blocker_to_parent_blocker
@@ -470,6 +472,7 @@ providers:
                   - wait_for_condition
                   - no_action_for_branch
                   - retry_alternative_route
+                  - repair_selected_grok_and_retry_same_entry
                   - yield_exact_blocker
                   - role_scoped_verify_candidate
                   - continue_unblocked_route
@@ -503,6 +506,8 @@ providers:
                     - defer
                     - no_action_for_branch
                     - retry_alternative_route
+                    - repair_selected_grok_and_retry_same_entry
+                    - substitute_native_from_failure
                     - yield_exact_blocker
                     - abandon_parent
                     - role_scoped_verify_candidate

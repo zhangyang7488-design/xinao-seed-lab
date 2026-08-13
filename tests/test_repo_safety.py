@@ -631,6 +631,11 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert "[switch]$AllowExceptionalDocker" in launcher_text
     assert "New-CodexGrokTemporaryWorktree" in launcher_text
     assert "CODEX_GROK_HOST_WORKTREE_REQUIRES_FRESH_SELECTION" in launcher_text
+    assert "xinao.grok.repair_first_failure.v1" in launcher_text
+    assert "failure_is_provider_substitution_evidence = $false" in launcher_text
+    assert "native_codex_subagent_substitution_allowed = $false" in launcher_text
+    assert "retry_same_public_entry = $retrySameEntry" in launcher_text
+    assert "resolve_model_from_fresh_authenticated_catalog_and_active_policy" in launcher_text
     assert "$workerExecutionBackend = if ($AllowExceptionalDocker)" in pool_text
     assert "GROK_DOCKER_EXCEPTION_OPT_IN_REQUIRED" in worker_text
     assert 'HostIsolationMode = "temporary-git-worktree"' not in worker_text
@@ -731,6 +736,9 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
         assert "minimal delta" in skill_text
         assert "not a scientific worker role" in skill_text
         assert "generic WorkerPool transport profile" in skill_text
+        assert "Repair the selected Grok route before substitution" in skill_text
+        assert "native_codex_subagent_substitution_allowed=false" in skill_text
+        assert "retry the same public launcher once after repair" in skill_text
 
     oauth_wrapper = Path(r"C:\Users\xx363\CodexLaunchers\Invoke-GrokWorkerOAuthRecovery.ps1")
     assert oauth_wrapper.is_file()
@@ -1451,13 +1459,13 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 124
+    assert suite_count == catalog["declared_case_count"] == 125
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
         "core": 18 + 1 + 9 + 9 + 9 + 6 + 2 + 1 + 2 + 8,
         "deep": 18 + 1 + 9 + 9 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
-        "intent": 67,
+        "intent": 68,
         "external": 9,
         "reconstitution": 9,
         "surface": 9,
@@ -1469,7 +1477,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 67
+    assert intent["case_count"] == 68
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     external_reality = next(

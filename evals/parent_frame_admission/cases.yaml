@@ -1473,6 +1473,60 @@
     expected_symmetric_alternatives_considered: '["dispatch_ordinary_grok_and_integrate","direct_serial_only","admit_task_scoped_native_subagent","ask_user_once"]'
     expected_residual_defeater: none
 
+- description: A selected Grok failure repairs and retries the same public route before native substitution
+  metadata:
+    id: REG_SELECTED_GROK_FAILURE_REPAIRS_BEFORE_NATIVE_SUBSTITUTION
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_SELECTED_GROK_FAILURE_REPAIRS_BEFORE_NATIVE_SUBSTITUTION
+    restored_context: >-
+      The authorized S engineering parent selected ordinary Grok WorkerPool for
+      one separable package and obtained an exact provider, profile, model, and
+      transport selection receipt. The public Grok launcher was then called and
+      failed. Its xinao.grok.repair_first_failure.v1 receipt says the failure is
+      not provider-substitution evidence, names a locally repairable Grok
+      dependency, requires retry through the same public entry, and disallows a
+      native Codex subagent substitution. Native subagents happen to be healthy,
+      but no native-only collaboration object or capability mismatch preceded
+      Grok selection. There is no Pause/Stop, new account, secret, or major
+      external effect, and bounded Grok repair has not proved the route
+      unavailable. The current effect Owner retains adoption and verification.
+    user_increment: 'Grok 这次失败了，继续把这个工包做完。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: failed_route_frame
+    expected_next_action: repair_selected_grok_then_retry_same_public_entry
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: failed_machine_route
+    expected_blocked_promotion: selected_grok_failure_to_native_subagent
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_semantic_effect_profile: true
+    expected_mature_completion: true
+    expected_environment_ambient_probe_authority: not_applicable
+    expected_environment_formal_consumer_status: missing_dependency
+    expected_environment_route: repair_declared_runtime_then_verify
+    expected_environment_authoritative_dependency_update_required: true
+    expected_environment_recovery_or_rebuild_included: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: retry_or_abandon
+    expected_selected_control_action: repair_selected_grok_and_retry_same_entry
+    expected_symmetric_alternatives_considered: '["repair_selected_grok_and_retry_same_entry","substitute_native_from_failure","abandon_parent"]'
+    expected_residual_defeater: none
+
 - description: Abundant quota or fixed worker count is not a KPI and must not force max fan-out
   metadata:
     id: REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI

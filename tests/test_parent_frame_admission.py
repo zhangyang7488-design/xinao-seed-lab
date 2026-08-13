@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 67
+    assert len(cases) == 68
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -53,6 +53,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
         "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
         "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
+        "REG_SELECTED_GROK_FAILURE_REPAIRS_BEFORE_NATIVE_SUBSTITUTION",
         "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
         "REG_BOUNDED_CHILD_INSERTION_PRESERVES_AND_RETURNS_PARENT",
         "REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT",
@@ -294,6 +295,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
         "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
         "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
+        "REG_SELECTED_GROK_FAILURE_REPAIRS_BEFORE_NATIVE_SUBSTITUTION",
         "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
         "REG_BOUNDED_CHILD_INSERTION_PRESERVES_AND_RETURNS_PARENT",
         "REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT",
@@ -334,6 +336,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     environment_case_ids = {
         "REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING",
         "REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR",
+        "REG_SELECTED_GROK_FAILURE_REPAIRS_BEFORE_NATIVE_SUBSTITUTION",
     }
     environment_terminal_cases = {
         "REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING",
@@ -701,6 +704,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     native_routing_cases = {
         "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
         "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
+        "REG_SELECTED_GROK_FAILURE_REPAIRS_BEFORE_NATIVE_SUBSTITUTION",
         "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
     }
     assert role_separated_cases <= set(closure_cases)
@@ -871,6 +875,23 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         ]
         == "ordinary_separable_work_to_native_exception"
     )
+    repair_first = closure_cases[
+        "REG_SELECTED_GROK_FAILURE_REPAIRS_BEFORE_NATIVE_SUBSTITUTION"
+    ]
+    assert repair_first["expected_next_action"] == (
+        "repair_selected_grok_then_retry_same_public_entry"
+    )
+    assert repair_first["expected_selected_control_action"] == (
+        "repair_selected_grok_and_retry_same_entry"
+    )
+    assert repair_first["expected_blocked_promotion"] == (
+        "selected_grok_failure_to_native_subagent"
+    )
+    assert set(json.loads(repair_first["expected_symmetric_alternatives_considered"])) == {
+        "repair_selected_grok_and_retry_same_entry",
+        "substitute_native_from_failure",
+        "abandon_parent",
+    }
     assert (
         closure_cases["REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI"][
             "expected_selected_control_action"
