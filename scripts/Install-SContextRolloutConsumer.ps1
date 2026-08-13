@@ -15,8 +15,25 @@ $sourcePythonRoot = 'D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official'
 $sourcePythonPath = 'D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official\python.exe'
 $sourceRepositoryRoot = 'E:\XINAO_RESEARCH_WORKSPACES\S'
 $sourceConsumerScript = 'E:\XINAO_RESEARCH_WORKSPACES\S\scripts\context_rollout_consumer.py'
+$bundleLockPath = 'E:\XINAO_RESEARCH_WORKSPACES\S\scripts\context_rollout_consumer.bundle.lock.json'
 $consumerReceiptPath = 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\last_receipt.json'
 $officialPythonSha256 = 'ef8f51028ac5329641985112f8efb1c2d4c47c86b8011ddf7e6fae21e2b4e5a1'
+$expectedBundleLockSha256 = 'd4e810609ed614694e0deba0b7c1e817043432f495e1b9d61869bfc39c137920'
+$expectedBundleContentId = 'a0a62b88f355d3cf1e5e39387d0502e01670167377634cae514766ef8a506d46'
+$expectedBundleFileCount = 1332
+$bundleLockSchema = 's.context_rollout_consumer.bundle_lock.v1'
+$requiredLockedFilePaths = @(
+    'python/python.exe',
+    'app/scripts/context_rollout_consumer.py',
+    'app/services/__init__.py',
+    'app/services/agent_runtime/__init__.py',
+    'app/services/agent_runtime/context_fabric.py',
+    'app/services/agent_runtime/context_runtime_completion.py'
+)
+$directLockedFileHashes = [ordered]@{
+    'python/python.exe' = $officialPythonSha256
+    'app/scripts/context_rollout_consumer.py' = 'fd352a4f3f47c040f11ea2ceedd63fb41a0c80ef37123424da33aa8e42dc8764'
+}
 $bundleBoundary = [Environment]::ExpandEnvironmentVariables('%LOCALAPPDATA%')
 if ([string]::IsNullOrWhiteSpace($bundleBoundary) -or -not [System.IO.Path]::IsPathRooted($bundleBoundary)) {
     throw 'LOCALAPPDATA does not resolve to an absolute current-user boundary.'
@@ -449,25 +466,129 @@ function Get-OrderedBundleRecords {
 }
 
 function Get-SourceBundlePlan {
+    if (-not (Test-Path -LiteralPath $bundleLockPath -PathType Leaf)) {
+        throw 'The adopted consumer bundle lock is missing.'
+    }
+    $lockItem = Get-Item -LiteralPath $bundleLockPath -Force -ErrorAction Stop
+    if (($lockItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        $lockItem.Length -lt 1 -or $lockItem.Length -gt 16MB) {
+        throw 'The adopted consumer bundle lock carrier is unsafe.'
+    }
+    if (-not [string]::Equals(
+            (Get-LowerSha256 $bundleLockPath),
+            $expectedBundleLockSha256,
+            [System.StringComparison]::Ordinal
+        )) {
+        throw 'The adopted consumer bundle lock hash is invalid.'
+    }
+    $lockJson = Get-Content -LiteralPath $bundleLockPath -Raw -Encoding UTF8
+    if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) {
+        $bundleLock = $lockJson | ConvertFrom-Json -DateKind String -ErrorAction Stop
+    } else {
+        $bundleLock = $lockJson | ConvertFrom-Json -ErrorAction Stop
+    }
+    if (-not (Test-ExactPropertySet $bundleLock @(
+                'schema_version', 'authority', 'source_identity', 'content_id', 'files'
+            )) -or
+        -not [string]::Equals(
+            [string]$bundleLock.schema_version,
+            $bundleLockSchema,
+            [System.StringComparison]::Ordinal
+        ) -or $bundleLock.authority -isnot [bool] -or $bundleLock.authority -ne $false -or
+        $bundleLock.source_identity -isnot [System.Management.Automation.PSCustomObject] -or
+        -not (Test-ExactPropertySet $bundleLock.source_identity @(
+                'application', 'release', 'python_distribution'
+            )) -or
+        -not [string]::Equals(
+            [string]$bundleLock.source_identity.application,
+            'xinao-s-context-rollout-consumer',
+            [System.StringComparison]::Ordinal
+        ) -or
+        -not [string]::Equals(
+            [string]$bundleLock.source_identity.release,
+            '2026-08-13',
+            [System.StringComparison]::Ordinal
+        ) -or
+        -not [string]::Equals(
+            [string]$bundleLock.source_identity.python_distribution,
+            'cpython-3.13.14-official',
+            [System.StringComparison]::Ordinal
+        ) -or $bundleLock.content_id -isnot [string] -or
+        -not [string]::Equals(
+            [string]$bundleLock.content_id,
+            $expectedBundleContentId,
+            [System.StringComparison]::Ordinal
+        ) -or $bundleLock.files -isnot [System.Array] -or
+        @($bundleLock.files).Count -ne $expectedBundleFileCount) {
+        throw 'The adopted consumer bundle lock schema is invalid.'
+    }
+
+    $lockedByPath = @{}
+    $lockedRecords = [System.Collections.Generic.List[object]]::new()
+    $lockedPaths = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    $previousPath = ''
+    foreach ($record in @($bundleLock.files)) {
+        if ($record -isnot [System.Management.Automation.PSCustomObject] -or
+            -not (Test-ExactPropertySet $record @('relative_path', 'size', 'sha256')) -or
+            -not (Test-SafeBundleRelativePath $record.relative_path) -or
+            -not (Test-JsonInteger $record.size) -or
+            $record.sha256 -isnot [string] -or [string]$record.sha256 -notmatch '^[0-9a-f]{64}$') {
+            throw 'The adopted consumer bundle lock contains an invalid file record.'
+        }
+        $relativePath = [string]$record.relative_path
+        if (-not [string]::IsNullOrEmpty($previousPath) -and
+            [string]::CompareOrdinal($previousPath, $relativePath) -ge 0) {
+            throw 'The adopted consumer bundle lock file records are not strictly sorted.'
+        }
+        if (-not $lockedPaths.Add($relativePath)) {
+            throw 'The adopted consumer bundle lock contains a duplicate file path.'
+        }
+        $lockedRecord = [pscustomobject][ordered]@{
+            relative_path = $relativePath
+            size = [long]$record.size
+            sha256 = [string]$record.sha256
+        }
+        $lockedByPath[$relativePath] = $lockedRecord
+        $lockedRecords.Add($lockedRecord)
+        $previousPath = $relativePath
+    }
+    foreach ($requiredPath in $requiredLockedFilePaths) {
+        if (-not $lockedByPath.ContainsKey($requiredPath)) {
+            throw 'The adopted consumer bundle lock is missing a required executable or module.'
+        }
+        if ([long]$lockedByPath[$requiredPath].size -lt 1) {
+            throw 'The adopted consumer bundle lock required executable or module is invalid.'
+        }
+    }
+    foreach ($directHashEntry in $directLockedFileHashes.GetEnumerator()) {
+        if (-not $lockedByPath.ContainsKey([string]$directHashEntry.Key) -or
+            -not [string]::Equals(
+                [string]$lockedByPath[[string]$directHashEntry.Key].sha256,
+                [string]$directHashEntry.Value,
+                [System.StringComparison]::Ordinal
+            )) {
+            throw 'The adopted consumer bundle lock direct release pin is invalid.'
+        }
+    }
+    if (-not [string]::Equals(
+            (Get-BundleContentId @($lockedRecords)),
+            [string]$bundleLock.content_id,
+            [System.StringComparison]::Ordinal
+        )) {
+        throw 'The adopted consumer bundle lock content identity is invalid.'
+    }
+
     if (-not (Test-Path -LiteralPath $sourcePythonRoot -PathType Container)) {
         throw 'Official Python distribution is missing.'
     }
-    if (-not (Test-Path -LiteralPath $sourcePythonPath -PathType Leaf)) {
-        throw 'Official Python executable is missing.'
-    }
-    if (-not [string]::Equals(
-            (Get-LowerSha256 $sourcePythonPath),
-            $officialPythonSha256,
-            [System.StringComparison]::Ordinal
-        )) {
-        throw 'Official Python executable hash does not match the pinned distribution.'
-    }
-    $records = [System.Collections.Generic.List[object]]::new()
     $pythonRootFull = [System.IO.Path]::GetFullPath($sourcePythonRoot).TrimEnd('\')
     $pythonRootItem = Get-Item -LiteralPath $pythonRootFull -Force -ErrorAction Stop
     if (($pythonRootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
         throw 'Official Python distribution root is a reparse point.'
     }
+    $sourceByPath = @{}
     foreach ($item in @(Get-ChildItem -LiteralPath $pythonRootFull -Force -Recurse -ErrorAction Stop)) {
         if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw 'Official Python distribution contains a reparse point.'
@@ -481,12 +602,11 @@ function Get-SourceBundlePlan {
             [string]::Equals($item.Extension, '.pyc', [System.StringComparison]::OrdinalIgnoreCase)) {
             continue
         }
-        $records.Add([pscustomobject]@{
-                relative_path = 'python/' + $relative.Replace('\', '/')
-                source_path = [string]$item.FullName
-                size = [long]$item.Length
-                sha256 = Get-LowerSha256 ([string]$item.FullName)
-            })
+        $relativePath = 'python/' + $relative.Replace('\', '/')
+        if ($sourceByPath.ContainsKey($relativePath)) {
+            throw 'Official Python distribution contains a duplicate source path.'
+        }
+        $sourceByPath[$relativePath] = [string]$item.FullName
     }
     $appSourceMap = [ordered]@{
         'app/scripts/context_rollout_consumer.py' = $sourceConsumerScript
@@ -503,28 +623,36 @@ function Get-SourceBundlePlan {
         if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw 'A required consumer application source file is a reparse point.'
         }
-        $hash = Get-LowerSha256 ([string]$item.FullName)
-        if ($hash -notmatch '^[0-9a-f]{64}$') {
-            throw 'Unable to hash a required consumer application source file.'
+        $sourceByPath[[string]$entry.Key] = [string]$item.FullName
+    }
+    if ($sourceByPath.Count -ne $lockedRecords.Count) {
+        throw 'The source bundle file set does not match the adopted release lock.'
+    }
+
+    $sourcePlan = [System.Collections.Generic.List[object]]::new()
+    foreach ($lockedRecord in $lockedRecords) {
+        $relativePath = [string]$lockedRecord.relative_path
+        if (-not $sourceByPath.ContainsKey($relativePath)) {
+            throw 'The source bundle is missing a file from the adopted release lock.'
         }
-        $records.Add([pscustomobject]@{
-                relative_path = [string]$entry.Key
-                source_path = [string]$item.FullName
-                size = [long]$item.Length
-                sha256 = $hash
+        $sourcePath = [string]$sourceByPath[$relativePath]
+        $item = Get-Item -LiteralPath $sourcePath -Force -ErrorAction Stop
+        if ([long]$item.Length -ne [long]$lockedRecord.size -or
+            -not [string]::Equals(
+                (Get-LowerSha256 $sourcePath),
+                [string]$lockedRecord.sha256,
+                [System.StringComparison]::Ordinal
+            )) {
+            throw 'A source bundle file does not match the adopted release lock.'
+        }
+        $sourcePlan.Add([pscustomobject][ordered]@{
+                relative_path = $relativePath
+                source_path = $sourcePath
+                size = [long]$lockedRecord.size
+                sha256 = [string]$lockedRecord.sha256
             })
     }
-    if (@($records | Where-Object { $_.relative_path -eq 'python/python.exe' }).Count -ne 1) {
-        throw 'Official Python source plan does not contain exactly one python.exe.'
-    }
-    foreach ($record in $records) {
-        if (-not (Test-SafeBundleRelativePath $record.relative_path) -or
-            $record.sha256 -notmatch '^[0-9a-f]{64}$' -or $record.size -lt 0) {
-            throw 'Bundle source plan contains an invalid file record.'
-        }
-    }
-    [void]@(Get-OrderedBundleRecords @($records))
-    return @($records)
+    return @($sourcePlan)
 }
 
 function New-BundleManifestBytes {

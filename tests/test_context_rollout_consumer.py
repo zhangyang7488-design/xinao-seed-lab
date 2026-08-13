@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -338,8 +339,6 @@ function Get-Content {{
 . '{str(installer).replace("'", "''")}' -Audit
 """
         encoded = command.encode("utf-16-le")
-        import base64
-
         completed = subprocess.run(
             [
                 powershell,
@@ -364,6 +363,200 @@ function Get-Content {{
         )
     finally:
         shutil.rmtree(temporary_root, ignore_errors=True)
+
+
+def _copy_adopted_bundle_sources(tmp_path: Path) -> tuple[Path, Path, Path]:
+    python_source = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official")
+    assert python_source.is_dir()
+    python_root = tmp_path / "source-python"
+    shutil.copytree(
+        python_source,
+        python_root,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    app_root = tmp_path / "source-app"
+    app_paths = (
+        Path("scripts/context_rollout_consumer.py"),
+        Path("services/__init__.py"),
+        Path("services/agent_runtime/__init__.py"),
+        Path("services/agent_runtime/context_fabric.py"),
+        Path("services/agent_runtime/context_runtime_completion.py"),
+    )
+    for relative_path in app_paths:
+        destination = app_root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(consumer.REPO_ROOT / relative_path, destination)
+    lock_path = app_root / "scripts" / "context_rollout_consumer.bundle.lock.json"
+    shutil.copy2(
+        consumer.REPO_ROOT / "scripts" / "context_rollout_consumer.bundle.lock.json",
+        lock_path,
+    )
+    return python_root, app_root, lock_path
+
+
+def _render_source_lock_installer(
+    tmp_path: Path,
+    *,
+    python_root: Path,
+    app_root: Path,
+    lock_path: Path,
+    expected_lock_sha256: str | None = None,
+) -> Path:
+    installer = consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
+    script = installer.read_text(encoding="utf-8-sig")
+
+    def replace_once(old: str, new: str) -> None:
+        nonlocal script
+        assert script.count(old) == 1, old
+        script = script.replace(old, new)
+
+    def ps_literal(path: Path) -> str:
+        return str(path.resolve()).replace("'", "''")
+
+    replace_once(
+        "$sourcePythonRoot = 'D:\\XINAO_RESEARCH_RUNTIME\\tools\\cpython-3.13.14-official'",
+        f"$sourcePythonRoot = '{ps_literal(python_root)}'",
+    )
+    replace_once(
+        "$sourcePythonPath = 'D:\\XINAO_RESEARCH_RUNTIME\\tools\\cpython-3.13.14-official\\python.exe'",
+        f"$sourcePythonPath = '{ps_literal(python_root / 'python.exe')}'",
+    )
+    replace_once(
+        "$sourceRepositoryRoot = 'E:\\XINAO_RESEARCH_WORKSPACES\\S'",
+        f"$sourceRepositoryRoot = '{ps_literal(app_root)}'",
+    )
+    replace_once(
+        "$sourceConsumerScript = 'E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\context_rollout_consumer.py'",
+        f"$sourceConsumerScript = '{ps_literal(app_root / 'scripts/context_rollout_consumer.py')}'",
+    )
+    replace_once(
+        "$bundleLockPath = 'E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\context_rollout_consumer.bundle.lock.json'",
+        f"$bundleLockPath = '{ps_literal(lock_path)}'",
+    )
+    if expected_lock_sha256 is not None:
+        current_lock_sha256 = hashlib.sha256(
+            (consumer.REPO_ROOT / "scripts/context_rollout_consumer.bundle.lock.json").read_bytes()
+        ).hexdigest()
+        replace_once(
+            f"$expectedBundleLockSha256 = '{current_lock_sha256}'",
+            f"$expectedBundleLockSha256 = '{expected_lock_sha256}'",
+        )
+    rendered = tmp_path / "Install-SContextRolloutConsumer.preflight.ps1"
+    rendered.write_text(script, encoding="utf-8", newline="\n")
+    return rendered
+
+
+def _run_source_lock_probe(installer: Path) -> tuple[int, dict[str, object], str]:
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+    command = rf"""
+$ErrorActionPreference = 'Stop'
+$installerText = [System.IO.File]::ReadAllText('{str(installer).replace("'", "''")}')
+$prefix = $installerText.Substring(0, $installerText.IndexOf('function Get-ConsumerTaskAudit'))
+. ([scriptblock]::Create($prefix))
+try {{
+    $plan = @(Get-SourceBundlePlan)
+    [ordered]@{{
+        status = 'valid'
+        file_count = $plan.Count
+        total_bytes = [long](($plan | Measure-Object size -Sum).Sum)
+        content_id = Get-BundleContentId $plan
+    }} | ConvertTo-Json -Compress
+    exit 0
+}}
+catch {{
+    [ordered]@{{ status = 'rejected'; error_type = [string]$_.Exception.Message }} |
+        ConvertTo-Json -Compress
+    exit 2
+}}
+"""
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            base64.b64encode(command.encode("utf-16-le")).decode(),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    output_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    assert output_lines, completed.stderr
+    return (
+        completed.returncode,
+        json.loads(output_lines[-1]),
+        completed.stdout + completed.stderr,
+    )
+
+
+def _run_apply_source_rejection(
+    installer: Path,
+    *,
+    local_app_data: Path,
+    task_marker: Path,
+) -> tuple[int, dict[str, object], str]:
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+    command = rf"""
+$ErrorActionPreference = 'Stop'
+$env:LOCALAPPDATA = '{str(local_app_data.resolve()).replace("'", "''")}'
+$taskMarker = '{str(task_marker.resolve()).replace("'", "''")}'
+function Get-ScheduledTask {{
+    [CmdletBinding()] param([string]$TaskName, [string]$TaskPath)
+    return $null
+}}
+function Register-ScheduledTask {{
+    [CmdletBinding()] param([string]$TaskName, [string]$TaskPath, [object]$InputObject)
+    [System.IO.File]::WriteAllText($taskMarker, 'CALLED')
+}}
+$failed = $false
+$errorType = ''
+try {{
+    . '{str(installer.resolve()).replace("'", "''")}' -Apply
+}}
+catch {{
+    $failed = $true
+    $errorType = [string]$_.Exception.Message
+}}
+$bundleBase = Join-Path $env:LOCALAPPDATA 'XINAO\SContextRolloutConsumer'
+[ordered]@{{
+    preflight_failed = $failed
+    error_type = $errorType
+    task_registered = Test-Path -LiteralPath $taskMarker
+    bundle_residual = Test-Path -LiteralPath $bundleBase
+}} | ConvertTo-Json -Compress
+if ($failed) {{ exit 0 }}
+exit 9
+"""
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            base64.b64encode(command.encode("utf-16-le")).decode(),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    output_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    assert output_lines, completed.stderr
+    return (
+        completed.returncode,
+        json.loads(output_lines[-1]),
+        completed.stdout + completed.stderr,
+    )
 
 
 def test_bootstrap_imports_only_latest_recent_root_and_never_opens_old_history(
@@ -1463,6 +1656,49 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
     assert "__pycache__" in script and "'.pyc'" in script
     assert "EF8F51028AC5329641985112F8EFB1C2D4C47C86B8011DDF7E6FAE21E2B4E5A1".lower() in script
     assert "FullControl -bor" not in script
+    lock_path = consumer.REPO_ROOT / "scripts/context_rollout_consumer.bundle.lock.json"
+    lock_bytes = lock_path.read_bytes()
+    release_lock = json.loads(lock_bytes)
+    assert hashlib.sha256(lock_bytes).hexdigest() in script
+    assert release_lock.keys() == {
+        "schema_version",
+        "authority",
+        "source_identity",
+        "content_id",
+        "files",
+    }
+    assert release_lock["schema_version"] == "s.context_rollout_consumer.bundle_lock.v1"
+    assert release_lock["authority"] is False
+    assert release_lock["source_identity"] == {
+        "application": "xinao-s-context-rollout-consumer",
+        "release": "2026-08-13",
+        "python_distribution": "cpython-3.13.14-official",
+    }
+    assert release_lock["content_id"] == (
+        "a0a62b88f355d3cf1e5e39387d0502e01670167377634cae514766ef8a506d46"
+    )
+    assert len(release_lock["files"]) == 1332
+    locked_paths = [item["relative_path"] for item in release_lock["files"]]
+    assert locked_paths == sorted(locked_paths)
+    assert len({path.casefold() for path in locked_paths}) == len(locked_paths)
+    locked_by_path = {item["relative_path"]: item for item in release_lock["files"]}
+    assert locked_by_path["app/scripts/context_rollout_consumer.py"] == {
+        "relative_path": "app/scripts/context_rollout_consumer.py",
+        "size": 62777,
+        "sha256": "fd352a4f3f47c040f11ea2ceedd63fb41a0c80ef37123424da33aa8e42dc8764",
+    }
+    assert locked_by_path["app/services/agent_runtime/context_fabric.py"]["sha256"] == (
+        "2ca481932ae391acd3318d8ba074610e9a226a0300012183f9c49940500e36a0"
+    )
+    assert (
+        locked_by_path["app/services/agent_runtime/context_runtime_completion.py"]["sha256"]
+        == "1d61bb13e345172650d50636d87915e8dd956c1257089075a6c59ea27f045b2f"
+    )
+    apply_source_plan_index = script.index("$sourcePlan = @(Get-SourceBundlePlan)")
+    assert apply_source_plan_index < script.index(
+        "New-ProtectedConsumerBundle", apply_source_plan_index
+    )
+    assert apply_source_plan_index < script.index("Register-ScheduledTask", apply_source_plan_index)
     assert "Get-FileHash" in script
     assert "if (-not $result.installation_valid)" in script
     assert "installed_pending_first_run" in script
@@ -1481,6 +1717,167 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
     )
     with pytest.raises(SystemExit):
         consumer._parser().parse_args(["--store-root", "elsewhere"])
+
+
+def test_installer_source_release_lock_accepts_only_the_adopted_source_plan(
+    tmp_path: Path,
+) -> None:
+    python_root, app_root, lock_path = _copy_adopted_bundle_sources(tmp_path)
+    installer = _render_source_lock_installer(
+        tmp_path,
+        python_root=python_root,
+        app_root=app_root,
+        lock_path=lock_path,
+    )
+
+    exit_code, result, raw_output = _run_source_lock_probe(installer)
+
+    assert exit_code == 0, raw_output
+    assert result == {
+        "status": "valid",
+        "file_count": 1332,
+        "total_bytes": 40_798_886,
+        "content_id": "a0a62b88f355d3cf1e5e39387d0502e01670167377634cae514766ef8a506d46",
+    }
+    assert not (tmp_path / "LocalAppData" / "XINAO").exists()
+
+
+def test_installer_apply_preflight_rejects_source_and_lock_tamper_without_residue(
+    tmp_path: Path,
+) -> None:
+    python_root, app_root, lock_path = _copy_adopted_bundle_sources(tmp_path)
+    local_app_data = tmp_path / "LocalAppData"
+    task_marker = tmp_path / "task-registration.marker"
+    original_lock = lock_path.read_bytes()
+
+    def assert_apply_rejected(
+        label: str,
+        expected_error: str,
+        *,
+        repin_lock: bool = False,
+    ) -> None:
+        rendered_dir = tmp_path / "rendered" / label
+        rendered_dir.mkdir(parents=True, exist_ok=True)
+        lock_sha256 = hashlib.sha256(lock_path.read_bytes()).hexdigest() if repin_lock else None
+        installer = _render_source_lock_installer(
+            rendered_dir,
+            python_root=python_root,
+            app_root=app_root,
+            lock_path=lock_path,
+            expected_lock_sha256=lock_sha256,
+        )
+        exit_code, result, raw_output = _run_apply_source_rejection(
+            installer,
+            local_app_data=local_app_data,
+            task_marker=task_marker,
+        )
+        assert exit_code == 0, raw_output
+        assert result["preflight_failed"] is True
+        assert expected_error in result["error_type"]
+        assert result["task_registered"] is False
+        assert result["bundle_residual"] is False
+        assert not task_marker.exists()
+        assert not (local_app_data / "XINAO" / "SContextRolloutConsumer").exists()
+
+    consumer_path = app_root / "scripts" / "context_rollout_consumer.py"
+    original_consumer = consumer_path.read_bytes()
+    try:
+        consumer_path.write_bytes(b"")
+        assert_apply_rejected("consumer-empty", "does not match the adopted release lock")
+        consumer_path.write_bytes(original_consumer + b"\n# NONEMPTY-TAMPER\n")
+        assert_apply_rejected("consumer-tamper", "does not match the adopted release lock")
+    finally:
+        consumer_path.write_bytes(original_consumer)
+
+    for label, relative_path in (
+        ("dll-tamper", Path("python313.dll")),
+        ("stdlib-tamper", Path("Lib/json/__init__.py")),
+    ):
+        target = python_root / relative_path
+        original = target.read_bytes()
+        try:
+            target.write_bytes(original + b"TAMPER")
+            assert_apply_rejected(label, "does not match the adopted release lock")
+        finally:
+            target.write_bytes(original)
+
+    extra_source = python_root / "unexpected-release-file.dll"
+    extra_source.write_bytes(b"unexpected")
+    try:
+        assert_apply_rejected("source-extra", "file set does not match")
+    finally:
+        extra_source.unlink()
+    held_source = tmp_path / "held-stdlib.py"
+    missing_source = python_root / "Lib" / "json" / "scanner.py"
+    missing_source.replace(held_source)
+    try:
+        assert_apply_rejected("source-missing", "file set does not match")
+    finally:
+        held_source.replace(missing_source)
+
+    lock_path.write_bytes(original_lock + b" ")
+    try:
+        assert_apply_rejected("lock-hash-tamper", "bundle lock hash is invalid")
+    finally:
+        lock_path.write_bytes(original_lock)
+
+    def write_structurally_tampered_lock(mutator: object) -> None:
+        value = json.loads(original_lock)
+        assert callable(mutator)
+        mutator(value)
+        lock_path.write_text(
+            json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    structural_cases: tuple[tuple[str, object, str], ...] = (
+        (
+            "lock-extra",
+            lambda value: value["files"].append(
+                {"relative_path": "python/zz-extra", "size": 1, "sha256": "0" * 64}
+            ),
+            "bundle lock schema is invalid",
+        ),
+        (
+            "lock-missing",
+            lambda value: value["files"].pop(),
+            "bundle lock schema is invalid",
+        ),
+        (
+            "lock-unsorted",
+            lambda value: value["files"].__setitem__(
+                slice(0, 2), list(reversed(value["files"][:2]))
+            ),
+            "not strictly sorted",
+        ),
+        (
+            "lock-duplicate",
+            lambda value: value["files"].__setitem__(1, dict(value["files"][0])),
+            "not strictly sorted",
+        ),
+        (
+            "lock-unsafe-path",
+            lambda value: value["files"][0].__setitem__("relative_path", "../escape"),
+            "invalid file record",
+        ),
+        (
+            "lock-record-extra-field",
+            lambda value: value["files"][0].__setitem__("raw_source", "TOP-SECRET"),
+            "invalid file record",
+        ),
+        (
+            "lock-header-extra-field",
+            lambda value: value.__setitem__("raw_source", "TOP-SECRET"),
+            "bundle lock schema is invalid",
+        ),
+    )
+    for label, mutator, expected_error in structural_cases:
+        try:
+            write_structurally_tampered_lock(mutator)
+            assert_apply_rejected(label, expected_error, repin_lock=True)
+        finally:
+            lock_path.write_bytes(original_lock)
 
 
 @pytest.mark.parametrize(
