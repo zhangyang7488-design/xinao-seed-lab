@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import services.xinao_perpetual_world_compute.reality_migration as reality_migration_module
 from services.xinao_perpetual_world_compute.reality_migration import (
     ActiveChildProcessError,
     DestinationConflictError,
@@ -15,8 +17,12 @@ from services.xinao_perpetual_world_compute.reality_migration import (
     SourceTreeChangedError,
     inventory_live_reality,
     migrate_live_reality_copy_first,
+    observe_mixed_live_retirement_consumers,
     readback_live_reality_migration,
+    restore_retired_mixed_live_reality,
+    retire_mixed_live_reality,
     transform_research_source,
+    validate_retirement_runtime_bindings,
 )
 
 
@@ -145,7 +151,11 @@ def draw() -> float:
 def _make_workspace(root: Path, canonical: Path) -> Path:
     live = root / "xinao" / "reality" / "live"
     canonical_live = canonical / "xinao" / "reality" / "live"
-    changed = (canonical_live / "analysis.py").read_bytes().replace(b"helper import draw", b"helper import draw as draw")
+    changed = (
+        (canonical_live / "analysis.py")
+        .read_bytes()
+        .replace(b"helper import draw", b"helper import draw as draw")
+    )
     _write(live / "analysis.py", changed)
     _write(
         live / "extra.py",
@@ -156,7 +166,9 @@ VALUE = "workspace-extra"
     )
     _write(
         live / "pre203_holdout_fixture" / "raw" / "draws" / "aa" / "aa.bin",
-        (canonical_live / "pre203_holdout_fixture" / "raw" / "draws" / "aa" / "aa.bin").read_bytes(),
+        (
+            canonical_live / "pre203_holdout_fixture" / "raw" / "draws" / "aa" / "aa.bin"
+        ).read_bytes(),
     )
     _write(live / "workspace_result.json", b'{"workspace":"one"}\n')
     _write(
@@ -241,9 +253,7 @@ def test_copy_first_migration_builds_live_base_and_workspace_delta(tmp_path: Pat
         workspace.resolve()
     )
     binding_inputs = first_view["runtime_binding_inputs"]
-    assert binding_inputs == manifest["workspace_overlays"][0][
-        "runtime_binding_inputs"
-    ]
+    assert binding_inputs == manifest["workspace_overlays"][0]["runtime_binding_inputs"]
     view_manifest = json.loads(
         Path(first_view["effective_view_manifest_path"]).read_text(encoding="utf-8")
     )
@@ -257,19 +267,11 @@ def test_copy_first_migration_builds_live_base_and_workspace_delta(tmp_path: Pat
         "effective_code_root": first_view["effective_code_root"],
         "effective_python_path": first_view["effective_python_path"],
         "effective_code_manifest_path": first_view["effective_code_manifest_path"],
-        "effective_code_manifest_sha256": first_view[
-            "effective_code_manifest_sha256"
-        ],
-        "effective_code_tree_sha256": first_view[
-            "effective_code_payload_tree_sha256"
-        ],
+        "effective_code_manifest_sha256": first_view["effective_code_manifest_sha256"],
+        "effective_code_tree_sha256": first_view["effective_code_payload_tree_sha256"],
         "private_live_root": first_view["private_effective_live_root"],
-        "live_seed_receipt_path": first_view["private_live_materialization"][
-            "receipt_path"
-        ],
-        "live_seed_receipt_sha256": first_view["private_live_materialization"][
-            "receipt_sha256"
-        ],
+        "live_seed_receipt_path": first_view["private_live_materialization"]["receipt_path"],
+        "live_seed_receipt_sha256": first_view["private_live_materialization"]["receipt_sha256"],
     }
     canonical_live_root = Path(manifest["canonical_live_bundle"]["root"])
     assert (
@@ -306,11 +308,7 @@ def test_copy_first_migration_builds_live_base_and_workspace_delta(tmp_path: Pat
         live_delta_root / "pre203_holdout_fixture" / "raw" / "draws" / "bb" / "bb.bin"
     ).read_bytes() == b"workspace-raw"
     assert (
-        live_delta_root
-        / "pre203_holdout_fixture"
-        / "captures"
-        / "workspace"
-        / "capture.json"
+        live_delta_root / "pre203_holdout_fixture" / "captures" / "workspace" / "capture.json"
     ).exists()
     assert overlays["world-01"]["live_reality_delta_entry_count"] == 2
     assert overlays["world-02"]["delta_entry_count"] == 0
@@ -326,25 +324,22 @@ def test_copy_first_migration_builds_live_base_and_workspace_delta(tmp_path: Pat
         check=True,
         capture_output=True,
         text=True,
-            env={
-                **os.environ,
-                "PYTHONPATH": str(effective_python_path),
-                "PYTHONDONTWRITEBYTECODE": "1",
-                "XINAO_WORLD_WORKSPACE": str(workspace),
-            "XINAO_LIVE_REALITY_ROOT": overlays["world-01"][
-                "private_effective_live_root"
-            ],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(effective_python_path),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "XINAO_WORLD_WORKSPACE": str(workspace),
+            "XINAO_LIVE_REALITY_ROOT": overlays["world-01"]["private_effective_live_root"],
         },
     )
-    assert Path(completed.stdout.strip()).resolve() == (
-        effective_python_path / "xinao_legacy_research" / "extra.py"
-    ).resolve()
+    assert (
+        Path(completed.stdout.strip()).resolve()
+        == (effective_python_path / "xinao_legacy_research" / "extra.py").resolve()
+    )
 
     assert manifest["canonical_inventory"]["source_tree_sha256"]
     assert manifest["canonical_inventory"]["payload_tree_sha256"]
-    assert manifest["base_bundle"]["payload_tree_sha256"] == result[
-        "base_payload_tree_sha256"
-    ]
+    assert manifest["base_bundle"]["payload_tree_sha256"] == result["base_payload_tree_sha256"]
     for copy in manifest["copies"]:
         if copy["source_path"] is not None:
             assert copy["source_sha256"]
@@ -500,17 +495,11 @@ def test_from_namespace_live_import_is_rewritten_with_alias() -> None:
 
 def test_dynamic_namespace_alias_access_fails_closed() -> None:
     with pytest.raises(RealityMigrationError, match="dynamic alias access"):
-        transform_research_source(
-            b"import xinao.reality as reality\nVALUE = reality.live\n"
-        )
+        transform_research_source(b"import xinao.reality as reality\nVALUE = reality.live\n")
     with pytest.raises(RealityMigrationError, match="unaliased import"):
-        transform_research_source(
-            b"import xinao.reality\nVALUE = xinao.reality.live.helper\n"
-        )
+        transform_research_source(b"import xinao.reality\nVALUE = xinao.reality.live.helper\n")
     with pytest.raises(RealityMigrationError, match="dynamic alias access"):
-        transform_research_source(
-            b"from xinao import reality\nVALUE = reality.live.helper\n"
-        )
+        transform_research_source(b"from xinao import reality\nVALUE = reality.live.helper\n")
 
 
 def test_source_package_init_is_extended_without_collision_and_overlay_imports(
@@ -535,15 +524,15 @@ def test_source_package_init_is_extended_without_collision_and_overlay_imports(
     manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
     base_root = Path(manifest["base_bundle"]["root"])
     overlay_root = Path(manifest["workspace_overlays"][0]["overlay_root"])
-    migrated_init = (
-        base_root / "code" / "xinao_legacy_research" / "__init__.py"
-    ).read_text(encoding="utf-8")
+    migrated_init = (base_root / "code" / "xinao_legacy_research" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
 
     assert 'PACKAGE_ORIGIN = "canonical"' in migrated_init
     assert "XINAO_LEGACY_RESEARCH_NAMESPACE_V1" in migrated_init
-    overlay_init = (
-        overlay_root / "code" / "xinao_legacy_research" / "__init__.py"
-    ).read_text(encoding="utf-8")
+    overlay_init = (overlay_root / "code" / "xinao_legacy_research" / "__init__.py").read_text(
+        encoding="utf-8"
+    )
     assert 'PACKAGE_ORIGIN = "workspace"' in overlay_init
     assert "XINAO_LEGACY_RESEARCH_NAMESPACE_V1" in overlay_init
     imported = _run_legacy_import(
@@ -552,12 +541,14 @@ def test_source_package_init_is_extended_without_collision_and_overlay_imports(
         repo=repo,
         live=tmp_path / "runtime" / "live",
     )
-    assert Path(imported["analysis"]).resolve() == (
-        overlay_root / "code" / "xinao_legacy_research" / "analysis.py"
-    ).resolve()
-    assert Path(imported["helper"]).resolve() == (
-        base_root / "code" / "xinao_legacy_research" / "helper.py"
-    ).resolve()
+    assert (
+        Path(imported["analysis"]).resolve()
+        == (overlay_root / "code" / "xinao_legacy_research" / "analysis.py").resolve()
+    )
+    assert (
+        Path(imported["helper"]).resolve()
+        == (base_root / "code" / "xinao_legacy_research" / "helper.py").resolve()
+    )
 
 
 def test_nested_package_init_extends_overlay_and_base_portions(tmp_path: Path) -> None:
@@ -586,9 +577,10 @@ def test_nested_package_init_extends_overlay_and_base_portions(tmp_path: Path) -
         live=tmp_path / "runtime" / "live",
     )
     assert imported["value"] == "overlay"
-    assert Path(imported["path"]).resolve() == (
-        overlay_root / "code" / "xinao_legacy_research" / "pkg" / "mod.py"
-    ).resolve()
+    assert (
+        Path(imported["path"]).resolve()
+        == (overlay_root / "code" / "xinao_legacy_research" / "pkg" / "mod.py").resolve()
+    )
 
 
 def test_readback_detects_absent_workspace_live_becoming_empty_directory(
@@ -621,7 +613,9 @@ def _make_complete_clone(root: Path, canonical: Path) -> Path:
     return root
 
 
-def _import_probe(python_path: Path, module: str, environment: dict[str, str]) -> subprocess.CompletedProcess:
+def _import_probe(
+    python_path: Path, module: str, environment: dict[str, str]
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-c", f"import {module} as target; print(target.VALUE)"],
         check=False,
@@ -653,12 +647,12 @@ def test_complete_clone_effective_view_preserves_override_deletion_and_base_only
     python_path = Path(view["effective_python_path"])
     environment = view["runtime_environment"]
 
-    assert _import_probe(python_path, "xinao_legacy_research.base_only", environment).stdout.strip() == (
-        "base-only"
-    )
-    assert _import_probe(python_path, "xinao_legacy_research.override", environment).stdout.strip() == (
-        "overlay"
-    )
+    assert _import_probe(
+        python_path, "xinao_legacy_research.base_only", environment
+    ).stdout.strip() == ("base-only")
+    assert _import_probe(
+        python_path, "xinao_legacy_research.override", environment
+    ).stdout.strip() == ("overlay")
     deleted = _import_probe(python_path, "xinao_legacy_research.deleted", environment)
     assert deleted.returncode != 0
     assert "ModuleNotFoundError" in deleted.stderr
@@ -702,9 +696,7 @@ def test_deleted_source_init_is_not_recreated_in_effective_runtime_view(
     )
     assert imported.returncode == 0
     assert imported.stdout.strip() == "still-present"
-    assert "__init__.py" in {
-        deletion["relative_path"] for deletion in view["deletions"]
-    }
+    assert "__init__.py" in {deletion["relative_path"] for deletion in view["deletions"]}
 
 
 def test_complete_clone_without_live_tree_records_520_deletions_and_empty_view(
@@ -729,9 +721,7 @@ def test_complete_clone_without_live_tree_records_520_deletions_and_empty_view(
     assert list(python_path.rglob("*.py")) == []
     assert _snapshot(Path(sample["effective_code_root"])) == {}
     private_root = Path(sample["private_effective_live_root"])
-    assert [path.name for path in private_root.iterdir()] == [
-        ".xinao-private-live-origin.json"
-    ]
+    assert [path.name for path in private_root.iterdir()] == [".xinao-private-live-origin.json"]
     assert sample["deletion_count"] == 520
     assert len(sample["deletions"]) == 520
 
@@ -750,12 +740,8 @@ def test_rerun_preserves_evolving_private_live_state_and_lineages_do_not_leak(
         world_compute_root=compute_target,
         workspace_roots={"world-01": workspace_a, "world-02": workspace_b},
     )
-    private_a = Path(
-        first["lineage_effective_views"]["world-01"]["private_effective_live_root"]
-    )
-    private_b = Path(
-        first["lineage_effective_views"]["world-02"]["private_effective_live_root"]
-    )
+    private_a = Path(first["lineage_effective_views"]["world-01"]["private_effective_live_root"])
+    private_b = Path(first["lineage_effective_views"]["world-02"]["private_effective_live_root"])
     code_a = Path(first["lineage_effective_views"]["world-01"]["effective_code_root"])
     code_b = Path(first["lineage_effective_views"]["world-02"]["effective_code_root"])
     assert code_a != code_b
@@ -801,10 +787,13 @@ def test_readback_rejects_extra_effective_file_but_allows_private_mutation(
     )
     view = result["lineage_effective_views"]["world-01"]
     _write(Path(view["private_effective_live_root"]) / "consumer-state.json", b"{}\n")
-    assert readback_live_reality_migration(
-        Path(result["manifest_path"]),
-        expected_manifest_sha256=result["manifest_sha256"],
-    )["status"] == "verified"
+    assert (
+        readback_live_reality_migration(
+            Path(result["manifest_path"]),
+            expected_manifest_sha256=result["manifest_sha256"],
+        )["status"]
+        == "verified"
+    )
     _write(
         Path(view["effective_python_path"]) / "xinao_legacy_research" / "stale.py",
         b"VALUE = 1\n",
@@ -829,10 +818,12 @@ def test_readback_rejects_runtime_binding_inputs_that_do_not_match_view(
     )
     manifest_path = Path(result["manifest_path"])
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["workspace_overlays"][0]["runtime_binding_inputs"][
-        "private_live_root"
-    ] = str(tmp_path / "wrong-lineage")
-    raw = (json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    manifest["workspace_overlays"][0]["runtime_binding_inputs"]["private_live_root"] = str(
+        tmp_path / "wrong-lineage"
+    )
+    raw = (
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode()
     manifest_path.write_bytes(raw)
     digest = hashlib.sha256(raw).hexdigest()
     manifest_path.with_suffix(".sha256").write_text(
@@ -862,8 +853,7 @@ def test_readback_rejects_resealed_view_identity_that_drops_binding_identity(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["workspace_overlays"][0]["effective_view_id"] = "0" * 64
     raw = (
-        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode()
     manifest_path.write_bytes(raw)
     digest = hashlib.sha256(raw).hexdigest()
@@ -910,3 +900,542 @@ def test_changed_seed_for_existing_private_lineage_fails_before_target_mutation(
         )
     assert _snapshot(live_target) == target_before["live"]
     assert _snapshot(compute_target) == target_before["compute"]
+
+
+def _retirement_runtime_fixture(
+    tmp_path: Path, repo: Path, request: pytest.FixtureRequest
+) -> tuple[list[Path], list[Path], list[Path], list[subprocess.Popen[bytes]]]:
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    _write(repo / ".gitignore", b"xinao/reality/live/\n")
+    subprocess.run(["git", "-C", str(repo), "add", ".gitignore"], check=True)
+    active_configs: list[Path] = []
+    stopped_preparations: list[Path] = []
+    manifests: list[Path] = []
+    controllers: list[subprocess.Popen[bytes]] = []
+    lineage_counts = (3, 5, 3, 5, 5, 9, 5, 9)
+    account_slots = ("A", "C", "A", "A", "C", "A", "C", "C")
+    for index, (workspace_count, account_slot) in enumerate(
+        zip(lineage_counts, account_slots, strict=True)
+    ):
+        workspaces: dict[str, Path] = {}
+        for lineage_index in range(workspace_count):
+            lineage_id = f"lineage-{index:02d}-{lineage_index:02d}"
+            workspace = tmp_path / f"run-{index:02d}" / lineage_id
+            workspace.mkdir(parents=True)
+            shutil.copytree(
+                repo / "xinao" / "reality" / "live",
+                workspace / "xinao" / "reality" / "live",
+            )
+            workspaces[lineage_id] = workspace
+        result = migrate_live_reality_copy_first(
+            repo,
+            live_reality_root=tmp_path / "runtime" / "live",
+            world_compute_root=tmp_path / "runtime" / f"run-{index:02d}",
+            workspace_roots=workspaces,
+        )
+        manifest_path = Path(result["manifest_path"])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        run_id = f"run-{index:02d}"
+        run_root = tmp_path / "state" / f"runtime-{index:02d}"
+        run_dir = run_root / "runs" / run_id
+        config_path = run_dir / "run_config.json"
+        views: dict[str, dict[str, object]] = {}
+        for overlay in manifest["workspace_overlays"]:
+            private = overlay["private_live_materialization"]
+            lineage_id = overlay["workspace_key"]
+            views[lineage_id] = {
+                "workspace": str(Path(overlay["workspace_root"]).resolve()),
+                "base_manifest_path": manifest["base_bundle"]["manifest_path"],
+                "base_manifest_sha256": manifest["base_bundle"]["manifest_sha256"],
+                "effective_code_root": overlay["effective_code_root"],
+                "effective_python_path": overlay["effective_python_path"],
+                "effective_code_manifest_path": overlay["effective_code_manifest_path"],
+                "effective_code_manifest_sha256": overlay["effective_code_manifest_sha256"],
+                "effective_code_tree_sha256": overlay["effective_code_payload_tree_sha256"],
+                "private_live_root": overlay["private_effective_live_root"],
+                "live_seed_receipt_path": private["receipt_path"],
+                "live_seed_receipt_sha256": private["receipt_sha256"],
+            }
+        controller_raw = b"import time\ntime.sleep(300)\n"
+        config = {
+            "schema": "test.runtime.v1",
+            "run_id": run_id,
+            "account_slot": account_slot,
+            "source_repo": str(repo.resolve()),
+            "source_head": "a" * 40,
+            "runtime_binding_required": True,
+            "controller_python": str(Path(sys.executable).resolve()),
+            "controller_python_sha256": hashlib.sha256(
+                Path(sys.executable).read_bytes()
+            ).hexdigest(),
+            "controller_release_path": str(run_dir / "controller_release.py"),
+            "controller_release_sha256": hashlib.sha256(controller_raw).hexdigest(),
+            "runtime_binding_views": views,
+            "reality_migration_manifest_path": str(manifest_path),
+            "reality_migration_manifest_sha256": result["manifest_sha256"],
+            "reality_migration_id": result["migration_id"],
+        }
+        _write(run_dir / "controller_release.py", controller_raw)
+        _write(config_path, _canonical_test_json(config))
+        pointer_path = run_root / "current.json"
+        controller = subprocess.Popen(
+            [
+                sys.executable,
+                str(run_dir / "controller_release.py"),
+                "run",
+                "--config",
+                str(config_path),
+            ]
+        )
+        controllers.append(controller)
+        pointer = {
+            "schema": "test.pointer.v1",
+            "run_id": run_id,
+            "run_dir": str(run_dir),
+            "account_slot": account_slot,
+            "controller_pid": controller.pid,
+            "controller_release_path": str(run_dir / "controller_release.py"),
+            "controller_release_sha256": hashlib.sha256(controller_raw).hexdigest(),
+        }
+        _write(pointer_path, _canonical_test_json(pointer))
+        _write(
+            run_dir / "controller_state.json",
+            _canonical_test_json(
+                {"schema": "test.controller.v1", "status": "RUNNING", "pid": os.getpid()}
+            ),
+        )
+        state = json.loads((run_dir / "controller_state.json").read_text(encoding="utf-8"))
+        state["pid"] = controller.pid
+        _write(run_dir / "controller_state.json", _canonical_test_json(state))
+        active_configs.append(config_path)
+        manifests.append(manifest_path)
+
+    for stopped_index, (account_slot, workspace_count) in enumerate((("A", 3), ("C", 5))):
+        index = 8 + stopped_index
+        workspaces: dict[str, Path] = {}
+        for lineage_index in range(workspace_count):
+            lineage_id = f"lineage-{index:02d}-{lineage_index:02d}"
+            workspace = tmp_path / f"run-{index:02d}" / lineage_id
+            workspace.mkdir(parents=True)
+            shutil.copytree(
+                repo / "xinao" / "reality" / "live",
+                workspace / "xinao" / "reality" / "live",
+            )
+            workspaces[lineage_id] = workspace
+        result = migrate_live_reality_copy_first(
+            repo,
+            live_reality_root=tmp_path / "runtime" / "live",
+            world_compute_root=tmp_path / "runtime" / f"run-{index:02d}",
+            workspace_roots=workspaces,
+        )
+        manifest_path = Path(result["manifest_path"])
+        run_id = f"run-{index:02d}"
+        runtime_root = tmp_path / "state" / f"runtime-{index:02d}"
+        run_dir = runtime_root / "runs" / run_id
+        config_path = run_dir / "run_config.json"
+        config = {
+            "schema": "test.runtime.v1",
+            "run_id": run_id,
+            "account_slot": account_slot,
+            "source_repo": str(repo.resolve()),
+            "source_head": "a" * 40,
+        }
+        _write(config_path, _canonical_test_json(config))
+        pointer_path = runtime_root / "current.json"
+        pointer = {
+            "schema": "test.pointer.v1",
+            "run_id": run_id,
+            "run_dir": str(run_dir),
+            "account_slot": account_slot,
+            "controller_pid": 0,
+        }
+        _write(pointer_path, _canonical_test_json(pointer))
+        _write(
+            run_dir / "controller_state.json",
+            _canonical_test_json(
+                {
+                    "schema": "test.controller.v1",
+                    "status": "STOPPED",
+                    "pid": 0,
+                    "active_processes": {},
+                }
+            ),
+        )
+        _write(
+            run_dir / "STOP.json",
+            _canonical_test_json(
+                {"schema": "test.stop.v1", "account_slot": account_slot, "reason": "test"}
+            ),
+        )
+        lineages = [
+            {
+                "lineage_id": lineage_id,
+                "workspace": str(workspace.resolve()),
+                "head": "a" * 40,
+                "source_head": "a" * 40,
+            }
+            for lineage_id, workspace in workspaces.items()
+        ]
+        receipt = {
+            "schema": "xinao.cleanroom.world-compute-reality-migration-preparation.v1",
+            "status": "PREPARED_NOT_ADOPTED",
+            "runtime_root": str(runtime_root),
+            "run_id": run_id,
+            "account_slot": account_slot,
+            "pointer_path": str(pointer_path),
+            "pointer_sha256": hashlib.sha256(pointer_path.read_bytes()).hexdigest(),
+            "run_config_path": str(config_path),
+            "run_config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
+            "source": {"root": str(repo.resolve()), "source_head": "a" * 40},
+            "lineages": lineages,
+            "migration_manifest_path": str(manifest_path),
+            "migration_manifest_sha256": result["manifest_sha256"],
+            "migration_id": result["migration_id"],
+            "run_config_changed": False,
+            "current_pointer_changed": False,
+            "controller_started": False,
+        }
+        receipt_path = run_dir / "reality-migration-preparation" / "receipt.json"
+        _write(receipt_path, _canonical_test_json(receipt))
+        stopped_preparations.append(receipt_path)
+        manifests.append(manifest_path)
+    request.addfinalizer(lambda: _stop_fixture_controllers(controllers))
+    return active_configs, stopped_preparations, manifests, controllers
+
+
+def _stop_fixture_controllers(controllers: list[subprocess.Popen[bytes]]) -> None:
+    for controller in controllers:
+        if controller.poll() is None:
+            controller.terminate()
+    for controller in controllers:
+        if controller.poll() is None:
+            controller.wait(timeout=10)
+
+
+def _canonical_test_json(value: object) -> bytes:
+    return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def test_retirement_preserves_exact_source_and_is_idempotent(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    source_before = _snapshot(source)
+    active, stopped, _, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+    retirement_root = tmp_path / "retirement"
+
+    completed = retire_mixed_live_reality(
+        repo,
+        active_run_config_paths=active,
+        stopped_preparation_paths=stopped,
+        retirement_root=retirement_root,
+        tracked_repositories=[repo],
+    )
+    replay = retire_mixed_live_reality(
+        repo,
+        active_run_config_paths=active,
+        stopped_preparation_paths=stopped,
+        retirement_root=retirement_root,
+        tracked_repositories=[repo],
+    )
+
+    assert completed["status"] == "COMPLETED"
+    assert replay["retirement_id"] == completed["retirement_id"]
+    assert not source.exists()
+    assert _snapshot(Path(completed["exact_source_bundle"]["root"]) / "tree") == source_before
+    assert len(completed["migrations"]) == 10
+    assert sum(item["lineage_count"] for item in completed["migrations"]) == 52
+    assert completed["legacy_start_prepare_and_unadopted_recover_require_explicit_restore"]
+    assert len(completed["runtime_bindings"]["active"]) == 8
+    assert len(completed["runtime_bindings"]["stopped"]) == 2
+    restored = restore_retired_mixed_live_reality(
+        repo,
+        completed_receipt_path=Path(completed["completed_receipt_path"]),
+    )
+    assert restored["status"] == "RESTORED"
+    assert _snapshot(source) == source_before
+
+
+def test_retirement_recovers_after_rename_without_recapturing_source(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    source_before = _snapshot(source)
+    active, stopped, _, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+    retirement_root = tmp_path / "retirement"
+
+    def crash(phase: str) -> None:
+        if phase == "after_rename":
+            raise RuntimeError("simulated crash")
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        retire_mixed_live_reality(
+            repo,
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            retirement_root=retirement_root,
+            tracked_repositories=[repo],
+            fault_injector=crash,
+        )
+    assert not source.exists()
+    completed = retire_mixed_live_reality(
+        repo,
+        active_run_config_paths=active,
+        stopped_preparation_paths=stopped,
+        retirement_root=retirement_root,
+        tracked_repositories=[repo],
+    )
+    assert completed["status"] == "COMPLETED"
+    assert _snapshot(Path(completed["exact_source_bundle"]["root"]) / "tree") == source_before
+
+
+@pytest.mark.parametrize("crash_phase", ["after_delete_authorized", "after_delete"])
+def test_retirement_recovers_after_delete_authorization_or_delete(
+    tmp_path: Path, crash_phase: str, request: pytest.FixtureRequest
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    source_before = _snapshot(source)
+    active, stopped, _, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+    retirement_root = tmp_path / "retirement"
+
+    def crash(phase: str) -> None:
+        if phase == crash_phase:
+            raise RuntimeError(f"simulated {phase}")
+
+    with pytest.raises(RuntimeError, match="simulated"):
+        retire_mixed_live_reality(
+            repo,
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            retirement_root=retirement_root,
+            tracked_repositories=[repo],
+            fault_injector=crash,
+        )
+    completed = retire_mixed_live_reality(
+        repo,
+        active_run_config_paths=active,
+        stopped_preparation_paths=stopped,
+        retirement_root=retirement_root,
+        tracked_repositories=[repo],
+    )
+    assert completed["status"] == "COMPLETED"
+    assert not source.exists()
+    assert _snapshot(Path(completed["exact_source_bundle"]["root"]) / "tree") == source_before
+
+
+def test_retirement_rejects_tracked_consumer_and_payload_drift(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    active, stopped, _, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+    _write(repo / "consumer.py", b"import xinao.reality.live\n")
+    subprocess.run(["git", "-C", str(repo), "add", "consumer.py"], check=True)
+    with pytest.raises(RealityMigrationError, match="consumer absence"):
+        retire_mixed_live_reality(
+            repo,
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            retirement_root=tmp_path / "blocked-retirement",
+            tracked_repositories=[repo],
+        )
+    subprocess.run(["git", "-C", str(repo), "rm", "-q", "-f", "consumer.py"], check=True)
+    _write(source / "new-meaningful.json", b'{"new":true}\n')
+    with pytest.raises(RealityMigrationError, match="current meaningful payload"):
+        retire_mixed_live_reality(
+            repo,
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            retirement_root=tmp_path / "drift-retirement",
+            tracked_repositories=[repo],
+        )
+
+
+def test_retirement_rolls_back_rename_when_consumer_acceptance_fails(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    source_before = _snapshot(source)
+    active, stopped, _, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+
+    def reject() -> None:
+        raise RuntimeError("consumer rejected retired source")
+
+    with pytest.raises(RuntimeError, match="consumer rejected"):
+        retire_mixed_live_reality(
+            repo,
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            retirement_root=tmp_path / "retirement",
+            tracked_repositories=[repo],
+            post_rename_validator=reject,
+        )
+    assert _snapshot(source) == source_before
+
+
+def test_retirement_rolls_back_when_post_rename_runtime_readback_fails(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    source_before = _snapshot(source)
+    active, stopped, _, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+    real_validate = reality_migration_module.validate_retirement_runtime_bindings
+    call_count = 0
+
+    def fail_third_readback(**kwargs: object) -> dict[str, object]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            raise RuntimeError("post-rename runtime readback failed")
+        return real_validate(**kwargs)
+
+    monkeypatch.setattr(
+        reality_migration_module,
+        "validate_retirement_runtime_bindings",
+        fail_third_readback,
+    )
+    with pytest.raises(RuntimeError, match="post-rename runtime readback failed"):
+        retire_mixed_live_reality(
+            repo,
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            retirement_root=tmp_path / "retirement",
+            tracked_repositories=[repo],
+        )
+    assert _snapshot(source) == source_before
+
+
+def test_retirement_replays_prepared_after_dynamic_controller_state_changes(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    active, stopped, _, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+    retirement_root = tmp_path / "retirement"
+
+    def crash(phase: str) -> None:
+        if phase == "after_prepared":
+            raise RuntimeError("simulated after PREPARED")
+
+    with pytest.raises(RuntimeError, match="after PREPARED"):
+        retire_mixed_live_reality(
+            repo,
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            retirement_root=retirement_root,
+            tracked_repositories=[repo],
+            fault_injector=crash,
+        )
+    state_path = active[0].parent / "controller_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["turns_completed"] = 7
+    state["updated_at"] = "later-but-same-controller"
+    _write(state_path, _canonical_test_json(state))
+
+    completed = retire_mixed_live_reality(
+        repo,
+        active_run_config_paths=active,
+        stopped_preparation_paths=stopped,
+        retirement_root=retirement_root,
+        tracked_repositories=[repo],
+    )
+    assert completed["status"] == "COMPLETED"
+
+
+def test_delete_authorization_recovers_from_partial_rmtree(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    active, stopped, _, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+    retirement_root = tmp_path / "retirement"
+    real_rmtree = shutil.rmtree
+    failed = False
+
+    def partial_rmtree(path: object, *args: object, **kwargs: object) -> None:
+        nonlocal failed
+        target = Path(path)
+        if not failed and target.name.startswith(".live.retiring-"):
+            first_file = next(item for item in target.rglob("*") if item.is_file())
+            first_file.unlink()
+            failed = True
+            raise OSError("simulated partial rmtree")
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(reality_migration_module.shutil, "rmtree", partial_rmtree)
+    with pytest.raises(OSError, match="partial rmtree"):
+        retire_mixed_live_reality(
+            repo,
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            retirement_root=retirement_root,
+            tracked_repositories=[repo],
+        )
+    monkeypatch.setattr(reality_migration_module.shutil, "rmtree", real_rmtree)
+
+    completed = retire_mixed_live_reality(
+        repo,
+        active_run_config_paths=active,
+        stopped_preparation_paths=stopped,
+        retirement_root=retirement_root,
+        tracked_repositories=[repo],
+    )
+    assert completed["status"] == "COMPLETED"
+    assert not (repo / "xinao" / "reality" / "live").exists()
+
+
+def test_runtime_binding_set_rejects_old_stopped_manifest_substitution(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    active, stopped, manifests, _controllers = _retirement_runtime_fixture(tmp_path, repo, request)
+    receipt = json.loads(stopped[0].read_text(encoding="utf-8"))
+    receipt["migration_manifest_path"] = str(manifests[0])
+    receipt["migration_manifest_sha256"] = hashlib.sha256(manifests[0].read_bytes()).hexdigest()
+    _write(stopped[0], _canonical_test_json(receipt))
+
+    with pytest.raises(RealityMigrationError, match="stopped preparation runtime mismatch"):
+        validate_retirement_runtime_bindings(
+            active_run_config_paths=active,
+            stopped_preparation_paths=stopped,
+            canonical_repo=repo,
+        )
+
+
+def test_consumer_observer_excludes_migration_contract_but_finds_runtime_source(
+    tmp_path: Path,
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    _write(
+        repo / "services" / "xinao_perpetual_world_compute" / "reality_migration.py",
+        b"xinao/reality/live\n",
+    )
+    _write(repo / "consumer.py", b"import xinao.reality.live\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+
+    observed = observe_mixed_live_retirement_consumers(source, tracked_repositories=[repo])
+
+    assert observed["tracked_scan_complete"] is True
+    assert observed["tracked_runtime_consumer_matches"] == 1
+    assert observed["tracked_matches"][0]["relative_path"] == "consumer.py"
+
+
+def test_consumer_observer_keeps_fixed_historical_references_without_runtime_block(
+    tmp_path: Path,
+) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    historical = repo / "xinao" / "cognition" / "root_package_relation_field" / "俩仓库.txt"
+    _write(historical, b"historical xinao/reality/live locator\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+
+    observed = observe_mixed_live_retirement_consumers(source, tracked_repositories=[repo])
+
+    assert observed["tracked_runtime_consumer_matches"] == 0
+    assert observed["tracked_historical_reference_matches"] == 1
