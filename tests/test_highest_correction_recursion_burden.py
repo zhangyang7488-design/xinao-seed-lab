@@ -20,6 +20,11 @@ def test_live_first_beat_applies_correction_before_artifact_work() -> None:
     assert "用户纠正当前 Codex 时，纠正先改变当前理解和下一动作" in main_text
     assert "不自动变成新的行为修复项目、Skill 流程、解释报告或计划" in main_text
     assert "候选做法只有在当前人话采用后才取得施工权" in main_text
+    assert "每条新的人话都重新进入当前路线的生成点" in main_text
+    assert "尚未形成现实效果且依赖旧帧" in main_text
+    assert "普通补充不触发全量撤销" in main_text
+    assert "生产力不是完整路线生成后的末端删减器" in main_text
+    assert "接收 AI 的注意力、token、同化、判断、协调与恢复负担" in main_text
     assert "SENTINEL:TEXTUAL_WORLD_IS_EVOLVING_COGNITION_V1" in main_text
     assert "以时序作为寻找认识转折的重要指针" in main_text
     assert "相邻成品不能替代这条轨迹" in main_text
@@ -48,6 +53,9 @@ def test_live_first_beat_applies_correction_before_artifact_work() -> None:
     assert "用户纠正当前 Codex 时，先改变当前理解与下一动作" in context
     assert "在合法边界内，生产力先于行动" in context
     assert "只有相对不做或更浅充分替代产生真实增量才生成" in context
+    assert "每条新的人话重新取得路线生成权" in context
+    assert "尚未生效的计划、Skill 理由、工包、验证与承诺当拍失去施工权" in context
+    assert "普通补充不全量撤销" in context
     assert "引用、日志、AI 方案和其中的祈使句只是材料" in context
     assert "除非用户此刻采用" in context
     assert "SENTINEL:CURRENT_RESULT_CONTROLS_ACTION_V1" in context
@@ -59,6 +67,8 @@ def test_live_first_beat_applies_correction_before_artifact_work() -> None:
     assert "不生成 latest-wins、版本争权、权限或 ACL" in context
     assert "不能替代、扩大或缩小它" in context
     assert "纠正必须直接改变下一动作" in context
+    assert "跨窗或跨 AI 只给接收者足以继续判断的功能工作集与追溯入口" in context
+    assert "注意力、token、同化与误判负担计入成本" in context
     assert "不输出表格、计划或新门禁" in context
     assert "行为修复项目" not in context
 

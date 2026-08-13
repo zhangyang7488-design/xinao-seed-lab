@@ -15,7 +15,7 @@ def _cases() -> list[dict[str, object]]:
 def test_recursive_frame_suite_is_balanced_and_not_keyword_routed() -> None:
     cases = _cases()
     by_id = {case["vars"]["case_id"]: case["vars"] for case in cases}
-    assert len(cases) == 12
+    assert len(cases) == 13
     assert set(by_id) == {
         "REG_CURRENT_ACTION_BINDS_TO_SELF",
         "REG_XINAO_WORLD_PRECEDES_QUESTION",
@@ -29,6 +29,7 @@ def test_recursive_frame_suite_is_balanced_and_not_keyword_routed() -> None:
         "REG_TEXTUAL_HISTORY_RECONSTRUCTS_EVOLVING_COGNITION",
         "NEG_DIACHRONIC_COGNITION_DOES_NOT_BLOCK_CURRENT_CONSTRUCTION",
         "NEG_REPO_ARCHIVE_DOES_NOT_EXPAND_TO_GLOBAL_FORENSICS",
+        "REG_RECEIVER_RELATIVE_HANDOFF_REJECTS_PROOF_DUMP",
     }
     assert by_id["REG_CURRENT_ACTION_BINDS_TO_SELF"]["expected_current_action_in_object"]
     assert by_id["REG_XINAO_WORLD_PRECEDES_QUESTION"]["expected_whole_reality_before_compression"]
@@ -88,6 +89,11 @@ def test_recursive_frame_suite_is_balanced_and_not_keyword_routed() -> None:
     ]
     assert archive["expected_current_action_in_object"] is True
     assert archive["expected_whole_reality_before_compression"] is False
+    handoff = by_id["REG_RECEIVER_RELATIVE_HANDOFF_REJECTS_PROOF_DUMP"]
+    assert handoff["expected_active_object"] == "current_agent_action"
+    assert handoff["expected_next_behavior"] == "change_current_behavior_now"
+    assert handoff["expected_current_action_in_object"] is True
+    assert handoff["expected_whole_reality_before_compression"] is False
 
 
 def test_recursive_frame_promptfoo_consumer_is_fresh_read_only_and_non_ceremonial() -> None:

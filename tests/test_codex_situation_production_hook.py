@@ -149,8 +149,13 @@ def test_user_prompt_keeps_l0_first_and_adds_labeled_runtime_without_prompt_echo
     assert context.startswith(L0_CONTEXT)
     assert "在合法边界内，生产力先于行动" in context
     assert "任何 Skill、流程和完整性步骤都只是候选" in context
+    assert "每条新的人话重新取得路线生成权" in context
+    assert "尚未生效的计划、Skill 理由、工包、验证与承诺当拍失去施工权" in context
+    assert "普通补充不全量撤销" in context
     assert DIACHRONIC_COGNITION_CONTEXT in context
     assert ACTION_BINDING_CONTEXT in context
+    assert "跨窗或跨 AI 只给接收者足以继续判断的功能工作集与追溯入口" in context
+    assert "注意力、token、同化与误判负担计入成本" in context
     assert "SECRET MATERIAL" not in context
     assert "hook_child_process_not_parent_codex" in context
     assert "caller_supplied_unverified" not in context

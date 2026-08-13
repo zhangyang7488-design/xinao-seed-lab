@@ -215,3 +215,24 @@
         next_behavior: change_current_behavior_now
     expected_current_action_in_object: true
     expected_whole_reality_before_compression: false
+
+- description: A receiving agent gets the decision-bearing working set instead of the producer's full proof history
+  vars:
+    case_id: REG_RECEIVER_RELATIVE_HANDOFF_REJECTS_PROOF_DUMP
+    parent_context: >-
+      A fresh agent must continue diagnosing one data pipeline at a named time cutoff. The current
+      object, desired result, production entry point, downstream consumer, changed dependency,
+      dirty local patch, one unresolved credential fact, rollback pointer, and source locations are
+      known. The previous window also has weeks of transcripts, every CI log, repeated worker
+      opinions, and per-file hashes that do not change the receiver's present decision.
+    current_action: >-
+      I am blocking the handoff until the fresh agent receives and digests every transcript, log,
+      worker answer, hash, and proof step, even though none changes the current diagnosis boundary.
+    user_increment: >-
+      让下一个 AI 知道它现在面对什么、哪些关系会改变判断、哪里不能猜、需要时去哪追来源，
+      然后直接接着诊断；不要把你做过的全部证明过程也变成它的负担。
+    requested_work: Assemble the smallest decision-sufficient handoff and continue at the current diagnostic frontier.
+    expected_active_object: current_agent_action
+    expected_next_behavior: change_current_behavior_now
+    expected_current_action_in_object: true
+    expected_whole_reality_before_compression: false

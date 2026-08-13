@@ -1459,15 +1459,15 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 125
+    assert suite_count == catalog["declared_case_count"] == 129
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 9 + 9 + 9 + 6 + 2 + 1 + 2 + 8,
-        "deep": 18 + 1 + 9 + 9 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
+        "core": 18 + 1 + 9 + 13 + 9 + 6 + 2 + 1 + 2 + 8,
+        "deep": 18 + 1 + 9 + 13 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
         "intent": 68,
         "external": 9,
-        "reconstitution": 9,
+        "reconstitution": 13,
         "surface": 9,
         "proactive": 6,
         "reuse": 4,
@@ -1492,7 +1492,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         item for item in catalog["suites"] if item["id"] == "recursive_frame_reconstitution"
     )
     assert reconstitution["kind"] == "promptfoo_live"
-    assert reconstitution["case_count"] == 9
+    assert reconstitution["case_count"] == 13
     assert reconstitution["current_action_binding_claim_allowed"] is True
     user_surface = next(
         item for item in catalog["suites"] if item["id"] == "parent_continuity_user_surface"
