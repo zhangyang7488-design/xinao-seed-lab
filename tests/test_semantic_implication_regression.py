@@ -18,7 +18,11 @@ SUITE_ROOT = REPO_ROOT / "evals" / "semantic_implication_regression"
 CASES_PATH = SUITE_ROOT / "cases.yaml"
 ASSERTION_PATH = SUITE_ROOT / "assert_behavior.js"
 CANONICAL_PATH = (
-    Path(r"E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research")
+    Path(r"E:\CODEX_CLEANROOM\workspace")
+    / "xinao"
+    / "archive"
+    / "legacy-research"
+    / "T0-X-4328f8c45497"
     / "semantic_accidents"
     / "cases.v1.json"
 )

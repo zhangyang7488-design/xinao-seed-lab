@@ -29,7 +29,7 @@ $summary = [ordered]@{
     generated_at = (Get-Date).ToString('o')
     repository_git_sha = (& git -C (Split-Path -Parent $PSScriptRoot) rev-parse HEAD 2>$null).Trim()
     repository_git_dirty = (@(& git -C (Split-Path -Parent $PSScriptRoot) status --porcelain=v1 2>$null).Count -gt 0)
-    scope_note = 'domain research belongs to xinao-native-research'
+    scope_note = 'domain research belongs to the live clean-room world repository'
     admission_fixture_only = @('thin_localization_contract')
     domain_completion_claim_allowed = $false
     results = @([ordered]@{

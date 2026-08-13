@@ -117,11 +117,12 @@ local seam, prefer retiring the seam and its tests over preserving compatibility
 
 ## Keep domains local
 
-When Pi is explicitly working on XINAO, enter through:
-
-- `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research\AGENTS.md`
-- `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research\README.md`
-- `python -B -m xinao_research current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay`
+When Pi is explicitly working on XINAO, resolve the live world repository from current words and
+the current machine contract. The present live world is `E:\CODEX_CLEANROOM\workspace`; verify
+that identity before use, then enter through `xinao\AGENTS.md`, `xinao\README.md`, the XINAO
+entry map, reality, and local tools. Do not invoke the retired old-X CLI or treat its path as a
+current entry. Reading a clean-room repository for an explicitly named Pi activity does not attach
+Pi or S/B to the A/C account body, sessions, credentials, runtime ownership, or write authority.
 
 Those surfaces provide current reality, sources, boundaries, evidence, and local instruments. They
 do not persist Pi cognition or define Pi's question, action, child use, continuation, or stopping.

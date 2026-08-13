@@ -6,8 +6,9 @@ This is the only live semantic-accident behavior suite in S. It is cold, on dema
 the dedicated runner `scripts/run_semantic_implication_regression_eval.ps1`; it is not loaded by
 the ordinary behavior-regression profiles.
 
-The native XINAO repository owns the canonical cold incident corpus at
-`semantic_accidents/cases.v1.json`. `source_contract.v1.json` binds its exact Git commit, tree,
+The live clean-room repository preserves the retired native corpus at
+`xinao/archive/legacy-research/T0-X-4328f8c45497/semantic_accidents/cases.v1.json`.
+`source_contract.v1.json` binds its exact Git commit, tree,
 blob, worktree bytes, corpus seal, and selected case seal. Local held-out fixtures are synthetic
 case facts, not incident authority.
 

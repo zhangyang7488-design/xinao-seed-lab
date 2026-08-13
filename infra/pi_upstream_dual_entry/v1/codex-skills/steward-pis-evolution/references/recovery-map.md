@@ -194,9 +194,13 @@ tool result into a changed judgment.
 
 When the live activity explicitly addresses XINAO research or its local mechanics, enter through:
 
-- Repository: `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`
-- Current instructions: `AGENTS.md` and `README.md`
-- Current CLI: `python -B -m xinao_research current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay`
+- Current live world repository: `E:\CODEX_CLEANROOM\workspace`
+- Current XINAO instructions: `xinao\AGENTS.md` and `xinao\README.md`
+- Current entry map: `semantics\xinao\01_XINAO_ENTRY_MAP_V2.txt`
 
-Desktop, migration, and historical carriers are not startup inputs. Address one only for a current,
-named provenance-recovery task. `C:\Users\xx363\Desktop\历史备用 不动` remains read-only.
+Verify the repository identity and local instructions live. This is a read-only cross-repository
+entry for an explicitly named Pi activity, not an account/body attachment or shared write grant.
+The retired `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research` worktree is cold provenance,
+recoverable from `E:\XINAO_COLD_STORAGE\xinao-native-research-retirement-20260813-1855`; it is not
+a current CLI or startup input. Address it only for a current, named provenance-recovery task.
+`C:\Users\xx363\Desktop\历史备用 不动` remains read-only.

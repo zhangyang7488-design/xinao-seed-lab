@@ -1406,14 +1406,12 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     )
     assert "run_behavior_regression.ps1" in battery
     assert "admission_fixture_only" in battery
-    assert "domain research belongs to xinao-native-research" in battery
+    assert "domain research belongs to the live clean-room world repository" in battery
 
     registry = json.loads((REPO_ROOT / "evals/suite_registry.v1.json").read_text(encoding="utf-8"))
     assert set(registry["loops"]) == {"behavior"}
     assert registry["loops"]["behavior"]["cannot_claim"] == "domain_edge_or_economic_truth"
-    assert registry["native_domain_research"] == (
-        "E:\\XINAO_RESEARCH_WORKSPACES\\xinao-native-research"
-    )
+    assert registry["native_domain_research"] == "E:\\CODEX_CLEANROOM\\workspace"
     live_ids = {item["id"] for item in registry["live_agent_suites"]}
     assert "proactive_mature_first" in live_ids
     assert "parent_frame_admission" in live_ids

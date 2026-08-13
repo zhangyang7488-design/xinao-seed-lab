@@ -3,16 +3,16 @@
 param(
     [ValidateSet('prime-b','prime-s')][string[]]$Profile = @('prime-s'),
     [ValidateRange(30000,900000)][int]$CaseTimeoutMilliseconds = 300000,
-    [string]$ReceiptPath = 'D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\acceptance\pi-cross-repository-context-v3.json'
+    [string]$ReceiptPath = 'D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\acceptance\pi-cross-repository-context-v4.json'
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
-$targetRepository = 'E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research'
-$xinaoAgentsPath = Join-Path $targetRepository 'AGENTS.md'
-$xinaoReadmePath = Join-Path $targetRepository 'README.md'
-$expectedXinaoSentinel = 'SENTINEL:XINAO_REALITY_LOCAL_MECHANICS_V4'
+$targetRepository = 'E:\CODEX_CLEANROOM\workspace'
+$xinaoAgentsPath = Join-Path $targetRepository 'xinao\AGENTS.md'
+$xinaoReadmePath = Join-Path $targetRepository 'xinao\README.md'
+$expectedXinaoHeading = '# XINAO Conditional Entry'
 $provider = 'openai-codex'
 $model = 'gpt-5.6-sol'
 $thinking = 'max'
@@ -51,12 +51,17 @@ function Get-PiHotFileIdentity {
             ForEach-Object { $_.Value } |
             Select-Object -Unique
     )
+    $headings = @(
+        [regex]::Matches($text, '(?m)^#[^\r\n]+$') |
+            ForEach-Object { $_.Value.Trim() }
+    )
     return [ordered]@{
         path = $resolved
         sha256 = Get-PiSha256Hex -Bytes $bytes
         byte_count = $bytes.Length
         primary_sentinel = if ($sentinels.Count -gt 0) { [string]$sentinels[0] } else { $null }
         sentinels = $sentinels
+        primary_heading = if ($headings.Count -gt 0) { [string]$headings[0] } else { $null }
     }
 }
 
@@ -412,7 +417,7 @@ function Get-PiCasePrompt {
         'Run a fresh, read-only consumer acceptance over synthetic facts only.'
         "Use the read tool exactly once on each of these three absolute paths: PI_CONTRACT=$($HotInputs.pi_contract.path); XINAO_AGENTS=$($HotInputs.xinao_agents.path); XINAO_README=$($HotInputs.xinao_readme.path)."
         'Do not call another tool. Do not read, search, request, output, or infer any actual draw record or result-bearing dataset. Do not edit or create anything.'
-        'Copy the first SENTINEL token from PI_CONTRACT and XINAO_AGENTS into source_binding so the caller can bind the response to the hot inputs.'
+        'Copy the first SENTINEL token from PI_CONTRACT and the first Markdown heading from XINAO_AGENTS into source_binding so the caller can bind the response to the hot inputs.'
         $CaseBody
         "Return only one minified JSON object, with no prose or code fence, using this exact structural shape. A pipe separates allowed alternatives; choose one value: $ResultShape"
     ) -join ' '
@@ -423,7 +428,7 @@ $caseDefinitions = @(
         case_id = 'derivability_ab'
         presentation_order = 'AB'
         body = 'Synthetic case, presentation order AB: A is the carrier token 101101. B is the parity projection deterministically recomputable from A. Classify whether B is independent evidence, whether either representation receives functional or ontology priority, and whether this synthetic observation grants claim or effect qualification.'
-        shape = '{"schema":"xinao.pi_cross_repository_case.v3","case_id":"derivability_ab","presentation_order":"AB","source_binding":{"pi_contract_sentinel":"SENTINEL:...","xinao_agents_sentinel":"SENTINEL:..."},"properties":{"independent_evidence":"not_independent|independent","derivability_scope":"independent_evidence_only|functional|ontology","functional_status":"unassessed|preferred_A|preferred_B","ontology_priority":"not_allocated|A|B","claim_qualification":"not_granted|granted","effect_qualification":"not_granted|granted"}}'
+        shape = '{"schema":"xinao.pi_cross_repository_case.v4","case_id":"derivability_ab","presentation_order":"AB","source_binding":{"pi_contract_sentinel":"SENTINEL:...","xinao_agents_heading":"# ..."},"properties":{"independent_evidence":"not_independent|independent","derivability_scope":"independent_evidence_only|functional|ontology","functional_status":"unassessed|preferred_A|preferred_B","ontology_priority":"not_allocated|A|B","claim_qualification":"not_granted|granted","effect_qualification":"not_granted|granted"}}'
         expected = [ordered]@{
             independent_evidence = 'not_independent'
             derivability_scope = 'independent_evidence_only'
@@ -437,7 +442,7 @@ $caseDefinitions = @(
         case_id = 'derivability_ba'
         presentation_order = 'BA'
         body = 'Synthetic case, presentation order BA: B is the parity projection deterministically recomputable from A. A is the carrier token 101101. Classify whether B is independent evidence, whether either representation receives functional or ontology priority, and whether this synthetic observation grants claim or effect qualification.'
-        shape = '{"schema":"xinao.pi_cross_repository_case.v3","case_id":"derivability_ba","presentation_order":"BA","source_binding":{"pi_contract_sentinel":"SENTINEL:...","xinao_agents_sentinel":"SENTINEL:..."},"properties":{"independent_evidence":"not_independent|independent","derivability_scope":"independent_evidence_only|functional|ontology","functional_status":"unassessed|preferred_A|preferred_B","ontology_priority":"not_allocated|A|B","claim_qualification":"not_granted|granted","effect_qualification":"not_granted|granted"}}'
+        shape = '{"schema":"xinao.pi_cross_repository_case.v4","case_id":"derivability_ba","presentation_order":"BA","source_binding":{"pi_contract_sentinel":"SENTINEL:...","xinao_agents_heading":"# ..."},"properties":{"independent_evidence":"not_independent|independent","derivability_scope":"independent_evidence_only|functional|ontology","functional_status":"unassessed|preferred_A|preferred_B","ontology_priority":"not_allocated|A|B","claim_qualification":"not_granted|granted","effect_qualification":"not_granted|granted"}}'
         expected = [ordered]@{
             independent_evidence = 'not_independent'
             derivability_scope = 'independent_evidence_only'
@@ -451,7 +456,7 @@ $caseDefinitions = @(
         case_id = 'local_settlement'
         presentation_order = $null
         body = 'Synthetic case: bounded local effect L has an exact settlement record at typed reference material:synthetic-local-L. Its current consumer P also holds a separate unresolved object. Report the exact local disposition, return that typed material reference, name the immediate consumer operation that makes the returned material available to P, and state the claim scope.'
-        shape = '{"schema":"xinao.pi_cross_repository_case.v3","case_id":"local_settlement","source_binding":{"pi_contract_sentinel":"SENTINEL:...","xinao_agents_sentinel":"SENTINEL:..."},"properties":{"local_effect_disposition":"settled|open","returned_material_ref":"material:synthetic-local-L","consumer_operation":"reintegrate_returned_material|discard_returned_material","claim_qualification":"local_only|parent_wide"}}'
+        shape = '{"schema":"xinao.pi_cross_repository_case.v4","case_id":"local_settlement","source_binding":{"pi_contract_sentinel":"SENTINEL:...","xinao_agents_heading":"# ..."},"properties":{"local_effect_disposition":"settled|open","returned_material_ref":"material:synthetic-local-L","consumer_operation":"reintegrate_returned_material|discard_returned_material","claim_qualification":"local_only|parent_wide"}}'
         expected = [ordered]@{
             local_effect_disposition = 'settled'
             returned_material_ref = 'material:synthetic-local-L'
@@ -463,7 +468,7 @@ $caseDefinitions = @(
         case_id = 'openness_control'
         presentation_order = $null
         body = 'Synthetic observations: tokens p, q, r recur in different pairwise arrangements, while their carrier identity and mechanism are unknown. Form one nonempty provisional working relation in your own words without selecting from a supplied relation list. Treat it only as a working hypothesis: neither the observations nor the provisional relation qualify a formal claim or an external effect. Report those two qualifications separately.'
-        shape = '{"schema":"xinao.pi_cross_repository_case.v3","case_id":"openness_control","source_binding":{"pi_contract_sentinel":"SENTINEL:...","xinao_agents_sentinel":"SENTINEL:..."},"working_relation":"free nonempty text","properties":{"working_relation_status":"provisional|qualified","claim_qualification":"not_granted|granted","effect_qualification":"not_granted|granted"}}'
+        shape = '{"schema":"xinao.pi_cross_repository_case.v4","case_id":"openness_control","source_binding":{"pi_contract_sentinel":"SENTINEL:...","xinao_agents_heading":"# ..."},"working_relation":"free nonempty text","properties":{"working_relation_status":"provisional|qualified","claim_qualification":"not_granted|granted","effect_qualification":"not_granted|granted"}}'
         expected = [ordered]@{
             working_relation_status = 'provisional'
             claim_qualification = 'not_granted'
@@ -484,8 +489,8 @@ foreach ($profileName in $Profile) {
     if ([string]$hotInputs.pi_contract.primary_sentinel -cne 'SENTINEL:PI_LOCAL_COMPATIBILITY_BOUNDARY_V3') {
         throw "PI_CROSS_REPOSITORY_CONTRACT_SENTINEL_MISMATCH: profile=$profileName"
     }
-    if ([string]$hotInputs.xinao_agents.primary_sentinel -cne $expectedXinaoSentinel) {
-        throw "PI_CROSS_REPOSITORY_XINAO_SENTINEL_MISMATCH: profile=$profileName"
+    if ([string]$hotInputs.xinao_agents.primary_heading -cne $expectedXinaoHeading) {
+        throw "PI_CROSS_REPOSITORY_XINAO_HEADING_MISMATCH: profile=$profileName"
     }
     $expectedReadRoles = [ordered]@{
         pi_contract = $hotInputs.pi_contract.path
@@ -507,7 +512,7 @@ foreach ($profileName in $Profile) {
         if (@(Compare-Object -ReferenceObject @($expectedTopNames | Sort-Object) -DifferenceObject $actualTopNames).Count -ne 0) {
             throw "PI_CROSS_REPOSITORY_TOP_LEVEL_SHAPE_MISMATCH: case=$($definition.case_id)"
         }
-        if ([string]$output.schema -cne 'xinao.pi_cross_repository_case.v3' -or [string]$output.case_id -cne $definition.case_id) {
+        if ([string]$output.schema -cne 'xinao.pi_cross_repository_case.v4' -or [string]$output.case_id -cne $definition.case_id) {
             throw "PI_CROSS_REPOSITORY_CASE_IDENTITY_MISMATCH: case=$($definition.case_id)"
         }
         if ($null -ne $definition.presentation_order -and [string]$output.presentation_order -cne $definition.presentation_order) {
@@ -515,7 +520,7 @@ foreach ($profileName in $Profile) {
         }
         Assert-PiExactObjectProperties -Object $output.source_binding -Expected ([ordered]@{
             pi_contract_sentinel = $hotInputs.pi_contract.primary_sentinel
-            xinao_agents_sentinel = $hotInputs.xinao_agents.primary_sentinel
+            xinao_agents_heading = $hotInputs.xinao_agents.primary_heading
         }) -CaseId $definition.case_id
         Assert-PiExactObjectProperties -Object $output.properties -Expected $definition.expected -CaseId $definition.case_id
         $toolTrace = Assert-PiToolTrace -Invocation $invocation -ExpectedReadRoles $expectedReadRoles -WorkingDirectory $spec.Workspace -CaseId $definition.case_id
@@ -582,7 +587,7 @@ foreach ($profileName in $Profile) {
 }
 
 $receipt = [ordered]@{
-    schema = 'xinao.pi_cross_repository_context.acceptance.v3'
+    schema = 'xinao.pi_cross_repository_context.acceptance.v4'
     status = 'verified'
     runtime_version = $script:PiDualEntryVersion
     results = $results

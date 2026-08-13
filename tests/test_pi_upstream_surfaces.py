@@ -378,8 +378,10 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "neither the observations nor the provisional relation qualify" in cross_repo
     assert "claim_qualification" in cross_repo
     assert "effect_qualification" in cross_repo
-    assert "SENTINEL:XINAO_REALITY_LOCAL_MECHANICS_V4" in cross_repo
-    assert "SENTINEL:XINAO_REALITY_DIRECT_TO_CURRENT_SOL_V2" not in cross_repo
+    assert r"E:\CODEX_CLEANROOM\workspace" in cross_repo
+    assert "xinao\\AGENTS.md" in cross_repo
+    assert "# XINAO Conditional Entry" in cross_repo
+    assert r"E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research" not in cross_repo
     assert "xinao_research current" not in cross_repo
     assert "xinao_research event" not in cross_repo
     assert "xinao_research trajectory" not in cross_repo
@@ -1198,6 +1200,7 @@ def test_codex_pis_steward_skill_tracks_live_pi_without_defining_it() -> None:
     recovery = _text(skill_root / "references" / "recovery-map.md")
     installer = _text(SOURCE_ROOT / "scripts" / "Install-CodexPiSStewardSkill.ps1")
     normalized_skill = " ".join(skill.split())
+    normalized_recovery = " ".join(recovery.split())
 
     assert "name: steward-pis-evolution" in skill
     assert "rapidly evolving live product" in normalized_skill
@@ -1218,10 +1221,8 @@ def test_codex_pis_steward_skill_tracks_live_pi_without_defining_it() -> None:
     assert "Address external transport and observation mechanically" in skill
     assert "exact Pi" in skill and "named mechanical scope" in skill
     assert "currently appointed effect Owner" in skill
-    assert (
-        "current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay"
-        in skill
-    )
+    assert r"E:\CODEX_CLEANROOM\workspace" in skill
+    assert "retired old-X CLI" in skill
     assert "主管模式.txt" not in skill
     assert "studies" not in skill and "study-check" not in skill
 
@@ -1242,7 +1243,9 @@ def test_codex_pis_steward_skill_tracks_live_pi_without_defining_it() -> None:
     assert "body-labs\\prime-s" in recovery
     assert r"C:\Users\xx363\Desktop\历史备用 不动" in recovery
     assert "not in the main `prime` active default package set" in recovery
-    assert "Current CLI" in recovery and "evidence-check" in recovery
+    assert "Current live world repository" in recovery
+    assert r"xinao\AGENTS.md" in recovery
+    assert "it is not a current CLI or startup input" in normalized_recovery
     assert "Migration chronology" not in recovery
     assert "understand-and-steer-prime" not in recovery
 

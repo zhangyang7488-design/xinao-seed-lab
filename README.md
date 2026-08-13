@@ -6,7 +6,7 @@ default XINAO research object, a science parent, or a second control plane.
 ## Active machine architecture
 
 - Thin hot entry: `C:\Users\xx363\Desktop\主线`
-- Default XINAO native research: `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`
+- Live XINAO world and research repository: `E:\CODEX_CLEANROOM\workspace`
 - General engineering and WorkerPool tooling: `E:\XINAO_RESEARCH_WORKSPACES\S`
 - Live runtime, recent evidence, and recovery state: `D:\XINAO_RESEARCH_RUNTIME`
 - Cold archaeology: `E:\XINAO_COLD_STORAGE\archives\LEGACY_XINAO_PLATFORM`

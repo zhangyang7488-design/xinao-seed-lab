@@ -3,7 +3,7 @@
 This is a bounded S engineering capability, not a research platform, scheduler,
 authority source, or completion gate. The catalog currently inventories 124
 declared live and reusable specifications. XINAO domain research and economic evidence
-belong to `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`.
+belong to the live clean-room world at `E:\CODEX_CLEANROOM\workspace`.
 
 `capability_lineage.v1.json` is a non-runtime migration preflight. It preserves
 the historical pain/consumer/retirement map—including all 124 retired mixed

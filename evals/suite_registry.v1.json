@@ -1,7 +1,7 @@
 {
   "schema_version": "xinao.behavior_evolution_registry.v2",
-  "purpose_cn": "S 只承载通用行为评测；新澳领域研究、算法、实验和经济证据归原生研究仓。",
-  "native_domain_research": "E:\\XINAO_RESEARCH_WORKSPACES\\xinao-native-research",
+  "purpose_cn": "S 只承载通用行为评测；新澳领域研究、算法、实验和经济证据归 live clean-room world 仓。",
+  "native_domain_research": "E:\\CODEX_CLEANROOM\\workspace",
   "loops": {
     "behavior": {
       "object": "agent_instruction_routing_tool_context_and_preference_behavior",
