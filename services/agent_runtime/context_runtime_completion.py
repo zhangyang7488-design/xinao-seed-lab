@@ -1804,18 +1804,18 @@ def materialize_context(
         query_terms = set(fabric._query_terms(query_text))
         scored: list[tuple[int, int, dict[str, object]]] = []
         for item in projection_items:
-            terms = set(
-                fabric.lexical_terms(
-                    " ".join(
-                        (
-                            str(item["semantic_key"]),
-                            str(item["statement"]),
-                            str(item["temporal_scope"]),
-                            *[str(alias) for alias in item["aliases"]],
-                        )
-                    )
-                )
-            )
+            # Bound each provenance-bearing field independently before unioning
+            # terms.  Otherwise a long CJK statement fills the shared 96-term
+            # cap with short n-grams and silently erases an exact Latin semantic
+            # key such as ``corrections-survive-without-user-rerouting``.
+            terms: set[str] = set()
+            for value in (
+                item["semantic_key"],
+                item["statement"],
+                item["temporal_scope"],
+                *item["aliases"],
+            ):
+                terms.update(fabric.lexical_terms(str(value)))
             overlap = len(query_terms & terms) if query_terms else 1
             if overlap:
                 scored.append((overlap, int(item["seq"]), item))

@@ -883,6 +883,87 @@ def test_explicit_correction_has_temporal_current_and_historical_views(tmp_path:
         ).fetchone() == ("2026-08-13T01:00:00Z",)
 
 
+def test_semantic_key_retrieval_survives_saturated_cjk_and_active_correction(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "runtime"
+    context_runtime.initialize_context_fabric(root)
+    allowed_homes, environ = _mount(tmp_path)
+    semantic_key = "corrections-survive-without-user-rerouting"
+    scope_key = "correction-routing:surviving-world"
+    # More than the lexical term cap in distinct one-character CJK terms makes
+    # a shared joined-field budget discard every longer Latin semantic-key token.
+    prior_cjk = "".join(chr(0x4E00 + index) for index in range(180))
+    replacement_cjk = "".join(chr(0x5100 + index) for index in range(180))
+
+    prior_source = _capture(
+        _hook("UserPromptSubmit", prompt="旧的局部理解仍保留为历史证据"),
+        root=root,
+        allowed_homes=allowed_homes,
+        environ=environ,
+    )
+    prior = context_runtime.append_projection(
+        {
+            "kind": "semantic_identity",
+            "semantic_key": semantic_key,
+            "scope_key": scope_key,
+            "statement": prior_cjk,
+            "aliases": [prior_cjk[::-1]],
+            "status_label": "historical",
+            "source_event_ids": [prior_source.event_id],
+            "content": {"state": "prior"},
+        },
+        root=root,
+    )
+    correction_source = _capture(
+        _hook(
+            "UserPromptSubmit",
+            turn_id=TURN_B,
+            timestamp="2026-08-13T01:00:00Z",
+            prompt="纠正后的当前理解应直接存活而无需用户重新路由",
+        ),
+        root=root,
+        allowed_homes=allowed_homes,
+        environ=environ,
+    )
+    replacement = context_runtime.append_projection(
+        {
+            "kind": "semantic_identity",
+            "semantic_key": semantic_key,
+            "scope_key": scope_key,
+            "statement": replacement_cjk,
+            "aliases": [replacement_cjk[::-1]],
+            "status_label": "current",
+            "source_event_ids": [correction_source.event_id],
+            "supersedes_projection_id": prior["projection_id"],
+            "content": {"state": "replacement"},
+        },
+        root=root,
+    )
+    context_runtime.append_correction(
+        {
+            "prior_ref": prior["projection_id"],
+            "replacement_ref": replacement["projection_id"],
+            "source_event_id": correction_source.event_id,
+            "scope_key": scope_key,
+            "temporal_basis": "explicit_user_correction",
+        },
+        root=root,
+    )
+
+    materialized = context_runtime.materialize_context(
+        query=semantic_key,
+        root=root,
+        persist=False,
+    )
+    payload = _materialized_payload(materialized["rendered_context"])
+    derived_ids = {str(item["projection_id"]) for item in payload["derived_projections"]}
+    assert replacement["projection_id"] in derived_ids
+    assert replacement["projection_id"] in materialized["source_refs"]
+    assert prior["projection_id"] not in derived_ids
+    assert prior["projection_id"] not in materialized["source_refs"]
+
+
 def test_projection_valid_time_normalizes_offsets_and_rejects_naive_instants(
     tmp_path: Path,
 ) -> None:
