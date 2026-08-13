@@ -712,6 +712,65 @@ $stagingResidual = @(
     assert result["staging_residual"] == 0
 
 
+@pytest.mark.parametrize("engine_name", ["pwsh", "powershell"])
+def test_installer_trigger_definition_disables_stop_at_duration_end(
+    engine_name: str,
+) -> None:
+    engine = shutil.which(engine_name)
+    if engine is None:
+        pytest.skip(f"{engine_name} is unavailable")
+    installer = consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
+    script = installer.read_text(encoding="utf-8-sig")
+    trigger_index = script.index("$trigger = New-ScheduledTaskTrigger")
+    assignment_index = script.index(
+        "$trigger.Repetition.StopAtDurationEnd = $false",
+        trigger_index,
+    )
+    settings_index = script.index("$settings = New-ScheduledTaskSettingsSet", assignment_index)
+    assert trigger_index < assignment_index < settings_index
+    command = """
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$trigger = New-ScheduledTaskTrigger `
+    -Once `
+    -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval (New-TimeSpan -Minutes 2) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)
+$defaultValue = [bool]$trigger.Repetition.StopAtDurationEnd
+$trigger.Repetition.StopAtDurationEnd = $false
+$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit 0'
+$definition = New-ScheduledTask -Action $action -Trigger $trigger
+[ordered]@{
+    default_value = $defaultValue
+    trigger_value = [bool]$trigger.Repetition.StopAtDurationEnd
+    definition_value = [bool]$definition.Triggers[0].Repetition.StopAtDurationEnd
+} | ConvertTo-Json -Compress
+"""
+    completed = subprocess.run(
+        [
+            engine,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            base64.b64encode(command.encode("utf-16-le")).decode(),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    json_lines = [line for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert json_lines, completed.stdout + completed.stderr
+    assert json.loads(json_lines[-1]) == {
+        "default_value": True,
+        "trigger_value": False,
+        "definition_value": False,
+    }
+
+
 def test_bootstrap_imports_only_latest_recent_root_and_never_opens_old_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

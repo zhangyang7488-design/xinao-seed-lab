@@ -1563,6 +1563,7 @@ if ($Apply) {
         -At (Get-Date).AddMinutes(1) `
         -RepetitionInterval (New-TimeSpan -Minutes $Minutes) `
         -RepetitionDuration (New-TimeSpan -Days 3650)
+    $trigger.Repetition.StopAtDurationEnd = $false
     $settings = New-ScheduledTaskSettingsSet `
         -MultipleInstances IgnoreNew `
         -StartWhenAvailable `
