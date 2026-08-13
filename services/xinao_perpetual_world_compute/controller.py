@@ -5468,6 +5468,7 @@ def _seal_repaired_controller_release(
     recovery_id: str,
     reason: str,
     reality_migration_manifest_path: Path | None = None,
+    adopt_current_launcher_source: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     current_source = Path(__file__).resolve()
     current_raw = current_source.read_bytes()
@@ -5490,10 +5491,11 @@ def _seal_repaired_controller_release(
     if not launcher_source.is_file():
         raise PerpetualRuntimeError(f"CLEANROOM_LAUNCHER_MISSING: {launcher_source}")
     observed_launcher_source_sha = sha256_file(launcher_source)
-    if (
+    launcher_source_changed = (
         isinstance(expected_launcher_source_sha, str)
         and observed_launcher_source_sha != expected_launcher_source_sha
-    ):
+    )
+    if launcher_source_changed and not adopt_current_launcher_source:
         raise PerpetualRuntimeError("CLEANROOM_LAUNCHER_SOURCE_CHANGED")
     migration_adoption: dict[str, Any] | None = None
     if reality_migration_manifest_path is not None:
@@ -5660,7 +5662,9 @@ def _seal_repaired_controller_release(
         "launcher_adopted_path": str(isolated_launcher_path),
         "launcher_adopted_sha256": isolated_launcher["sha256"],
         "launcher_source_path": str(launcher_source),
+        "launcher_source_previous_sha256": expected_launcher_source_sha,
         "launcher_source_sha256": observed_launcher_source_sha,
+        "launcher_source_adopted": launcher_source_changed,
         "runtime_binding_adopted": runtime_binding_required,
         "runtime_binding_release_path": (
             str(runtime_binding_release_path) if runtime_binding_release_path is not None else None
@@ -5730,6 +5734,13 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
             if state is not None:
                 atomic_write_json(recovery_dir / "controller_state.before.json", state)
             adopt_current = bool(getattr(args, "adopt_current_release", False))
+            adopt_current_launcher_source = bool(
+                getattr(args, "adopt_current_launcher_source", False)
+            )
+            if adopt_current_launcher_source and not adopt_current:
+                raise PerpetualRuntimeError(
+                    "CURRENT_LAUNCHER_SOURCE_ADOPTION_REQUIRES_CURRENT_RELEASE_ADOPTION"
+                )
             migration_manifest_argument = getattr(args, "reality_migration_manifest", None)
             if migration_manifest_argument is not None and not adopt_current:
                 raise PerpetualRuntimeError(
@@ -5743,6 +5754,7 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
                 "prepared_at": now_iso(),
                 "reason": str(args.reason),
                 "adopt_current_release": adopt_current,
+                "adopt_current_launcher_source": adopt_current_launcher_source,
                 "reality_migration_manifest_argument": (
                     str(resolve_path(migration_manifest_argument))
                     if migration_manifest_argument is not None
@@ -5783,6 +5795,7 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
                             if migration_manifest_argument is not None
                             else None
                         ),
+                        adopt_current_launcher_source=adopt_current_launcher_source,
                     )
                     receipt["release_adoption"] = release_adoption
                     atomic_write_json(receipt_path, receipt)
@@ -6040,6 +6053,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--adopt-current-release",
         action="store_true",
         help="seal the current repository controller as a new preserved release for this run",
+    )
+    recover.add_argument(
+        "--adopt-current-launcher-source",
+        action="store_true",
+        help=(
+            "explicitly adopt the currently verified shared clean-room launcher "
+            "when its bytes changed since this run was frozen"
+        ),
     )
     recover.add_argument(
         "--reality-migration-manifest",

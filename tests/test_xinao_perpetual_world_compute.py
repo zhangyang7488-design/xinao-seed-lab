@@ -1228,11 +1228,13 @@ def test_account_slot_is_a_selector_not_a_controller_mode() -> None:
             "--runtime-root",
             str(Path("runtime")),
             "--adopt-current-release",
+            "--adopt-current-launcher-source",
             "--reality-migration-manifest",
             str(Path("MANIFEST.json")),
         ]
     )
     assert parsed.adopt_current_release is True
+    assert parsed.adopt_current_launcher_source is True
     assert parsed.reality_migration_manifest == Path("MANIFEST.json")
 
 
@@ -2428,6 +2430,8 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
         "source_head": "a" * 40,
         "launcher_path": str(launcher),
         "launcher_sha256": sha256_file(launcher),
+        "launcher_source_path": str(launcher),
+        "launcher_source_sha256": "f" * 64,
         "shared_config_path": str(tmp_path / "config.toml"),
         "shared_config_sha256": "config-sha",
         "controller_release_path": str(old_release),
@@ -2509,6 +2513,7 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
             expected_account_slot="C",
             reason="repair completed-turn fusion race",
             adopt_current_release=True,
+            adopt_current_launcher_source=True,
             startup_wait_seconds=1,
         )
     )
@@ -2537,6 +2542,9 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
         not in Path(updated["launcher_path"]).read_bytes()
     )
     assert result["release_adoption"]["body_boundary_adopted"] is True
+    assert result["release_adoption"]["launcher_source_adopted"] is True
+    assert result["release_adoption"]["launcher_source_previous_sha256"] == "f" * 64
+    assert result["release_adoption"]["launcher_source_sha256"] == sha256_file(launcher)
     assert updated["deep_evidence_required_from_turn"] == {
         "root-main": 1,
         "world-01": 1,
