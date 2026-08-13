@@ -27,6 +27,28 @@ function Get-CurrentIdentityName {
     return [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 }
 
+function Get-CurrentIdentitySid {
+    return [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+}
+
+function Resolve-IdentitySid {
+    param([string]$Identity)
+    if ([string]::IsNullOrWhiteSpace($Identity)) {
+        return ''
+    }
+    if ($Identity -match '^S-1-') {
+        return $Identity
+    }
+    try {
+        return [System.Security.Principal.NTAccount]::new($Identity).Translate(
+            [System.Security.Principal.SecurityIdentifier]
+        ).Value
+    }
+    catch {
+        return ''
+    }
+}
+
 function Test-OrdinalPathEqual {
     param([string]$Actual, [string]$Expected)
     return [string]::Equals($Actual, $Expected, [System.StringComparison]::OrdinalIgnoreCase)
@@ -48,13 +70,19 @@ function Get-ConsumerTaskAudit {
     }
 
     $identity = Get-CurrentIdentityName
+    $currentSid = Get-CurrentIdentitySid
+    $taskSid = Resolve-IdentitySid ([string]$task.Principal.UserId)
     $action = @($task.Actions)
     $trigger = @($task.Triggers)
     $actionValid = $action.Count -eq 1 -and
         (Test-OrdinalPathEqual $action[0].Execute $pythonPath) -and
         [string]::Equals([string]$action[0].Arguments, $expectedArguments, [System.StringComparison]::Ordinal) -and
         (Test-OrdinalPathEqual $action[0].WorkingDirectory $repositoryRoot)
-    $principalValid = (Test-OrdinalPathEqual ([string]$task.Principal.UserId) $identity) -and
+    $principalValid = [string]::Equals(
+            $taskSid,
+            $currentSid,
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
         [string]::Equals([string]$task.Principal.RunLevel, 'Limited', [System.StringComparison]::OrdinalIgnoreCase) -and
         [string]::Equals([string]$task.Principal.LogonType, 'Interactive', [System.StringComparison]::OrdinalIgnoreCase)
     $settingsValid = [string]::Equals(
@@ -108,6 +136,7 @@ function Get-ConsumerTaskAudit {
         working_directory = if ($action.Count -eq 1) { [string]$action[0].WorkingDirectory } else { '' }
         interval = $intervalText
         user_id = [string]$task.Principal.UserId
+        user_sid = $taskSid
         multiple_instances = [string]$task.Settings.MultipleInstances
         start_when_available = [bool]$task.Settings.StartWhenAvailable
         disallow_start_on_batteries = [bool]$task.Settings.DisallowStartIfOnBatteries
