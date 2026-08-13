@@ -14,6 +14,7 @@ from services.xinao_perpetual_world_compute.reality_migration import (
     ActiveChildProcessError,
     DestinationConflictError,
     RealityMigrationError,
+    RetirementBlockedError,
     SourceTreeChangedError,
     inventory_live_reality,
     migrate_live_reality_copy_first,
@@ -22,6 +23,7 @@ from services.xinao_perpetual_world_compute.reality_migration import (
     restore_retired_mixed_live_reality,
     retire_mixed_live_reality,
     transform_research_source,
+    validate_retired_mixed_live_absence,
     validate_retirement_runtime_bindings,
 )
 
@@ -1114,6 +1116,214 @@ def _stop_fixture_controllers(controllers: list[subprocess.Popen[bytes]]) -> Non
 
 def _canonical_test_json(value: object) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def _write_sealed_retirement_receipt(path: Path, value: object) -> str:
+    raw = _canonical_test_json(value)
+    _write(path, raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    _write(path.with_suffix(".sha256"), f"{digest}  {path.name}\n".encode("ascii"))
+    return digest
+
+
+def _make_retired_live_absence_fixture(tmp_path: Path) -> tuple[Path, Path, dict]:
+    repo = _make_repo(tmp_path / "repo")
+    source = repo / "xinao" / "reality" / "live"
+    receipt_root = tmp_path / "retirement"
+    inventory = reality_migration_module._inventory_live_root(source, required=True)
+    retirement_id = hashlib.sha256(
+        _canonical_test_json(
+            {
+                "canonical_repo": str(repo.resolve()),
+                "source_tree_sha256": inventory["source_tree_sha256"],
+            }
+        )
+    ).hexdigest()
+    bundle_root = receipt_root / "exact-source" / inventory["source_tree_sha256"]
+    bundle = reality_migration_module._copy_exact_source_bundle(
+        source,
+        inventory=inventory,
+        bundle_root=bundle_root,
+    )
+    quarantine = source.parent / f".live.retiring-{retirement_id}"
+    prepared = {
+        "schema": reality_migration_module.RETIREMENT_PREPARED_SCHEMA,
+        "status": "PREPARED",
+        "retirement_id": retirement_id,
+        "canonical_repo": str(repo.resolve()),
+        "source_path": str(source.resolve()),
+        "quarantine_path": str(quarantine.resolve(strict=False)),
+        "source_inventory": inventory,
+        "exact_source_bundle": bundle,
+        "legacy_start_prepare_and_unadopted_recover_require_explicit_restore": True,
+    }
+    prepared_path = receipt_root / f"prepared-{retirement_id}.json"
+    prepared_sha256 = _write_sealed_retirement_receipt(prepared_path, prepared)
+    post_rename_runtime = {"active": [], "stopped": []}
+    authorization = {
+        "schema": reality_migration_module.RETIREMENT_DELETE_AUTHORIZED_SCHEMA,
+        "status": "DELETE_AUTHORIZED",
+        "retirement_id": retirement_id,
+        "prepared_receipt_path": str(prepared_path.resolve()),
+        "prepared_receipt_sha256": prepared_sha256,
+        "source_inventory_sha256": hashlib.sha256(_canonical_test_json(inventory)).hexdigest(),
+        "post_rename_runtime_acceptance": post_rename_runtime,
+        "active_consumer_readback": {
+            "schema": reality_migration_module.RETIREMENT_ACTIVE_CONSUMER_READBACK_SCHEMA,
+            "status": "ACCEPTED",
+            "consumer_count": 0,
+            "consumers": [],
+        },
+    }
+    authorization_path = receipt_root / f"delete-authorized-{retirement_id}.json"
+    authorization_sha256 = _write_sealed_retirement_receipt(authorization_path, authorization)
+    completed = {
+        "schema": reality_migration_module.RETIREMENT_COMPLETED_SCHEMA,
+        "status": "COMPLETED",
+        "retirement_id": retirement_id,
+        "canonical_repo": str(repo.resolve()),
+        "prepared_receipt_path": str(prepared_path.resolve()),
+        "prepared_receipt_sha256": prepared_sha256,
+        "delete_authorized_receipt_path": str(authorization_path.resolve()),
+        "delete_authorized_receipt_sha256": authorization_sha256,
+        "source_path": str(source.resolve()),
+        "source_absent": True,
+        "quarantine_absent": True,
+        "source_inventory": inventory,
+        "exact_source_bundle": bundle,
+        "post_rename_runtime_acceptance": post_rename_runtime,
+        "legacy_start_prepare_and_unadopted_recover_require_explicit_restore": True,
+    }
+    completed_path = receipt_root / f"completed-{retirement_id}.json"
+    completed_sha256 = _write_sealed_retirement_receipt(completed_path, completed)
+    current = {
+        **completed,
+        "completed_receipt_path": str(completed_path.resolve()),
+        "completed_receipt_sha256": completed_sha256,
+    }
+    current_path = receipt_root / "current.json"
+    _write(current_path, _canonical_test_json(current))
+    shutil.rmtree(source)
+    return repo, current_path, current
+
+
+def test_missing_canonical_live_still_fails_closed_without_retirement_proof(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    live_target = tmp_path / "runtime" / "live"
+    compute_target = tmp_path / "runtime" / "compute"
+
+    with pytest.raises(RealityMigrationError, match="canonical live root"):
+        migrate_live_reality_copy_first(
+            repo,
+            live_reality_root=live_target,
+            world_compute_root=compute_target,
+        )
+
+    assert not live_target.exists()
+    assert not compute_target.exists()
+
+
+def test_retired_canonical_live_absence_builds_empty_legacy_compatibility_layer(
+    tmp_path: Path,
+) -> None:
+    repo, current_path, _current = _make_retired_live_absence_fixture(tmp_path)
+    workspace = tmp_path / "workspaces" / "world-01"
+    workspace.mkdir(parents=True)
+    live_target = tmp_path / "runtime" / "live"
+    compute_target = tmp_path / "runtime" / "compute"
+
+    proof = validate_retired_mixed_live_absence(
+        repo,
+        current_pointer_path=current_path,
+    )
+    result = migrate_live_reality_copy_first(
+        repo,
+        live_reality_root=live_target,
+        world_compute_root=compute_target,
+        workspace_roots={"world-01": workspace},
+        retired_canonical_live_current_path=current_path,
+    )
+    manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
+    base_manifest = json.loads(
+        Path(manifest["base_bundle"]["manifest_path"]).read_text(encoding="utf-8")
+    )
+    canonical_live_manifest = json.loads(
+        Path(manifest["canonical_live_bundle"]["manifest_path"]).read_text(encoding="utf-8")
+    )
+
+    assert result["mode"] == "copy_first_retired_canonical_live_absent"
+    assert result["retired_canonical_live_absence"] == proof
+    assert manifest["canonical_inventory"]["exists"] is False
+    assert manifest["canonical_inventory"]["counts"] == {}
+    assert canonical_live_manifest["entries"] == []
+    assert base_manifest["entries"] == []
+    assert manifest["retired_canonical_live_absence"]["legacy_bytes_mounted"] is False
+    assert not (repo / "xinao" / "reality" / "live").exists()
+    assert not list(live_target.rglob("analysis.py"))
+    assert not list(compute_target.rglob("analysis.py"))
+    assert (
+        readback_live_reality_migration(
+            Path(result["manifest_path"]),
+            expected_manifest_sha256=result["manifest_sha256"],
+        )["status"]
+        == "verified"
+    )
+
+
+def test_retired_canonical_live_rejects_drifted_current_projection_before_copy(
+    tmp_path: Path,
+) -> None:
+    repo, current_path, current = _make_retired_live_absence_fixture(tmp_path)
+    current["status"] = "PREPARED"
+    _write(current_path, _canonical_test_json(current))
+    live_target = tmp_path / "runtime" / "live"
+    compute_target = tmp_path / "runtime" / "compute"
+
+    with pytest.raises(RetirementBlockedError, match="projection drifted"):
+        migrate_live_reality_copy_first(
+            repo,
+            live_reality_root=live_target,
+            world_compute_root=compute_target,
+            retired_canonical_live_current_path=current_path,
+        )
+
+    assert not live_target.exists()
+    assert not compute_target.exists()
+
+
+def test_retired_canonical_live_rejects_source_reappearance_before_destinations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, current_path, current = _make_retired_live_absence_fixture(tmp_path)
+    source = repo / "xinao" / "reality" / "live"
+    original_inventory = reality_migration_module._inventory_live_root
+
+    def observe_reappearance(path: Path, *, required: bool) -> dict:
+        if Path(path).resolve(strict=False) == source.resolve(strict=False) and not required:
+            return dict(current["source_inventory"])
+        return original_inventory(path, required=required)
+
+    monkeypatch.setattr(
+        reality_migration_module,
+        "_inventory_live_root",
+        observe_reappearance,
+    )
+    live_target = tmp_path / "runtime" / "live"
+    compute_target = tmp_path / "runtime" / "compute"
+
+    with pytest.raises(SourceTreeChangedError, match="appeared after absence validation"):
+        migrate_live_reality_copy_first(
+            repo,
+            live_reality_root=live_target,
+            world_compute_root=compute_target,
+            retired_canonical_live_current_path=current_path,
+        )
+
+    assert not live_target.exists()
+    assert not compute_target.exists()
 
 
 def test_retirement_preserves_exact_source_and_is_idempotent(

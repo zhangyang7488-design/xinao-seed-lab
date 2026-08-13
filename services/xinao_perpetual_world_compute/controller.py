@@ -113,6 +113,9 @@ DEFAULT_WORLD_TURN_CONCURRENCY_LIMIT = 4
 DEFAULT_WORLD_TURN_QUOTA_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_world_turn_quota")
 DEFAULT_XINAO_LIVE_REALITY_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\xinao\live-reality")
 DEFAULT_XINAO_WORLD_COMPUTE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\xinao\world-compute")
+DEFAULT_XINAO_MIXED_LIVE_RETIREMENT_CURRENT = Path(
+    r"D:\XINAO_RESEARCH_RUNTIME\xinao\mixed-live-retirement\current.json"
+)
 DEFAULT_LOGICAL_ROOT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_logical_root")
 FROZEN_LOGICAL_ROOT_SEED_RELATIVE = Path("S_CONTROL_INPUTS") / "XINAO_ROOT_WORLD"
 ACCOUNT_SLOTS = ("A", "C")
@@ -4027,12 +4030,16 @@ def prepare_reality_migration(args: argparse.Namespace) -> dict[str, Any]:
                     raise PerpetualRuntimeError("REALITY_MIGRATION_VALIDATOR_IMPORT_FAILED")
                 reality_module = importlib.util.module_from_spec(reality_spec)
                 reality_spec.loader.exec_module(reality_module)
+                retired_current_path = None
+                if not (source_repo / "xinao" / "reality" / "live").exists():
+                    retired_current_path = resolve_path(DEFAULT_XINAO_MIXED_LIVE_RETIREMENT_CURRENT)
                 migration = reality_module.migrate_live_reality_copy_first(
                     source_repo,
                     live_reality_root=live_reality_root,
                     world_compute_root=compute_root,
                     workspace_roots=workspace_roots,
                     active_child_pids=live,
+                    retired_canonical_live_current_path=retired_current_path,
                 )
             except Exception as exc:
                 raise PerpetualRuntimeError(
@@ -4061,6 +4068,8 @@ def prepare_reality_migration(args: argparse.Namespace) -> dict[str, Any]:
                 "migration_manifest_path": migration["manifest_path"],
                 "migration_manifest_sha256": migration["manifest_sha256"],
                 "migration_id": migration["migration_id"],
+                "migration_mode": migration["mode"],
+                "retired_canonical_live_absence": migration["retired_canonical_live_absence"],
                 "source_preserved": migration["source_preserved"],
                 "run_config_changed": False,
                 "current_pointer_changed": False,
@@ -4451,6 +4460,9 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     live_reality_root = resolve_path(args.live_reality_root)
     world_compute_root = resolve_path(args.world_compute_root) / run_id
     try:
+        retired_current_path = None
+        if not (source_repo / "xinao" / "reality" / "live").exists():
+            retired_current_path = resolve_path(DEFAULT_XINAO_MIXED_LIVE_RETIREMENT_CURRENT)
         migration_result = reality_module.migrate_live_reality_copy_first(
             source_repo,
             live_reality_root=live_reality_root,
@@ -4460,6 +4472,7 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
                 for spec in [*branch_specs, root_spec]
             },
             active_child_pids=(),
+            retired_canonical_live_current_path=retired_current_path,
         )
     except Exception as exc:
         raise PerpetualRuntimeError(
@@ -4526,6 +4539,10 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         "reality_migration_manifest_path": migration_result["manifest_path"],
         "reality_migration_manifest_sha256": migration_result["manifest_sha256"],
         "reality_migration_id": migration_result["migration_id"],
+        "reality_migration_mode": migration_result["mode"],
+        "reality_migration_retired_canonical_live_absence": migration_result[
+            "retired_canonical_live_absence"
+        ],
         "world_turn_concurrency_limit": DEFAULT_WORLD_TURN_CONCURRENCY_LIMIT,
         "world_turn_quota_root": str(DEFAULT_WORLD_TURN_QUOTA_ROOT),
         "body_boundary": {

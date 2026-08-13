@@ -52,6 +52,7 @@ EXACT_SOURCE_BUNDLE_SCHEMA = "xinao.reality-live-exact-source-bundle.v1"
 RETIREMENT_PREPARED_SCHEMA = "xinao.reality-live-retirement-prepared.v1"
 RETIREMENT_DELETE_AUTHORIZED_SCHEMA = "xinao.reality-live-retirement-delete-authorized.v1"
 RETIREMENT_COMPLETED_SCHEMA = "xinao.reality-live-retirement-completed.v1"
+RETIRED_CANONICAL_LIVE_ABSENCE_SCHEMA = "xinao.reality-live-retired-absence-proof.v1"
 RETIREMENT_CONSUMER_ABSENCE_SCHEMA = "xinao.reality-live-consumer-absence.v1"
 RETIREMENT_ACTIVE_CONSUMER_READBACK_SCHEMA = (
     "xinao.reality-live-retirement-active-consumer-readback.v1"
@@ -1101,6 +1102,7 @@ def migrate_live_reality_copy_first(
     workspace_roots: Mapping[str, Path] | None = None,
     active_child_pids: Mapping[str, int | None] | Iterable[int | None] = (),
     expected_source_tree_sha256: str | None = None,
+    retired_canonical_live_current_path: Path | None = None,
 ) -> dict[str, Any]:
     """Copy and verify a mixed live tree without ever deleting its source.
 
@@ -1116,14 +1118,30 @@ def migrate_live_reality_copy_first(
 
     assert_no_active_child_pids(active_child_pids)
     repo = _resolve_existing_directory(canonical_repo, label="canonical repository")
-    canonical_live = _resolve_existing_directory(repo / LIVE_RELATIVE, label="canonical live root")
+    canonical_live = repo / LIVE_RELATIVE
+    retired_canonical_live_absence: dict[str, Any] | None = None
+    if retired_canonical_live_current_path is None:
+        canonical_live = _resolve_existing_directory(canonical_live, label="canonical live root")
+        canonical_inventory = _inventory_live_root(canonical_live, required=True)
+        migration_mode = "copy_first_source_preserving"
+    else:
+        retired_canonical_live_absence = validate_retired_mixed_live_absence(
+            repo,
+            current_pointer_path=retired_canonical_live_current_path,
+        )
+        canonical_live = canonical_live.resolve(strict=False)
+        canonical_inventory = _inventory_live_root(canonical_live, required=False)
+        if canonical_inventory["exists"] is not False:
+            raise SourceTreeChangedError(
+                "retired canonical live source appeared after absence validation"
+            )
+        migration_mode = "copy_first_retired_canonical_live_absent"
     workspaces = _safe_workspace_mapping(workspace_roots)
     live_target = _resolve_destination(live_reality_root, label="live reality destination")
     compute_target = _resolve_destination(world_compute_root, label="world compute destination")
     source_roots = [repo, *workspaces.values()]
     _assert_disjoint(source_roots, [live_target, compute_target])
 
-    canonical_inventory = _inventory_live_root(canonical_live, required=True)
     if expected_source_tree_sha256 is not None:
         expected = expected_source_tree_sha256.casefold()
         if not _SHA256_RE.fullmatch(expected):
@@ -1684,8 +1702,13 @@ def migrate_live_reality_copy_first(
             }
         )
 
-    post_canonical = _inventory_live_root(canonical_live, required=True)
-    if post_canonical["source_tree_sha256"] != canonical_inventory["source_tree_sha256"]:
+    post_canonical = _inventory_live_root(
+        canonical_live, required=retired_canonical_live_absence is None
+    )
+    if (
+        post_canonical["exists"] != canonical_inventory["exists"]
+        or post_canonical["source_tree_sha256"] != canonical_inventory["source_tree_sha256"]
+    ):
         raise SourceTreeChangedError("canonical live tree changed during migration")
     for key, root in workspaces.items():
         observed = _inventory_live_root(root / LIVE_RELATIVE, required=False)
@@ -1699,8 +1722,19 @@ def migrate_live_reality_copy_first(
         [
             {
                 "canonical_repo": str(repo),
+                "mode": migration_mode,
                 "canonical_source_tree_sha256": canonical_inventory["source_tree_sha256"],
                 "canonical_payload_tree_sha256": canonical_inventory["payload_tree_sha256"],
+                "retired_canonical_live_current_sha256": (
+                    retired_canonical_live_absence["current_pointer_sha256"]
+                    if retired_canonical_live_absence is not None
+                    else None
+                ),
+                "retired_canonical_live_completed_sha256": (
+                    retired_canonical_live_absence["completed_receipt_sha256"]
+                    if retired_canonical_live_absence is not None
+                    else None
+                ),
                 "base_payload_tree_sha256": base_payload_tree_sha256,
                 "live_reality_root": str(live_target),
                 "world_compute_root": str(compute_target),
@@ -1723,13 +1757,14 @@ def migrate_live_reality_copy_first(
     manifest = {
         "schema": MIGRATION_SCHEMA,
         "migration_id": migration_identity,
-        "mode": "copy_first_source_preserving",
+        "mode": migration_mode,
         "source_deletion_permitted": False,
         "logical_complete_clone_deletions_preserved": True,
         "lineage_effective_view_required_for_runtime": True,
         "canonical_repo": str(repo),
         "canonical_live_root": str(canonical_live),
         "canonical_inventory": _inventory_identity(canonical_inventory),
+        "retired_canonical_live_absence": retired_canonical_live_absence,
         "live_reality_root": str(live_target),
         "live_reality_root_runtime_bindable": False,
         "world_compute_root": str(compute_target),
@@ -1779,6 +1814,7 @@ def migrate_live_reality_copy_first(
     return {
         "status": "verified",
         "schema": MIGRATION_SCHEMA,
+        "mode": migration_mode,
         "migration_id": migration_identity,
         "manifest_path": str(manifest_path),
         "manifest_sha256": manifest_sha256,
@@ -1823,6 +1859,7 @@ def migrate_live_reality_copy_first(
         "private_live_dispositions": private_live_dispositions,
         "copy_count": len(copies),
         "source_preserved": True,
+        "retired_canonical_live_absence": retired_canonical_live_absence,
         "readback": readback,
     }
 
@@ -1867,6 +1904,11 @@ def readback_live_reality_migration(
         raise RealityMigrationError(f"migration manifest is invalid JSON: {path}") from exc
     if manifest.get("schema") != MIGRATION_SCHEMA:
         raise RealityMigrationError(f"migration manifest schema mismatch: {path}")
+    if manifest.get("mode") not in {
+        "copy_first_source_preserving",
+        "copy_first_retired_canonical_live_absent",
+    }:
+        raise RealityMigrationError(f"migration manifest mode mismatch: {path}")
     if manifest.get("source_deletion_permitted") is not False:
         raise RealityMigrationError("migration manifest does not preserve the no-delete boundary")
 
@@ -2169,9 +2211,26 @@ def readback_live_reality_migration(
 
     if verify_sources:
         canonical_live = Path(str(manifest["canonical_live_root"]))
-        current = _inventory_live_root(canonical_live, required=True)
+        retired_absence = manifest.get("retired_canonical_live_absence")
+        if manifest["mode"] == "copy_first_retired_canonical_live_absent":
+            if not isinstance(retired_absence, Mapping):
+                raise RealityMigrationError("retired canonical live absence proof is missing")
+            current_proof = validate_retired_mixed_live_absence(
+                Path(str(manifest["canonical_repo"])),
+                current_pointer_path=Path(str(retired_absence["current_pointer_path"])),
+            )
+            if current_proof != dict(retired_absence):
+                raise SourceTreeChangedError("retired canonical live absence proof changed")
+            current = _inventory_live_root(canonical_live, required=False)
+        else:
+            if retired_absence is not None:
+                raise RealityMigrationError(
+                    "present canonical live migration carries absence proof"
+                )
+            current = _inventory_live_root(canonical_live, required=True)
         expected_tree = manifest["canonical_inventory"]["source_tree_sha256"]
-        if current["source_tree_sha256"] != expected_tree:
+        expected_exists = manifest["canonical_inventory"]["exists"]
+        if current["exists"] != expected_exists or current["source_tree_sha256"] != expected_tree:
             raise SourceTreeChangedError("canonical source tree changed after manifest creation")
         for overlay in manifest.get("workspace_overlays", []):
             source_live = Path(str(overlay["source_live_root"]))
@@ -2248,6 +2307,209 @@ def _verify_exact_source_bundle(
         for entry in expected_inventory["entries"]
     ]
     _verify_exact_payload_tree(bundle_root / "tree", records, label="exact source bundle")
+
+
+def _resolve_regular_retirement_file(path: Path, *, label: str) -> Path:
+    candidate = Path(path)
+    if not candidate.is_absolute() or not candidate.is_file():
+        raise RetirementBlockedError(f"{label} is not an absolute regular file: {candidate}")
+    _assert_no_reparse_chain(candidate, label=label)
+    return candidate.resolve(strict=True)
+
+
+def _read_canonical_retirement_mapping(path: Path, *, label: str) -> tuple[dict[str, Any], bytes]:
+    raw = path.read_bytes()
+    value = _read_json_mapping(path, label=label)
+    if raw != _canonical_json_bytes(value):
+        raise RetirementBlockedError(f"{label} bytes are not canonical: {path}")
+    return value, raw
+
+
+def validate_retired_mixed_live_absence(
+    canonical_repo: Path,
+    *,
+    current_pointer_path: Path,
+) -> dict[str, Any]:
+    """Prove that the legacy mixed-live donor is intentionally and durably absent."""
+
+    repo = _resolve_existing_directory(canonical_repo, label="canonical repository")
+    source = (repo / LIVE_RELATIVE).resolve(strict=False)
+    if os.path.lexists(source):
+        raise RetirementBlockedError("retired canonical live source is present")
+
+    current_path = _resolve_regular_retirement_file(
+        current_pointer_path, label="retirement current pointer"
+    )
+    if current_path.name != "current.json":
+        raise RetirementBlockedError("retirement current pointer name mismatch")
+    receipt_root = current_path.parent
+    current, current_raw = _read_canonical_retirement_mapping(
+        current_path, label="retirement current pointer"
+    )
+    current_sha256 = _sha256(current_raw)
+
+    retirement_id = current.get("retirement_id")
+    completed_reference = current.get("completed_receipt_path")
+    completed_reference_sha256 = current.get("completed_receipt_sha256")
+    if (
+        not isinstance(retirement_id, str)
+        or not _SHA256_RE.fullmatch(retirement_id)
+        or not isinstance(completed_reference, str)
+        or not isinstance(completed_reference_sha256, str)
+        or not _SHA256_RE.fullmatch(completed_reference_sha256)
+    ):
+        raise RetirementBlockedError("retirement current pointer identity mismatch")
+    completed_path = _resolve_regular_retirement_file(
+        Path(completed_reference), label="completed retirement receipt"
+    )
+    expected_completed_path = receipt_root / f"completed-{retirement_id}.json"
+    if completed_path != expected_completed_path:
+        raise RetirementBlockedError("completed retirement receipt path mismatch")
+    completed, completed_raw = _read_canonical_retirement_mapping(
+        completed_path, label="completed retirement receipt"
+    )
+    completed_sha256 = _sha256(completed_raw)
+    if (
+        completed_sha256 != completed_reference_sha256
+        or _retirement_receipt_digest(completed_path) != completed_sha256
+    ):
+        raise RetirementBlockedError("completed retirement receipt hash mismatch")
+    projected_completed = dict(current)
+    projected_completed.pop("completed_receipt_path", None)
+    projected_completed.pop("completed_receipt_sha256", None)
+    if projected_completed != completed:
+        raise RetirementBlockedError("retirement current projection drifted from completed receipt")
+
+    source_inventory = completed.get("source_inventory")
+    bundle = completed.get("exact_source_bundle")
+    if not isinstance(source_inventory, Mapping) or not isinstance(bundle, Mapping):
+        raise RetirementBlockedError("completed retirement source evidence is invalid")
+    source_tree_sha256 = source_inventory.get("source_tree_sha256")
+    payload_tree_sha256 = source_inventory.get("payload_tree_sha256")
+    if (
+        not isinstance(source_tree_sha256, str)
+        or not _SHA256_RE.fullmatch(source_tree_sha256)
+        or not isinstance(payload_tree_sha256, str)
+        or not _SHA256_RE.fullmatch(payload_tree_sha256)
+    ):
+        raise RetirementBlockedError("completed retirement inventory identity is invalid")
+    expected_bundle_root = receipt_root / "exact-source" / source_tree_sha256
+    expected_bundle_manifest = expected_bundle_root / "SOURCE_MANIFEST.json"
+    if (
+        completed.get("schema") != RETIREMENT_COMPLETED_SCHEMA
+        or completed.get("status") != "COMPLETED"
+        or completed.get("retirement_id") != retirement_id
+        or Path(str(completed.get("canonical_repo", ""))).resolve(strict=False) != repo
+        or Path(str(completed.get("source_path", ""))).resolve(strict=False) != source
+        or completed.get("source_absent") is not True
+        or completed.get("quarantine_absent") is not True
+        or completed.get("legacy_start_prepare_and_unadopted_recover_require_explicit_restore")
+        is not True
+        or source_inventory.get("schema") != INVENTORY_SCHEMA
+        or source_inventory.get("exists") is not True
+        or Path(str(source_inventory.get("live_root", ""))).resolve(strict=False) != source
+        or Path(str(bundle.get("root", ""))).resolve(strict=False) != expected_bundle_root
+        or Path(str(bundle.get("manifest_path", ""))).resolve(strict=False)
+        != expected_bundle_manifest
+        or bundle.get("source_tree_sha256") != source_tree_sha256
+        or bundle.get("payload_tree_sha256") != payload_tree_sha256
+    ):
+        raise RetirementBlockedError("completed retirement identity mismatch")
+
+    prepared_reference = completed.get("prepared_receipt_path")
+    prepared_reference_sha256 = completed.get("prepared_receipt_sha256")
+    authorization_reference = completed.get("delete_authorized_receipt_path")
+    authorization_reference_sha256 = completed.get("delete_authorized_receipt_sha256")
+    if not all(
+        isinstance(value, str) and _SHA256_RE.fullmatch(value)
+        for value in (prepared_reference_sha256, authorization_reference_sha256)
+    ) or not all(isinstance(value, str) for value in (prepared_reference, authorization_reference)):
+        raise RetirementBlockedError("completed retirement phase references are invalid")
+
+    prepared_path = _resolve_regular_retirement_file(
+        Path(str(prepared_reference)), label="prepared retirement receipt"
+    )
+    authorization_path = _resolve_regular_retirement_file(
+        Path(str(authorization_reference)), label="delete-authorized retirement receipt"
+    )
+    if (
+        prepared_path != receipt_root / f"prepared-{retirement_id}.json"
+        or authorization_path != receipt_root / f"delete-authorized-{retirement_id}.json"
+    ):
+        raise RetirementBlockedError("retirement phase receipt path mismatch")
+    prepared, prepared_raw = _read_canonical_retirement_mapping(
+        prepared_path, label="prepared retirement receipt"
+    )
+    authorization, authorization_raw = _read_canonical_retirement_mapping(
+        authorization_path, label="delete-authorized retirement receipt"
+    )
+    prepared_sha256 = _sha256(prepared_raw)
+    authorization_sha256 = _sha256(authorization_raw)
+    if (
+        prepared_sha256 != prepared_reference_sha256
+        or _retirement_receipt_digest(prepared_path) != prepared_sha256
+        or authorization_sha256 != authorization_reference_sha256
+        or _retirement_receipt_digest(authorization_path) != authorization_sha256
+    ):
+        raise RetirementBlockedError("retirement phase receipt hash mismatch")
+    expected_quarantine = source.parent / f".live.retiring-{retirement_id}"
+    if (
+        prepared.get("schema") != RETIREMENT_PREPARED_SCHEMA
+        or prepared.get("status") != "PREPARED"
+        or prepared.get("retirement_id") != retirement_id
+        or Path(str(prepared.get("canonical_repo", ""))).resolve(strict=False) != repo
+        or Path(str(prepared.get("source_path", ""))).resolve(strict=False) != source
+        or Path(str(prepared.get("quarantine_path", ""))).resolve(strict=False)
+        != expected_quarantine
+        or prepared.get("source_inventory") != dict(source_inventory)
+        or prepared.get("exact_source_bundle") != dict(bundle)
+        or prepared.get("legacy_start_prepare_and_unadopted_recover_require_explicit_restore")
+        is not True
+    ):
+        raise RetirementBlockedError("prepared retirement identity mismatch")
+    active_readback = authorization.get("active_consumer_readback")
+    if (
+        authorization.get("schema") != RETIREMENT_DELETE_AUTHORIZED_SCHEMA
+        or authorization.get("status") != "DELETE_AUTHORIZED"
+        or authorization.get("retirement_id") != retirement_id
+        or authorization.get("prepared_receipt_path") != str(prepared_path)
+        or authorization.get("prepared_receipt_sha256") != prepared_sha256
+        or authorization.get("source_inventory_sha256")
+        != _sha256(_canonical_json_bytes(dict(source_inventory)))
+        or not isinstance(active_readback, Mapping)
+        or active_readback.get("schema") != RETIREMENT_ACTIVE_CONSUMER_READBACK_SCHEMA
+        or active_readback.get("status") != "ACCEPTED"
+        or authorization.get("post_rename_runtime_acceptance")
+        != completed.get("post_rename_runtime_acceptance")
+    ):
+        raise RetirementBlockedError("delete authorization identity mismatch")
+
+    _verify_exact_source_bundle(
+        expected_bundle_root,
+        expected_inventory=source_inventory,
+        expected_manifest_sha256=str(bundle["manifest_sha256"]),
+    )
+    if os.path.lexists(source) or os.path.lexists(expected_quarantine):
+        raise RetirementBlockedError("retired source or quarantine regained presence")
+    if current_path.read_bytes() != current_raw:
+        raise RetirementBlockedError("retirement current pointer changed during validation")
+    return {
+        "schema": RETIRED_CANONICAL_LIVE_ABSENCE_SCHEMA,
+        "retirement_id": retirement_id,
+        "canonical_repo": str(repo),
+        "source_path": str(source),
+        "source_absent": True,
+        "quarantine_absent": True,
+        "current_pointer_path": str(current_path),
+        "current_pointer_sha256": current_sha256,
+        "completed_receipt_path": str(completed_path),
+        "completed_receipt_sha256": completed_sha256,
+        "exact_source_bundle_root": str(expected_bundle_root),
+        "exact_source_manifest_sha256": str(bundle["manifest_sha256"]),
+        "retired_source_tree_sha256": source_tree_sha256,
+        "retired_payload_tree_sha256": payload_tree_sha256,
+        "legacy_bytes_mounted": False,
+    }
 
 
 def _copy_exact_source_bundle(
@@ -3503,5 +3765,6 @@ __all__ = [
     "retire_mixed_live_reality",
     "restore_retired_mixed_live_reality",
     "transform_research_source",
+    "validate_retired_mixed_live_absence",
     "validate_retirement_runtime_bindings",
 ]

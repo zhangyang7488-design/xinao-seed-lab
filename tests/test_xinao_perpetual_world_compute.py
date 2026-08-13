@@ -3695,6 +3695,8 @@ def test_prepare_reality_migration_is_offline_per_run_and_preserves_control_stat
             "manifest_path": str(manifest),
             "manifest_sha256": "d" * 64,
             "migration_id": "m1",
+            "mode": "copy_first_source_preserving",
+            "retired_canonical_live_absence": None,
             "source_preserved": True,
         }
 
@@ -3742,6 +3744,9 @@ def test_prepare_reality_migration_is_offline_per_run_and_preserves_control_stat
         lineage_id: workspace.resolve() for lineage_id, workspace in workspaces.items()
     }
     assert call["active_child_pids"] == {}
+    assert call["retired_canonical_live_current_path"] == (
+        controller_module.DEFAULT_XINAO_MIXED_LIVE_RETIREMENT_CURRENT.resolve()
+    )
     assert result["source"] == {
         "root": str(source_repo.resolve()),
         "current_head": "f" * 40,
