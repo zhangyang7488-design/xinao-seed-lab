@@ -255,6 +255,168 @@ def test_live_protocol_extractors_require_real_compaction_and_hook_shapes() -> N
     assert 'wait_notification("thread/compacted"' not in HARNESS_PATH.read_text(encoding="utf-8")
 
 
+def test_fresh_live_probes_switch_only_fabric_root_and_hide_referents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _load_harness()
+    enabled_root = tmp_path / "enabled-fabric"
+    empty_root = tmp_path / "empty-fabric"
+    account_home = tmp_path / "account-home"
+    source_env = {"PATH": "fixture-path", "FAKE_AMBIENT_SECRET": "must-not-cross"}
+    enabled_env = harness._existing_account_environment(
+        source_env, codex_home=account_home, fabric_root=enabled_root
+    )
+    empty_env = harness._existing_account_environment(
+        source_env, codex_home=account_home, fabric_root=empty_root
+    )
+    anchor = "ANCHOR-FIXTURE"
+    old_referent = "OLD-REFERENT-MUST-NOT-ENTER-PROMPT"
+    current_referent = "CURRENT-REFERENT-MUST-NOT-ENTER-PROMPT"
+    prompt = f"For hidden anchor {anchor}, reply with the current referent token only."
+    protocol: list[tuple[str, str]] = []
+    prompts: list[tuple[str, str]] = []
+
+    class FakeClient:
+        def __init__(self, command, *, cwd, environ):
+            self.root = Path(environ["CODEX_CONTEXT_FABRIC_ROOT"])
+            self.label = "empty" if self.root == empty_root else "enabled"
+            self.pid = 3101 if self.label == "empty" else 3102
+            self.thread_id = f"thread-{self.label}"
+            self.messages: list[dict[str, object]] = []
+            self.sent_methods: list[str] = []
+            self.stderr_receipt = {"line_count": 0, "sha256": ""}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def initialize(self, *, timeout):
+            protocol.append((self.label, "initialize"))
+
+        def request(self, method, params, *, timeout):
+            protocol.append((self.label, method))
+            self.sent_methods.append(method)
+            if method == "thread/start":
+                return {"thread": {"id": self.thread_id}}
+            if method == "thread/name/set":
+                self.messages.append(
+                    {
+                        "method": "thread/name/updated",
+                        "params": {
+                            "threadId": self.thread_id,
+                            "threadName": params["name"],
+                        },
+                    }
+                )
+                return {}
+            if method == "turn/start":
+                turn_prompt = params["input"][0]["text"]
+                prompts.append((self.label, turn_prompt))
+                response = current_referent if self.label == "enabled" else "NO-MATCH"
+                self.messages.extend(
+                    [
+                        {
+                            "method": "item/completed",
+                            "params": {"item": {"type": "agentMessage", "text": response}},
+                        },
+                        {
+                            "method": "turn/completed",
+                            "params": {
+                                "threadId": self.thread_id,
+                                "turn": {"id": f"turn-{self.label}", "status": "completed"},
+                            },
+                        },
+                        {
+                            "method": "hook/completed",
+                            "params": {"run": {"eventName": "sessionStart"}},
+                        },
+                    ]
+                )
+                return {"turn": {"id": f"turn-{self.label}"}}
+            raise AssertionError(f"unexpected request: {method}")
+
+        def wait_notification(self, method, *, timeout, predicate=None):
+            protocol.append((self.label, f"wait:{method}"))
+            for message in self.messages:
+                params = message.get("params", {})
+                if message.get("method") == method and (predicate is None or predicate(params)):
+                    return message
+            raise AssertionError(f"missing notification: {method}")
+
+    monkeypatch.setattr(harness, "_AppServerClient", FakeClient)
+    steps: list[str] = []
+    empty = harness._run_fresh_live_probe(
+        ["fixture"],
+        working_dir=tmp_path,
+        environ=empty_env,
+        model="fixture-model",
+        prompt=prompt,
+        thread_name="fresh-empty",
+        timeout=30,
+        step_prefix="fresh_empty",
+        enter_step=steps.append,
+    )
+    enabled = harness._run_fresh_live_probe(
+        ["fixture"],
+        working_dir=tmp_path,
+        environ=enabled_env,
+        model="fixture-model",
+        prompt=prompt,
+        thread_name="fresh-enabled",
+        timeout=30,
+        step_prefix="fresh_enabled",
+        enter_step=steps.append,
+    )
+
+    assert prompts == [("empty", prompt), ("enabled", prompt)]
+    assert anchor in prompt and old_referent not in prompt and current_referent not in prompt
+    assert old_referent not in empty["text"] and current_referent not in empty["text"]
+    assert current_referent in enabled["text"] and old_referent not in enabled["text"]
+    assert empty["process_id"] != enabled["process_id"]
+    assert empty["thread_id"] != enabled["thread_id"]
+    assert steps == [
+        "fresh_empty_thread",
+        "fresh_empty_turn",
+        "fresh_empty_hook",
+        "fresh_enabled_thread",
+        "fresh_enabled_turn",
+        "fresh_enabled_hook",
+    ]
+    for label in ("empty", "enabled"):
+        sequence = [event for seen_label, event in protocol if seen_label == label]
+        assert sequence.index("thread/start") < sequence.index("turn/start")
+        assert sequence.index("turn/start") < sequence.index("wait:hook/completed")
+    tool_types = {"commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall"}
+    assert not tool_types.intersection(harness._item_types(empty["messages"]))
+    assert not tool_types.intersection(harness._item_types(enabled["messages"]))
+    assert "FAKE_AMBIENT_SECRET" not in empty_env
+    assert "FAKE_AMBIENT_SECRET" not in enabled_env
+
+
+def test_named_rollout_evidence_requires_three_exact_paths_without_opening_files() -> None:
+    harness = _load_harness()
+    thread_ids = {
+        "main": "thread-main",
+        "fresh_empty": "thread-empty",
+        "fresh_enabled": "thread-enabled",
+    }
+    paths = [f"2026/08/13/rollout-{thread_id}.jsonl" for thread_id in thread_ids.values()]
+
+    exact = harness._named_rollout_path_evidence(paths, thread_ids)
+    with_extra = harness._named_rollout_path_evidence(
+        [*paths, "2026/08/13/rollout-unrelated.jsonl"], thread_ids
+    )
+
+    assert exact["expected_named_test_rollouts"] == 3
+    assert exact["exact_named_test_rollouts_written"] == 3
+    assert exact["all_new_rollouts_match_named_threads"] is True
+    assert with_extra["exact_named_test_rollouts_written"] == 3
+    assert with_extra["all_new_rollouts_match_named_threads"] is False
+
+
 def test_live_sink_contract_rejects_unadmitted_credential_channels(tmp_path: Path) -> None:
     harness = _load_harness()
     contract = tmp_path / "sink.json"
@@ -520,6 +682,7 @@ sys.stdout.write('{{"continue":true}}\\n')
     source_home = tmp_path / "source-s-home"
     source_home.mkdir()
     fabric_root = tmp_path / "fabric"
+    empty_fabric_root = tmp_path / "empty-fabric"
     wrapper = tmp_path / "hook_sink_wrapper.py"
     harness._write_live_hook_wrapper(
         wrapper,
@@ -528,11 +691,13 @@ sys.stdout.write('{{"continue":true}}\\n')
         source_codex_home=source_home,
         fabric_root=fabric_root,
         working_dir=tmp_path,
+        additional_fabric_roots=(empty_fabric_root,),
     )
     wrapper_env = harness._minimal_windows_environment(os.environ)
     wrapper_env["OPENAI_API_KEY"] = "sk-fake-wrapper-auth"
     wrapper_env["CODEX_ACCESS_TOKEN"] = "fake-wrapper-access-token"
     wrapper_env["FAKE_AMBIENT_SECRET"] = "fake-wrapper-ambient"
+    wrapper_env["CODEX_CONTEXT_FABRIC_ROOT"] = str(empty_fabric_root.resolve())
     completed = subprocess.run(
         [sys.executable, "-I", "-B", str(wrapper)],
         input=json.dumps(
@@ -555,7 +720,22 @@ sys.stdout.write('{{"continue":true}}\\n')
     assert "CODEX_ACCESS_TOKEN" not in adapter_env
     assert "FAKE_AMBIENT_SECRET" not in adapter_env
     assert adapter_env["CODEX_HOME"] == str(source_home)
-    assert adapter_env["CODEX_CONTEXT_FABRIC_ROOT"] == str(fabric_root)
+    assert adapter_env["CODEX_CONTEXT_FABRIC_ROOT"] == str(empty_fabric_root.resolve())
+
+    wrapper_env["CODEX_CONTEXT_FABRIC_ROOT"] = str(tmp_path / "unadmitted-fabric")
+    unadmitted = subprocess.run(
+        [sys.executable, "-I", "-B", str(wrapper)],
+        input="{}",
+        cwd=tmp_path,
+        env=wrapper_env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert unadmitted.returncode == 0, unadmitted.stderr
+    fallback_env = json.loads(adapter_env_path.read_text(encoding="utf-8"))
+    assert fallback_env["CODEX_CONTEXT_FABRIC_ROOT"] == str(fabric_root.resolve())
 
 
 def test_post_eligibility_protocol_error_is_observed_failure_and_cli_exit_one(
@@ -820,7 +1000,8 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
     assert receipt["auth_content_read"] is False
     assert receipt["source_credentials_copied"] is False
     assert receipt["source_credentials_symlinked"] is False
-    assert receipt["existing_account_session_written"] is False
+    assert receipt["expected_named_test_rollouts"] == 3
+    assert receipt["exact_named_test_rollouts_written"] == 0
     evidence = receipt["cases"][0]["evidence"]
     assert evidence["auth_mode"] == "existing_b_home"
     assert evidence["protocol_step"] == "startup_hook"
@@ -853,8 +1034,11 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
     assert not (operation_root / "hook-sink.jsonl").exists()
     assert not (operation_root / "auth.json").exists()
     fabric_root = operation_root / "isolated-context-fabric"
+    empty_fabric_root = operation_root / "empty-control-context-fabric"
     assert (fabric_root / "context_fabric.sqlite3").is_file()
+    assert (empty_fabric_root / "context_fabric.sqlite3").is_file()
     assert harness.context_runtime.store_inventory(fabric_root)["events"] == 1
+    assert harness.context_runtime.store_inventory(empty_fabric_root)["events"] == 0
     assert harness._fabric_session_evidence(fabric_root, fixture_session)["event_count"] == 1
     assert "sk-fake-must-not-reach-existing-home-child" not in serialized
     assert "fake-access-token-must-not-reach-child" not in serialized
@@ -902,6 +1086,8 @@ def test_fabric_session_evidence_reads_only_bounded_metadata(tmp_path: Path) -> 
         "session_start_sources": ["startup", "compact", "resume"],
         "carrier_ids": ["s-account-b"],
         "all_rows_match_session": True,
+        "store_distinct_session_count": 1,
+        "store_contains_only_requested_session": True,
     }
 
 

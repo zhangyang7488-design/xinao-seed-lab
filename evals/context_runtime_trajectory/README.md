@@ -66,20 +66,24 @@ ambient variable is dropped. The harness never prints, copies, or writes the
 authentication value. The generated hook wrapper strips both admitted
 authentication variables and every other ambient variable again before
 starting the hook adapter; that child receives only the seven Windows runtime
-variables plus the S mount identity and isolated Fabric root.
+variables plus the S mount identity and the app-server-selected Fabric root.
+That selection is fail-closed to the two pre-resolved operation roots embedded
+in this run's wrapper; an arbitrary ambient path cannot be forwarded.
 
 The harness creates a fresh operation-scoped `CODEX_HOME`, config, hook
-registry, thread state, hook wrapper, hook log, and Context Fabric store. The
+registry, thread state, hook wrapper, hook log, and two Context Fabric stores.
+The enabled store carries the main trajectory into a fresh-thread probe; the
+separately initialized empty store is its control. The
 supplied S home is used only as the S mount identity inside the isolated hook
 child. If no environment-provided credential is available, live mode returns
 typed `ineligible` and exit code `3` instead of copying `auth.json`.
 
 After all prerequisites pass and before any app-server process starts, the
-harness explicitly initializes the operation-scoped Context Fabric, runs its
-full integrity verification, and records an empty-store inventory. This is a
-live setup step, not a hook responsibility: production hooks remain fail-open
-when a store is absent. Initialization failure produces exit code `1` with
-`protocol_step=fabric_initialize` and never starts a model.
+harness explicitly initializes both operation-scoped Context Fabric roots,
+runs their full integrity verification, and records two zero-event inventories.
+This is a live setup step, not a hook responsibility: production hooks remain
+fail-open when a store is absent. Initialization failure produces exit code
+`1` with `protocol_step=fabric_initialize` and never starts a model.
 
 An explicitly authorized run may instead use Account B's already configured
 account session without moving its credential:
@@ -105,15 +109,19 @@ reads, hashes, copies, links, or prints the credential. It observes only whether
 
 `existing_b_home` uses the already installed, trusted B hooks directly; it
 does not generate a temporary hook wrapper or hook log. Evidence comes from
-native `hook/completed` notifications and an independent readback of only the
-test session's events in the isolated Fabric store. The run creates one named,
-persisted test thread/rollout in B's normal session area. Success additionally
+native `hook/completed` notifications and independent readback of only the
+three test sessions' events in their selected Fabric stores. The run creates
+three named, persisted test thread/rollouts in B's normal session area: the
+main compact/resume thread, fresh empty control, and fresh enabled probe.
+Success additionally
 requires the non-secret `AGENTS.md`/`config.toml`/`hooks.json` fingerprints to
 remain unchanged, auth presence to remain available without reading its
-contents, and exactly one new rollout path to contain the returned thread id.
-The receipt states `existing_account_session_written=true`. A normal account
-token refresh is outside the configuration-stability assertion; an extra
-rollout or missing installed-hook/Fabric observation fails the live case.
+contents, and exactly one new rollout path to contain each returned thread id.
+The receipt states `expected_named_test_rollouts=3` and
+`exact_named_test_rollouts_written=3`; it hashes thread ids and matching paths
+without opening rollout contents. A normal account token refresh is outside the
+configuration-stability assertion; an extra rollout or missing
+installed-hook/Fabric observation fails the live case.
 
 Claim-eligible live success jointly observes:
 
@@ -130,11 +138,20 @@ The live case starts a persisted thread, runs two turns, requests native
 `thread/compact/start`, requires a `contextCompaction` item and
 the corresponding completed compaction turn plus `SessionStart(compact)`, runs
 a post-compact turn, then launches a different native process, performs
-`thread/resume`, and runs one more turn. Direct JSON-stdio
-calls to the hook adapter cannot satisfy that evidence bar. Success proves only
-that one bounded native trajectory survived; it does not isolate Context Fabric
-as the sole causal mechanism, prove permanent model uptake, or establish a
-longitudinal reduction in correction burden.
+`thread/resume`, and runs one more turn. It then launches two more native
+processes and persisted fresh threads, empty control first. Both receive the
+same short prompt containing only the hidden anchor, never the old or current
+referent. The empty thread selects the independently initialized empty Fabric;
+the enabled thread selects the main trajectory's Fabric. Both must observe
+`SessionStart(startup)` and expose zero tool items. The enabled response must
+contain the current token and not the obsolete token; the empty response must
+contain neither. Direct JSON-stdio calls to the hook adapter cannot satisfy
+that evidence bar.
+
+This is one ordered, bounded enabled-versus-empty intervention and response
+delta. It does not prove a permanent effect, repeated causal reliability,
+exclusive mechanism, cross-account/model generality, or longitudinal reduction
+in correction burden.
 
 Codex 0.147 emits the startup and resume `SessionStart` hook during the first
 turn on that process, not as completion of `thread/start` or `thread/resume`.
@@ -148,7 +165,9 @@ error type and a bounded `protocol_step` from: `fabric_initialize`,
 `hooks_trust`, `thread_start`,
 `startup_turn`, `startup_hook`, `correction_turn`, `compact_item`,
 `compact_turn`, `compact_hook`, `post_compact_turn`, `resume`, `resume_turn`,
-`resume_hook`, or `readback`.
+`resume_hook`, `fresh_empty_thread`, `fresh_empty_turn`, `fresh_empty_hook`,
+`fresh_enabled_thread`, `fresh_enabled_turn`, `fresh_enabled_hook`, or
+`readback`.
 
 Exit codes are `0` pass, `1` assertion or post-eligibility native-protocol
 failure, `2` usage or pre-protocol infrastructure failure, and `3` missing live

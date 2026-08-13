@@ -2,8 +2,9 @@
 
 ``contract`` is a deterministic, no-model preflight.  It proves bounded store,
 mount, rehydration, and non-authority predicates only.  ``live`` drives native
-Codex 0.147 through start, compact, and new-process resume while independently
-recording the operation-installed hook sink.  Missing native/auth/sink
+Codex 0.147 through start, compact, new-process resume, and a fresh enabled
+versus empty-store contrast while independently recording the installed hooks.
+Missing native/auth/sink
 prerequisites fail closed; contract evidence can never be promoted to a live
 behavior claim.
 """
@@ -40,6 +41,7 @@ EXIT_INFRASTRUCTURE_ERROR = 2
 EXIT_LIVE_INELIGIBLE = 3
 LIVE_HOOK_SINK_SCHEMA = "s.context_runtime_live_hook_sink.v1"
 LIVE_CLAIM_CLASS = "context_live_observed"
+_EXPECTED_NAMED_TEST_ROLLOUTS = 3
 _CODEX_VERSION_RE = re.compile(r"^codex-cli\s+(\d+\.\d+\.\d+)\s*$")
 _LIVE_AUTH_ENV_NAMES = ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN")
 _LIVE_PROTOCOL_STEPS = frozenset(
@@ -57,6 +59,12 @@ _LIVE_PROTOCOL_STEPS = frozenset(
         "resume",
         "resume_turn",
         "resume_hook",
+        "fresh_empty_thread",
+        "fresh_empty_turn",
+        "fresh_empty_hook",
+        "fresh_enabled_thread",
+        "fresh_enabled_turn",
+        "fresh_enabled_hook",
         "readback",
     }
 )
@@ -1008,7 +1016,8 @@ def _live_ineligible(
         "runtime_claim_allowed": False,
         "operation_root": str(root),
         "case_pattern": case_pattern,
-        "existing_account_session_written": False,
+        "expected_named_test_rollouts": _EXPECTED_NAMED_TEST_ROLLOUTS,
+        "exact_named_test_rollouts_written": 0,
         "auth_content_read": False,
         "source_credentials_copied": False,
         "source_credentials_symlinked": False,
@@ -1085,12 +1094,14 @@ def _live_failed(
     error: BaseException,
     protocol_step: str,
     auth_mode: str = "environment_isolated",
-    existing_account_session_written: bool = False,
+    exact_named_test_rollouts_written: int = 0,
     account_configuration_unchanged: bool | None = None,
     account_protection_before: Mapping[str, object] | None = None,
     account_protection_after: Mapping[str, object] | None = None,
+    named_rollout_evidence: Mapping[str, object] | None = None,
     protocol_trace: Sequence[str] = (),
     initial_fabric_inventory: Mapping[str, object] | None = None,
+    empty_initial_fabric_inventory: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Return a failed live observation without persisting a possibly secret error."""
 
@@ -1113,9 +1124,12 @@ def _live_failed(
             "protocol_step": bounded_step,
             "protocol_trace": [step for step in protocol_trace if step in _LIVE_PROTOCOL_STEPS],
             "isolated_context_initial_inventory": dict(initial_fabric_inventory or {}),
+            "empty_control_context_initial_inventory": dict(empty_initial_fabric_inventory or {}),
             "error_type": error_type,
             "auth_mode": auth_mode,
-            "existing_account_session_written": existing_account_session_written,
+            "expected_named_test_rollouts": _EXPECTED_NAMED_TEST_ROLLOUTS,
+            "exact_named_test_rollouts_written": exact_named_test_rollouts_written,
+            "named_test_rollouts": dict(named_rollout_evidence or {}),
             "b_account_configuration_unchanged": account_configuration_unchanged,
             "b_account_protection_before": dict(account_protection_before or {}),
             "b_account_protection_after": dict(account_protection_after or {}),
@@ -1131,7 +1145,8 @@ def _live_failed(
         "runtime_claim_allowed": False,
         "operation_root": str(root),
         "case_pattern": case_pattern,
-        "existing_account_session_written": existing_account_session_written,
+        "expected_named_test_rollouts": _EXPECTED_NAMED_TEST_ROLLOUTS,
+        "exact_named_test_rollouts_written": exact_named_test_rollouts_written,
         "auth_content_read": False,
         "source_credentials_copied": False,
         "source_credentials_symlinked": False,
@@ -1216,7 +1231,11 @@ def _write_live_hook_wrapper(
     source_codex_home: Path,
     fabric_root: Path,
     working_dir: Path,
+    additional_fabric_roots: Sequence[Path] = (),
 ) -> None:
+    allowed_fabric_roots = tuple(
+        dict.fromkeys(str(root.resolve()) for root in (fabric_root, *additional_fabric_roots))
+    )
     source = f"""from __future__ import annotations
 import hashlib
 import json
@@ -1229,7 +1248,8 @@ import time
 LOG_PATH = Path({str(log_path)!r})
 ADAPTER_PATH = Path({str(adapter_path)!r})
 SOURCE_CODEX_HOME = {str(source_codex_home)!r}
-FABRIC_ROOT = {str(fabric_root)!r}
+DEFAULT_FABRIC_ROOT = {str(fabric_root.resolve())!r}
+ALLOWED_FABRIC_ROOTS = {allowed_fabric_roots!r}
 WORKING_DIR = {str(working_dir)!r}
 WINDOWS_CHILD_ENV_NAMES = {_WINDOWS_CHILD_ENV_NAMES!r}
 
@@ -1242,13 +1262,16 @@ try:
 except Exception:
     pass
 source_env = {{str(key).upper(): str(value) for key, value in os.environ.items()}}
+selected_fabric_root = source_env.get("CODEX_CONTEXT_FABRIC_ROOT", "")
+if selected_fabric_root not in ALLOWED_FABRIC_ROOTS:
+    selected_fabric_root = DEFAULT_FABRIC_ROOT
 env = {{
     name: source_env[name]
     for name in WINDOWS_CHILD_ENV_NAMES
     if source_env.get(name)
 }}
 env["CODEX_HOME"] = SOURCE_CODEX_HOME
-env["CODEX_CONTEXT_FABRIC_ROOT"] = FABRIC_ROOT
+env["CODEX_CONTEXT_FABRIC_ROOT"] = selected_fabric_root
 completed = subprocess.run(
     [sys.executable, "-I", "-B", str(ADAPTER_PATH)],
     input=raw,
@@ -1454,6 +1477,77 @@ def _run_live_turn_then_observe_session_start(
     return result
 
 
+def _run_fresh_live_probe(
+    command: Sequence[str],
+    *,
+    working_dir: Path,
+    environ: Mapping[str, str],
+    model: str,
+    prompt: str,
+    thread_name: str,
+    timeout: float,
+    step_prefix: str,
+    enter_step: Callable[[str], None],
+) -> dict[str, object]:
+    """Run one named fresh-thread probe in its own native process."""
+
+    if step_prefix not in {"fresh_empty", "fresh_enabled"}:
+        raise ValueError("fresh live probe step prefix is not admitted")
+    enter_step(f"{step_prefix}_thread")
+    with _AppServerClient(command, cwd=working_dir, environ=environ) as client:
+        process_id = client.pid
+        client.initialize(timeout=15)
+        start_result = client.request(
+            "thread/start",
+            {
+                "cwd": str(working_dir),
+                "model": model,
+                "approvalPolicy": "never",
+                "sandbox": "read-only",
+                "ephemeral": False,
+                "sessionStartSource": "startup",
+            },
+            timeout=timeout,
+        )
+        if not isinstance(start_result, Mapping) or not isinstance(
+            start_result.get("thread"), Mapping
+        ):
+            raise LiveProtocolError("fresh thread/start returned no thread")
+        thread_id = str(start_result["thread"].get("id", ""))
+        if not thread_id:
+            raise LiveProtocolError("fresh thread/start returned an empty thread id")
+        client.request(
+            "thread/name/set",
+            {"threadId": thread_id, "name": thread_name},
+            timeout=15,
+        )
+        client.wait_notification(
+            "thread/name/updated",
+            timeout=15,
+            predicate=lambda params: (
+                params.get("threadId") == thread_id and params.get("threadName") == thread_name
+            ),
+        )
+        enter_step(f"{step_prefix}_turn")
+        text, _ = _run_live_turn_then_observe_session_start(
+            client,
+            thread_id=thread_id,
+            prompt=prompt,
+            working_dir=working_dir,
+            timeout=timeout,
+            before_hook_wait=lambda: enter_step(f"{step_prefix}_hook"),
+        )
+    return {
+        "process_id": process_id,
+        "thread_id": thread_id,
+        "thread_name": thread_name,
+        "text": text,
+        "messages": list(client.messages),
+        "sent_methods": list(client.sent_methods),
+        "stderr": client.stderr_receipt,
+    }
+
+
 def _read_sink_records(path: Path) -> list[dict[str, object]]:
     if not path.is_file():
         return []
@@ -1507,6 +1601,35 @@ def _session_rollout_paths(home: Path) -> set[str]:
     }
 
 
+def _named_rollout_path_evidence(
+    paths: Sequence[str],
+    thread_ids: Mapping[str, str],
+) -> dict[str, object]:
+    """Match rollout filenames to this run's thread ids without reading rollouts."""
+
+    path_set = set(paths)
+    matched_paths: set[str] = set()
+    threads: dict[str, dict[str, object]] = {}
+    exact_count = 0
+    for label, thread_id in thread_ids.items():
+        matches = sorted(path for path in path_set if thread_id and thread_id in Path(path).name)
+        if len(matches) == 1:
+            exact_count += 1
+            matched_paths.update(matches)
+        threads[label] = {
+            "thread_id_sha256": _sha256_text(thread_id) if thread_id else "",
+            "rollout_path_count": len(matches),
+            "rollout_path_sha256": [_sha256_text(path) for path in matches],
+        }
+    return {
+        "expected_named_test_rollouts": _EXPECTED_NAMED_TEST_ROLLOUTS,
+        "exact_named_test_rollouts_written": exact_count,
+        "new_rollout_path_count": len(path_set),
+        "all_new_rollouts_match_named_threads": matched_paths == path_set,
+        "threads": threads,
+    }
+
+
 def _fabric_session_evidence(root: Path, session_id: str) -> dict[str, object]:
     database = root / "context_fabric.sqlite3"
     if not database.is_file():
@@ -1519,6 +1642,15 @@ def _fabric_session_evidence(root: Path, session_id: str) -> dict[str, object]:
             "FROM events WHERE session_id=? ORDER BY seq",
             (session_id,),
         ).fetchall()
+        store_session_count = int(
+            connection.execute("SELECT COUNT(DISTINCT session_id) FROM events").fetchone()[0]
+        )
+        other_session_count = int(
+            connection.execute(
+                "SELECT COUNT(DISTINCT session_id) FROM events WHERE session_id<>?",
+                (session_id,),
+            ).fetchone()[0]
+        )
     except sqlite3.Error as error:
         raise LiveProtocolError("isolated Context Fabric events could not be read") from error
     finally:
@@ -1539,7 +1671,26 @@ def _fabric_session_evidence(root: Path, session_id: str) -> dict[str, object]:
         "session_start_sources": sources,
         "carrier_ids": sorted({str(row["carrier_id"]) for row in rows}),
         "all_rows_match_session": all(str(row["session_id"]) == session_id for row in rows),
+        "store_distinct_session_count": store_session_count,
+        "store_contains_only_requested_session": other_session_count == 0,
     }
+
+
+def _initialize_verified_empty_live_fabric(
+    root: Path,
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    initialized = context_runtime.initialize_context_fabric(root)
+    verified = context_runtime.verify_context_fabric(root)
+    inventory = context_runtime.store_inventory(root)
+    if (
+        initialized.get("feature_level") != context_runtime.CONTEXT_RUNTIME_FEATURE_LEVEL
+        or verified.get("sqlite_integrity_check") != "ok"
+        or int(verified.get("foreign_key_violations", -1)) != 0
+        or int(inventory.get("events", -1)) != 0
+        or inventory.get("authority") is not False
+    ):
+        raise LiveProtocolError("isolated Context Fabric initialization did not verify")
+    return initialized, verified, inventory
 
 
 def run_live(
@@ -1636,18 +1787,16 @@ def run_live(
     assert contract is not None
     use_existing_b_home = auth_mode == "existing_b_home"
     fabric_root = root / "isolated-context-fabric"
+    empty_control_fabric_root = root / "empty-control-context-fabric"
+    initial_fabric_inventory: dict[str, object] = {}
+    empty_initial_fabric_inventory: dict[str, object] = {}
     try:
-        initialized_fabric = context_runtime.initialize_context_fabric(fabric_root)
-        verified_fabric = context_runtime.verify_context_fabric(fabric_root)
-        initial_fabric_inventory = context_runtime.store_inventory(fabric_root)
-        if (
-            initialized_fabric.get("feature_level") != context_runtime.CONTEXT_RUNTIME_FEATURE_LEVEL
-            or verified_fabric.get("sqlite_integrity_check") != "ok"
-            or int(verified_fabric.get("foreign_key_violations", -1)) != 0
-            or int(initial_fabric_inventory.get("events", -1)) != 0
-            or initial_fabric_inventory.get("authority") is not False
-        ):
-            raise LiveProtocolError("isolated Context Fabric initialization did not verify")
+        _, verified_fabric, initial_fabric_inventory = _initialize_verified_empty_live_fabric(
+            fabric_root
+        )
+        _, empty_verified_fabric, empty_initial_fabric_inventory = (
+            _initialize_verified_empty_live_fabric(empty_control_fabric_root)
+        )
     except (OSError, sqlite3.Error, TypeError, ValueError, LiveProtocolError) as error:
         return _live_failed(
             root,
@@ -1658,6 +1807,8 @@ def run_live(
             protocol_step="fabric_initialize",
             auth_mode=auth_mode,
             protocol_trace=["fabric_initialize"],
+            initial_fabric_inventory=initial_fabric_inventory,
+            empty_initial_fabric_inventory=empty_initial_fabric_inventory,
         )
     hook_log = root / "hook-sink.jsonl"
     source_home_fingerprints_before = {
@@ -1665,7 +1816,6 @@ def run_live(
         "B": _nonsecret_home_fingerprint(b_codex_home),
     }
     protected_before = _account_protection_receipt(b_codex_home) if use_existing_b_home else {}
-    session_rollouts_before = _session_rollout_paths(b_codex_home) if use_existing_b_home else set()
     if use_existing_b_home:
         live_home = b_codex_home
         hooks_path = b_codex_home / "hooks.json"
@@ -1673,6 +1823,11 @@ def run_live(
             os.environ,
             codex_home=b_codex_home,
             fabric_root=fabric_root,
+        )
+        empty_control_environ = _existing_account_environment(
+            os.environ,
+            codex_home=b_codex_home,
+            fabric_root=empty_control_fabric_root,
         )
     else:
         live_home = root / "isolated-codex-home"
@@ -1688,6 +1843,7 @@ def run_live(
             source_codex_home=s_codex_home,
             fabric_root=fabric_root,
             working_dir=working_dir,
+            additional_fabric_roots=(empty_control_fabric_root,),
         )
         _write_live_hooks(hooks_path, wrapper=wrapper)
         _write_live_config(config_path, [])
@@ -1697,10 +1853,18 @@ def run_live(
             fabric_root=fabric_root,
             auth_env=auth_env,
         )
+        empty_control_environ = _live_app_server_environment(
+            os.environ,
+            codex_home=live_home,
+            fabric_root=empty_control_fabric_root,
+            auth_env=auth_env,
+        )
+    session_rollouts_before = _session_rollout_paths(live_home)
     timeout = float(contract["timeout_seconds"])
     command = [str(codex_path), "app-server", "--stdio"]
     thread_id = ""
     test_thread_name = ""
+    test_thread_ids: dict[str, str] = {}
     protocol_step = "hooks_trust"
     protocol_trace: list[str] = ["fabric_initialize"]
 
@@ -1714,20 +1878,17 @@ def run_live(
     def post_eligibility_failure(error: BaseException) -> dict[str, object]:
         protected_unchanged: bool | None = None
         protected_after_failure: dict[str, object] = {}
-        existing_account_session_written = False
-        if use_existing_b_home:
-            try:
+        named_rollouts = _named_rollout_path_evidence((), test_thread_ids)
+        try:
+            new_rollouts = sorted(_session_rollout_paths(live_home) - session_rollouts_before)
+            named_rollouts = _named_rollout_path_evidence(new_rollouts, test_thread_ids)
+            if use_existing_b_home:
                 protected_after_failure = _account_protection_receipt(b_codex_home)
                 protected_unchanged = protected_before.get(
                     "configuration"
                 ) == protected_after_failure.get("configuration")
-                new_rollouts = sorted(
-                    _session_rollout_paths(b_codex_home) - session_rollouts_before
-                )
-                existing_account_session_written = bool(
-                    thread_id and len(new_rollouts) == 1 and thread_id in Path(new_rollouts[0]).name
-                )
-            except (OSError, RuntimeError):
+        except (OSError, RuntimeError):
+            if use_existing_b_home:
                 protected_unchanged = False
         return _live_failed(
             root,
@@ -1737,12 +1898,16 @@ def run_live(
             error=error,
             protocol_step=protocol_step,
             auth_mode=auth_mode,
-            existing_account_session_written=existing_account_session_written,
+            exact_named_test_rollouts_written=int(
+                named_rollouts["exact_named_test_rollouts_written"]
+            ),
             account_configuration_unchanged=protected_unchanged,
             account_protection_before=protected_before,
             account_protection_after=protected_after_failure,
+            named_rollout_evidence=named_rollouts,
             protocol_trace=protocol_trace,
             initial_fabric_inventory=initial_fabric_inventory,
+            empty_initial_fabric_inventory=empty_initial_fabric_inventory,
         )
 
     try:
@@ -1794,6 +1959,7 @@ def run_live(
             thread_id = str(start_result["thread"].get("id", ""))
             if not thread_id:
                 raise LiveProtocolError("thread/start returned an empty thread id")
+            test_thread_ids["main"] = thread_id
             test_thread_name = f"context-runtime-live-{uuid.uuid4().hex[:12]}"
             first.request(
                 "thread/name/set",
@@ -1915,6 +2081,50 @@ def run_live(
         all_messages.extend(resumed.messages)
         sent_methods.extend(resumed.sent_methods)
         resumed_stderr = resumed.stderr_receipt
+
+        fresh_prompt = (
+            f"For hidden anchor {anchor}, reply with the current referent token only. "
+            "Do not use tools."
+        )
+        if anchor not in fresh_prompt or any(
+            referent in fresh_prompt for referent in (old_referent, current_referent)
+        ):
+            raise LiveProtocolError("fresh contrast prompt leaked a referent or lost its anchor")
+        fresh_empty = _run_fresh_live_probe(
+            command,
+            working_dir=working_dir,
+            environ=empty_control_environ,
+            model=str(contract["model"]),
+            prompt=fresh_prompt,
+            thread_name=f"context-runtime-live-empty-{uuid.uuid4().hex[:12]}",
+            timeout=timeout,
+            step_prefix="fresh_empty",
+            enter_step=enter_protocol_step,
+        )
+        fresh_empty_thread_id = str(fresh_empty["thread_id"])
+        test_thread_ids["fresh_empty"] = fresh_empty_thread_id
+        process_pids.append(int(fresh_empty["process_id"]))
+        fresh_empty_messages = list(fresh_empty["messages"])
+        all_messages.extend(fresh_empty_messages)
+        sent_methods.extend(str(method) for method in fresh_empty["sent_methods"])
+
+        fresh_enabled = _run_fresh_live_probe(
+            command,
+            working_dir=working_dir,
+            environ=environ,
+            model=str(contract["model"]),
+            prompt=fresh_prompt,
+            thread_name=f"context-runtime-live-enabled-{uuid.uuid4().hex[:12]}",
+            timeout=timeout,
+            step_prefix="fresh_enabled",
+            enter_step=enter_protocol_step,
+        )
+        fresh_enabled_thread_id = str(fresh_enabled["thread_id"])
+        test_thread_ids["fresh_enabled"] = fresh_enabled_thread_id
+        process_pids.append(int(fresh_enabled["process_id"]))
+        fresh_enabled_messages = list(fresh_enabled["messages"])
+        all_messages.extend(fresh_enabled_messages)
+        sent_methods.extend(str(method) for method in fresh_enabled["sent_methods"])
     except (OSError, subprocess.SubprocessError, LiveProtocolError) as error:
         return post_eligibility_failure(error)
 
@@ -1926,20 +2136,20 @@ def run_live(
             "B": _nonsecret_home_fingerprint(b_codex_home),
         }
         isolated_inventory = context_runtime.store_inventory(fabric_root)
+        empty_control_inventory = context_runtime.store_inventory(empty_control_fabric_root)
         fabric_session = _fabric_session_evidence(fabric_root, thread_id)
-        protected_after = _account_protection_receipt(b_codex_home) if use_existing_b_home else {}
-        session_rollouts_after = (
-            _session_rollout_paths(b_codex_home) if use_existing_b_home else set()
+        fresh_enabled_session = _fabric_session_evidence(fabric_root, fresh_enabled_thread_id)
+        fresh_empty_session = _fabric_session_evidence(
+            empty_control_fabric_root, fresh_empty_thread_id
         )
+        protected_after = _account_protection_receipt(b_codex_home) if use_existing_b_home else {}
+        session_rollouts_after = _session_rollout_paths(live_home)
         hook_sink_sha256 = _sha256_file(hook_log) if hook_log.is_file() else ""
     except (OSError, sqlite3.Error, ValueError, LiveProtocolError) as error:
         return post_eligibility_failure(error)
     new_session_rollouts = sorted(session_rollouts_after - session_rollouts_before)
-    existing_account_session_written = bool(
-        use_existing_b_home
-        and len(new_session_rollouts) == 1
-        and thread_id in Path(new_session_rollouts[0]).name
-    )
+    named_rollouts = _named_rollout_path_evidence(new_session_rollouts, test_thread_ids)
+    exact_named_test_rollouts_written = int(named_rollouts["exact_named_test_rollouts_written"])
     sink_names = [str(record.get("event_name", "")) for record in sink_records]
     sink_session_sources = [
         str(record.get("source", ""))
@@ -1949,6 +2159,12 @@ def run_live(
     app_hook_names = _hook_event_names(all_messages)
     item_types = _item_types(all_messages)
     compact_item_types = _item_types(compact_messages)
+    fresh_empty_item_types = _item_types(fresh_empty_messages)
+    fresh_enabled_item_types = _item_types(fresh_enabled_messages)
+    fresh_empty_hook_names = _hook_event_names(fresh_empty_messages)
+    fresh_enabled_hook_names = _hook_event_names(fresh_enabled_messages)
+    fresh_empty_text = str(fresh_empty["text"])
+    fresh_enabled_text = str(fresh_enabled["text"])
     tool_types = {
         "commandExecution",
         "fileChange",
@@ -1977,16 +2193,44 @@ def run_live(
         and "turn/completed" in [str(item.get("method", "")) for item in compact_messages],
         "pre_and_post_compact_hooks_observed_by_app_server": "preCompact" in app_hook_names
         and "postCompact" in app_hook_names,
-        "resume_used_new_native_process": len(process_pids) == 2
+        "resume_used_new_native_process": len(process_pids) == 4
         and process_pids[0] != process_pids[1]
         and resumed_thread_id == thread_id
         and "thread/resume" in sent_methods,
+        "fresh_probes_used_distinct_new_processes_and_threads": len(process_pids) == 4
+        and len(set(process_pids)) == 4
+        and len(test_thread_ids) == 3
+        and len(set(test_thread_ids.values())) == 3,
         "seed_turn_echoed_hidden_referent": old_referent in seed_text,
         "correction_turn_echoed_current_referent": current_referent in correction_text,
         "post_compact_turn_kept_current_not_obsolete": current_referent in compact_text
         and old_referent not in compact_text,
         "resumed_turn_kept_current_not_obsolete": current_referent in resume_text
         and old_referent not in resume_text,
+        "fresh_enabled_recovered_current_not_obsolete": current_referent in fresh_enabled_text
+        and old_referent not in fresh_enabled_text,
+        "fresh_empty_recovered_neither_referent": current_referent not in fresh_empty_text
+        and old_referent not in fresh_empty_text,
+        "fresh_probes_received_same_anchor_only_prompt": anchor in fresh_prompt
+        and old_referent not in fresh_prompt
+        and current_referent not in fresh_prompt,
+        "fresh_probes_observed_startup_hooks": "sessionStart" in fresh_empty_hook_names
+        and "sessionStart" in fresh_enabled_hook_names
+        and "startup" in fresh_empty_session["session_start_sources"]
+        and "startup" in fresh_enabled_session["session_start_sources"],
+        "fresh_probes_exposed_no_tool_items": not tool_types.intersection(fresh_empty_item_types)
+        and not tool_types.intersection(fresh_enabled_item_types),
+        "fresh_contrast_switched_only_operation_fabric_root": empty_control_environ.get(
+            "CODEX_CONTEXT_FABRIC_ROOT"
+        )
+        == str(empty_control_fabric_root)
+        and environ.get("CODEX_CONTEXT_FABRIC_ROOT") == str(fabric_root)
+        and {
+            key: value
+            for key, value in empty_control_environ.items()
+            if key != "CODEX_CONTEXT_FABRIC_ROOT"
+        }
+        == {key: value for key, value in environ.items() if key != "CODEX_CONTEXT_FABRIC_ROOT"},
         "model_turns_exposed_no_tool_items": not tool_types.intersection(item_types),
         "isolated_context_store_initialized_and_verified_empty_before_native": int(
             initial_fabric_inventory.get("events", -1)
@@ -1994,10 +2238,35 @@ def run_live(
         == 0
         and verified_fabric.get("sqlite_integrity_check") == "ok"
         and (fabric_root / "context_fabric.sqlite3").is_file(),
+        "empty_control_store_initialized_and_verified_empty_before_native": int(
+            empty_initial_fabric_inventory.get("events", -1)
+        )
+        == 0
+        and empty_verified_fabric.get("sqlite_integrity_check") == "ok"
+        and (empty_control_fabric_root / "context_fabric.sqlite3").is_file(),
         "isolated_context_store_received_hook_events": int(isolated_inventory.get("events", 0)) > 0,
+        "empty_control_store_received_only_its_fresh_thread": int(
+            empty_control_inventory.get("events", 0)
+        )
+        > 0
+        and fresh_empty_session["all_rows_match_session"] is True
+        and fresh_empty_session["store_contains_only_requested_session"] is True
+        and fresh_empty_session["store_distinct_session_count"] == 1,
+        "fresh_enabled_and_empty_hooks_reached_their_selected_stores": int(
+            fresh_enabled_session["event_count"]
+        )
+        > 0
+        and int(fresh_empty_session["event_count"]) > 0,
         "source_home_nonsecret_configuration_unchanged": source_home_fingerprints_before
         == source_home_fingerprints_after,
-        "operation_context_store_isolated": fabric_root.resolve().is_relative_to(root.resolve()),
+        "operation_context_stores_isolated_and_distinct": fabric_root.resolve().is_relative_to(
+            root.resolve()
+        )
+        and empty_control_fabric_root.resolve().is_relative_to(root.resolve())
+        and fabric_root.resolve() != empty_control_fabric_root.resolve(),
+        "exactly_three_named_test_rollouts_written": exact_named_test_rollouts_written
+        == _EXPECTED_NAMED_TEST_ROLLOUTS
+        and named_rollouts["all_new_rollouts_match_named_threads"] is True,
     }
     if use_existing_b_home:
         assertions.update(
@@ -2026,7 +2295,6 @@ def run_live(
                 )
                 == {"present": True, "content_read": False}
                 and protected_after.get("auth") == {"present": True, "content_read": False},
-                "exactly_one_named_existing_account_rollout_written": existing_account_session_written,
                 "no_temporary_hook_wrapper_or_home_created": not hook_log.exists()
                 and not (root / "hook_sink_wrapper.py").exists()
                 and not (root / "isolated-codex-home").exists(),
@@ -2072,6 +2340,36 @@ def run_live(
             "test_thread_name": test_thread_name,
             "process_count": len(process_pids),
             "processes_distinct": len(set(process_pids)) == len(process_pids),
+            "process_id_sha256": [_sha256_text(str(pid)) for pid in process_pids],
+            "fresh_contrast": {
+                "prompt_sha256": _sha256_text(fresh_prompt),
+                "prompt_contains_anchor": anchor in fresh_prompt,
+                "prompt_contains_old_referent": old_referent in fresh_prompt,
+                "prompt_contains_current_referent": current_referent in fresh_prompt,
+                "execution_order": ["fresh_empty", "fresh_enabled"],
+                "empty": {
+                    "process_id_sha256": _sha256_text(str(fresh_empty["process_id"])),
+                    "thread_id_sha256": _sha256_text(fresh_empty_thread_id),
+                    "thread_name": str(fresh_empty["thread_name"]),
+                    "fabric_root_relative": str(
+                        empty_control_fabric_root.relative_to(root)
+                    ).replace("\\", "/"),
+                    "response_sha256": _sha256_text(fresh_empty_text),
+                    "item_types": fresh_empty_item_types,
+                    "hook_order": fresh_empty_hook_names,
+                    "fabric_session": fresh_empty_session,
+                },
+                "enabled": {
+                    "process_id_sha256": _sha256_text(str(fresh_enabled["process_id"])),
+                    "thread_id_sha256": _sha256_text(fresh_enabled_thread_id),
+                    "thread_name": str(fresh_enabled["thread_name"]),
+                    "fabric_root_relative": str(fabric_root.relative_to(root)).replace("\\", "/"),
+                    "response_sha256": _sha256_text(fresh_enabled_text),
+                    "item_types": fresh_enabled_item_types,
+                    "hook_order": fresh_enabled_hook_names,
+                    "fabric_session": fresh_enabled_session,
+                },
+            },
             "app_server_hook_order": app_hook_names,
             "hook_sink_order": sink_names,
             "hook_sink_session_start_sources": sink_session_sources,
@@ -2090,6 +2388,13 @@ def run_live(
             },
             "isolated_context_inventory": isolated_inventory,
             "isolated_fabric_session": fabric_session,
+            "empty_control_context_initial_inventory": empty_initial_fabric_inventory,
+            "empty_control_context_initial_verification": {
+                "sqlite_integrity_check": empty_verified_fabric["sqlite_integrity_check"],
+                "foreign_key_violations": empty_verified_fabric["foreign_key_violations"],
+                "authority": empty_verified_fabric["authority"],
+            },
+            "empty_control_context_inventory": empty_control_inventory,
             "source_home_fingerprint_sha256": source_home_fingerprints_after,
             "b_account_protection_before": protected_before,
             "b_account_protection_after": protected_after,
@@ -2097,15 +2402,15 @@ def run_live(
             "new_session_rollout_path_sha256": [
                 _sha256_text(path) for path in new_session_rollouts
             ],
-            "existing_account_session_written": existing_account_session_written,
+            "expected_named_test_rollouts": _EXPECTED_NAMED_TEST_ROLLOUTS,
+            "exact_named_test_rollouts_written": exact_named_test_rollouts_written,
+            "named_test_rollouts": named_rollouts,
             "protocol_trace": protocol_trace,
             "first_stderr": first_stderr,
             "resumed_stderr": resumed_stderr,
-            "claim_scope": (
-                "one_bounded_existing_b_account_start_compact_resume_trajectory"
-                if use_existing_b_home
-                else "one_bounded_isolated_environment_start_compact_resume_trajectory"
-            ),
+            "fresh_empty_stderr": fresh_empty["stderr"],
+            "fresh_enabled_stderr": fresh_enabled["stderr"],
+            "claim_scope": "one_bounded_start_compact_resume_and_fresh_enabled_vs_empty_contrast",
         },
     }
     finished_ns = time.time_ns()
@@ -2118,7 +2423,8 @@ def run_live(
         "runtime_claim_allowed": not failed,
         "operation_root": str(root),
         "case_pattern": case_pattern,
-        "existing_account_session_written": existing_account_session_written,
+        "expected_named_test_rollouts": _EXPECTED_NAMED_TEST_ROLLOUTS,
+        "exact_named_test_rollouts_written": exact_named_test_rollouts_written,
         "auth_content_read": False,
         "source_credentials_copied": False,
         "source_credentials_symlinked": False,
@@ -2126,6 +2432,8 @@ def run_live(
             "operation_scoped_codex_home": not use_existing_b_home,
             "existing_b_account_home_used": use_existing_b_home,
             "operation_scoped_context_store": True,
+            "operation_scoped_context_stores": True,
+            "separate_enabled_and_empty_stores": True,
             "auth_content_read": False,
             "source_credentials_copied": False,
             "source_credentials_symlinked": False,
@@ -2151,8 +2459,9 @@ def run_live(
                     else "installed_operation_hook_discovery_trust_and_sink_execution"
                 ),
                 "bounded_hidden_referent_survival_in_this_live_trajectory",
+                "bounded_same_anchor_fresh_enabled_vs_empty_store_response_delta_in_this_run",
                 (
-                    "existing_b_nonsecret_configuration_unchanged_and_one_named_session_written"
+                    "existing_b_nonsecret_configuration_unchanged_and_three_named_test_rollouts_written"
                     if use_existing_b_home
                     else "operation_scoped_codex_home_and_context_store"
                 ),
@@ -2160,7 +2469,7 @@ def run_live(
             if not failed
             else ["native_live_trajectory_was_observed_but_assertions_failed"],
             "does_not_prove": [
-                "context_fabric_alone_caused_model_recall",
+                "exclusive_mechanism_or_repeated_causal_effect_beyond_this_ordered_pair",
                 "longitudinal_reduction_of_user_correction_burden",
                 "permanent_uptake_or_same_subject",
                 "behavior_of_other_models_accounts_or_future_codex_versions",

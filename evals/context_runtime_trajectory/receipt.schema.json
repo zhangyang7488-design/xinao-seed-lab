@@ -43,8 +43,13 @@
       "type": "string",
       "minLength": 1
     },
-    "existing_account_session_written": {
-      "type": "boolean"
+    "expected_named_test_rollouts": {
+      "const": 3
+    },
+    "exact_named_test_rollouts_written": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
     },
     "auth_content_read": {
       "const": false
