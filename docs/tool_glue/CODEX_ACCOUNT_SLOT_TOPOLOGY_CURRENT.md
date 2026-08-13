@@ -12,6 +12,18 @@ CodexA.lnk <-> CodexC.lnk
 同一个 E:\CODEX_CLEANROOM 运行体和新仓库；仅账号附着状态隔离。
 ```
 
+身体配对与账号额度配对是两条正交关系：
+
+```text
+身体：OPEN CODEX S HARDMODE.lnk <-> CodexB.lnk
+身体：CodexA.lnk <-> CodexC.lnk
+
+额度：OPEN CODEX S HARDMODE.lnk <-> CodexA.lnk
+额度：CodexB.lnk <-> CodexC.lnk
+```
+
+因此，当活动已经明确进入 clean-room 的 Sol 研究入口时，用户说“用 S 的额度”表示选择 `account_slot=A`，说“用 B 的额度”表示选择 `account_slot=C`；它不表示把 S/B 身体、配置或 session 接进 clean-room。若用户直接指定 A/C 槽，则以该显式槽位为准。
+
 因此：
 
 - C 绝不连接 S/B 的配置、AGENTS、Skills、Plugins、runtime 或工作树；

@@ -6,7 +6,7 @@
 
 本机仓库世界包含独立 clean-room 仓库这一第三现实对象；S/X 不再构成仓库全集，具体 current path/HEAD 以 live observation 为准。
 
-本机账号槽拓扑分成两对且不交叉：桌面 `OPEN CODEX S HARDMODE.lnk` 与 `CodexB.lnk` 共享 S 身体、只隔离账号状态；桌面 `CodexA.lnk` 与 `CodexC.lnk` 共享 `E:\CODEX_CLEANROOM` 身体和新仓库、也只隔离账号状态。C 不属于 S/B，B 不属于 A/C；精确载体见 `docs/tool_glue/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md`。
+本机账号槽拓扑分成两对且不交叉：桌面 `OPEN CODEX S HARDMODE.lnk` 与 `CodexB.lnk` 共享 S 身体、只隔离账号状态；桌面 `CodexA.lnk` 与 `CodexC.lnk` 共享 `E:\CODEX_CLEANROOM` 身体和新仓库、也只隔离账号状态。额度身份另按 `S ↔ A`、`B ↔ C` 配对；因此在已明确使用 clean-room/Sol 研究入口的语境里，“用 S 的额度”路由为 `account_slot=A`，“用 B 的额度”路由为 `account_slot=C`，而不是切换身体。C 不属于 S/B，B 不属于 A/C；精确载体见 `docs/tool_glue/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md`。
 
 在 clean-room 热运行语义中，`A 并发研究` / `C 并发研究` 只表示同一套持续 world-owning compute protocol 选择 `account_slot=A|C`；A/C 不定义研究模式、cognition、branch 拓扑或历史 experiment arm。历史 one-shot 的 A/B/C/D arm 标签只作归档身份，不能取得当前运行路由权。
 
