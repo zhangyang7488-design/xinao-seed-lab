@@ -748,7 +748,7 @@ def validate_body_boundary_config(config: Mapping[str, Any]) -> dict[str, Any] |
         raise PerpetualRuntimeError("WORLD_BODY_LAUNCHER_OUTSIDE_RUN_DIR")
     raw = launcher.read_bytes()
     if (
-        b"--dangerously-bypass-approvals-and-sandbox" in raw
+        raw.count(_UNSANDBOXED_LAUNCH_LINE) != 0
         or raw.count(b"--sandbox workspace-write") != 1
         or raw.count(b"sandbox_workspace_write.network_access=true") != 1
     ):
