@@ -93,6 +93,60 @@ def test_read_startup_state_treats_windows_replace_access_denied_as_transient(
     assert read_startup_state(state_path) == {"run_id": "run-1", "status": "RUNNING"}
 
 
+def test_atomic_write_retries_transient_windows_replace_contention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["atomic_write_bytes"],
+    )
+    destination = tmp_path / "controller_state.json"
+    destination.write_bytes(b"old")
+    original_replace = controller_module.os.replace
+    calls = 0
+
+    def transient_replace(source: Path, target: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            raise PermissionError(13, "transient destination contention", str(target))
+        original_replace(source, target)
+
+    monkeypatch.setattr(controller_module.os, "name", "nt")
+    monkeypatch.setattr(controller_module.os, "replace", transient_replace)
+    observed = controller_module.atomic_write_bytes(destination, b"new-state")
+
+    assert calls == 3
+    assert destination.read_bytes() == b"new-state"
+    assert observed == sha256_bytes(b"new-state")
+
+
+def test_atomic_write_does_not_hide_persistent_windows_replace_denial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["atomic_write_bytes"],
+    )
+    destination = tmp_path / "controller_state.json"
+    destination.write_bytes(b"prior-state")
+    clock = iter([0.0, 3.0])
+    monkeypatch.setattr(controller_module.os, "name", "nt")
+    monkeypatch.setattr(
+        controller_module.os,
+        "replace",
+        lambda _source, target: (_ for _ in ()).throw(
+            PermissionError(13, "persistent denial", str(target))
+        ),
+    )
+    monkeypatch.setattr(controller_module.time, "monotonic", lambda: next(clock))
+
+    with pytest.raises(PermissionError, match="persistent denial"):
+        controller_module.atomic_write_bytes(destination, b"new-state")
+    assert destination.read_bytes() == b"prior-state"
+    assert list(tmp_path.glob(".controller_state.json.*.tmp")) == []
+
+
 def make_test_controller(
     tmp_path: Path,
     *,

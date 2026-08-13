@@ -694,7 +694,15 @@ def atomic_write_bytes(path: Path, raw: bytes) -> str:
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        deadline = time.monotonic() + 2.0
+        while True:
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError:
+                if os.name != "nt" or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.01)
     finally:
         temporary.unlink(missing_ok=True)
     return sha256_bytes(raw)
