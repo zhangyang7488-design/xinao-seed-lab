@@ -379,6 +379,71 @@ def test_existing_b_home_without_configured_auth_is_prelaunch_ineligible(
     assert "existing_b_home_auth_present" in receipt["eligibility"]["missing_or_unverified"]
 
 
+def test_live_fabric_initialization_failure_is_observed_without_native_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _load_harness()
+    codex_exe = tmp_path / "codex.exe"
+    codex_exe.write_bytes(b"fixture")
+    source_s = tmp_path / "source-s"
+    source_b = tmp_path / "source-b"
+    working_dir = tmp_path / "working"
+    source_s.mkdir()
+    source_b.mkdir()
+    working_dir.mkdir()
+    for name in ("AGENTS.md", "config.toml", "hooks.json", "auth.json"):
+        (source_b / name).write_text("fixture\n", encoding="utf-8")
+    contract = tmp_path / "sink.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": "s.context_runtime_live_hook_sink.v1",
+                "model": "gpt-5.6-sol",
+                "timeout_seconds": 30,
+                "auth_mode": "existing_b_home",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        harness.context_runtime,
+        "DEFAULT_ALLOWED_CODEX_HOMES",
+        {str(source_s): "s-primary", str(source_b): "s-account-b"},
+    )
+    monkeypatch.setattr(harness, "_probe_codex_version", lambda *args, **kwargs: "0.147.0")
+
+    def fail_initialize(root: Path) -> dict[str, object]:
+        raise harness.context_runtime.ContextFabricUnavailable("fixture unavailable")
+
+    class MustNotLaunch:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError(
+                "native process must not launch after Fabric initialization failure"
+            )
+
+    monkeypatch.setattr(harness.context_runtime, "initialize_context_fabric", fail_initialize)
+    monkeypatch.setattr(harness, "_AppServerClient", MustNotLaunch)
+    receipt = harness.run_live(
+        tmp_path / "operation",
+        codex_path=codex_exe,
+        s_codex_home=source_s,
+        b_codex_home=source_b,
+        working_dir=working_dir,
+        hook_sink=contract,
+    )
+
+    assert receipt["status"] == "failed"
+    assert receipt["claim_class"] == "context_live_observed"
+    assert receipt["summary"]["failed"] == 1
+    evidence = receipt["cases"][0]["evidence"]
+    assert evidence["failure_stage"] == "post_eligibility_fabric_initialization"
+    assert evidence["protocol_step"] == "fabric_initialize"
+    assert evidence["protocol_trace"] == ["fabric_initialize"]
+    assert evidence["error_type"] == "ContextFabricUnavailable"
+    assert "fixture unavailable" not in json.dumps(receipt)
+
+
 def test_live_app_server_child_receives_only_selected_fake_auth(tmp_path: Path) -> None:
     harness = _load_harness()
     fake_server = tmp_path / "fake_env_server.py"
@@ -638,6 +703,7 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
     monkeypatch.setenv("FAKE_AMBIENT_SECRET", "fake-ambient-must-not-reach-child")
     observed_child_env: dict[str, str] = {}
     protocol_events: list[str] = []
+    fixture_session = "019ff75c-703c-7972-96cd-b0d257b13baa"
 
     class BrokenProtocolClient:
         pid = 43210
@@ -646,6 +712,20 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
             observed_child_env.update(environ)
             self.messages = []
             self.sent_methods = []
+            fabric_root = Path(environ["CODEX_CONTEXT_FABRIC_ROOT"])
+            assert (fabric_root / "context_fabric.sqlite3").is_file()
+            assert harness.context_runtime.store_inventory(fabric_root)["events"] == 0
+            captured = harness.context_runtime.capture_hook_event(
+                {
+                    "hook_event_name": "SessionStart",
+                    "session_id": fixture_session,
+                    "source": "startup",
+                    "cwd": str(working_dir),
+                },
+                root=fabric_root,
+                environ=environ,
+            )
+            assert captured is not None
 
         def __enter__(self):
             return self
@@ -679,7 +759,7 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
                 ]
                 return {"data": [{"hooks": hooks}]}
             if method == "thread/start":
-                return {"thread": {"id": "thread-fixture"}}
+                return {"thread": {"id": fixture_session}}
             if method == "thread/name/set":
                 return {}
             if method == "turn/start":
@@ -692,7 +772,7 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
                 return {
                     "method": method,
                     "params": {
-                        "threadId": "thread-fixture",
+                        "threadId": fixture_session,
                         "threadName": "fixture-name",
                     },
                 }
@@ -700,7 +780,7 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
                 return {
                     "method": method,
                     "params": {
-                        "threadId": "thread-fixture",
+                        "threadId": fixture_session,
                         "turn": {"id": "turn-fixture", "status": "completed"},
                     },
                 }
@@ -745,11 +825,13 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
     assert evidence["auth_mode"] == "existing_b_home"
     assert evidence["protocol_step"] == "startup_hook"
     assert evidence["protocol_trace"] == [
+        "fabric_initialize",
         "hooks_trust",
         "thread_start",
         "startup_turn",
         "startup_hook",
     ]
+    assert evidence["isolated_context_initial_inventory"]["events"] == 0
     assert evidence["b_account_configuration_unchanged"] is True
     assert evidence["b_account_protection_before"] == protected_before
     assert evidence["b_account_protection_after"] == protected_before
@@ -770,6 +852,10 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
     assert not (operation_root / "hook_sink_wrapper.py").exists()
     assert not (operation_root / "hook-sink.jsonl").exists()
     assert not (operation_root / "auth.json").exists()
+    fabric_root = operation_root / "isolated-context-fabric"
+    assert (fabric_root / "context_fabric.sqlite3").is_file()
+    assert harness.context_runtime.store_inventory(fabric_root)["events"] == 1
+    assert harness._fabric_session_evidence(fabric_root, fixture_session)["event_count"] == 1
     assert "sk-fake-must-not-reach-existing-home-child" not in serialized
     assert "fake-access-token-must-not-reach-child" not in serialized
     assert "fake-ambient-must-not-reach-child" not in serialized

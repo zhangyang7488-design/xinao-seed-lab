@@ -44,6 +44,7 @@ _CODEX_VERSION_RE = re.compile(r"^codex-cli\s+(\d+\.\d+\.\d+)\s*$")
 _LIVE_AUTH_ENV_NAMES = ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN")
 _LIVE_PROTOCOL_STEPS = frozenset(
     {
+        "fabric_initialize",
         "hooks_trust",
         "thread_start",
         "startup_turn",
@@ -1089,6 +1090,7 @@ def _live_failed(
     account_protection_before: Mapping[str, object] | None = None,
     account_protection_after: Mapping[str, object] | None = None,
     protocol_trace: Sequence[str] = (),
+    initial_fabric_inventory: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Return a failed live observation without persisting a possibly secret error."""
 
@@ -1103,9 +1105,14 @@ def _live_failed(
         "failed_assertions": ["native_live_protocol_completed"],
         "evidence": {
             "codex_version": codex_version,
-            "failure_stage": "post_eligibility_native_protocol",
+            "failure_stage": (
+                "post_eligibility_fabric_initialization"
+                if bounded_step == "fabric_initialize"
+                else "post_eligibility_native_protocol"
+            ),
             "protocol_step": bounded_step,
             "protocol_trace": [step for step in protocol_trace if step in _LIVE_PROTOCOL_STEPS],
+            "isolated_context_initial_inventory": dict(initial_fabric_inventory or {}),
             "error_type": error_type,
             "auth_mode": auth_mode,
             "existing_account_session_written": existing_account_session_written,
@@ -1629,6 +1636,29 @@ def run_live(
     assert contract is not None
     use_existing_b_home = auth_mode == "existing_b_home"
     fabric_root = root / "isolated-context-fabric"
+    try:
+        initialized_fabric = context_runtime.initialize_context_fabric(fabric_root)
+        verified_fabric = context_runtime.verify_context_fabric(fabric_root)
+        initial_fabric_inventory = context_runtime.store_inventory(fabric_root)
+        if (
+            initialized_fabric.get("feature_level") != context_runtime.CONTEXT_RUNTIME_FEATURE_LEVEL
+            or verified_fabric.get("sqlite_integrity_check") != "ok"
+            or int(verified_fabric.get("foreign_key_violations", -1)) != 0
+            or int(initial_fabric_inventory.get("events", -1)) != 0
+            or initial_fabric_inventory.get("authority") is not False
+        ):
+            raise LiveProtocolError("isolated Context Fabric initialization did not verify")
+    except (OSError, sqlite3.Error, TypeError, ValueError, LiveProtocolError) as error:
+        return _live_failed(
+            root,
+            case_pattern=case_pattern,
+            requirements=requirements,
+            codex_version=codex_version,
+            error=error,
+            protocol_step="fabric_initialize",
+            auth_mode=auth_mode,
+            protocol_trace=["fabric_initialize"],
+        )
     hook_log = root / "hook-sink.jsonl"
     source_home_fingerprints_before = {
         "S": _nonsecret_home_fingerprint(s_codex_home),
@@ -1672,7 +1702,7 @@ def run_live(
     thread_id = ""
     test_thread_name = ""
     protocol_step = "hooks_trust"
-    protocol_trace: list[str] = []
+    protocol_trace: list[str] = ["fabric_initialize"]
 
     def enter_protocol_step(step: str) -> None:
         nonlocal protocol_step
@@ -1712,6 +1742,7 @@ def run_live(
             account_protection_before=protected_before,
             account_protection_after=protected_after_failure,
             protocol_trace=protocol_trace,
+            initial_fabric_inventory=initial_fabric_inventory,
         )
 
     try:
@@ -1957,6 +1988,12 @@ def run_live(
         "resumed_turn_kept_current_not_obsolete": current_referent in resume_text
         and old_referent not in resume_text,
         "model_turns_exposed_no_tool_items": not tool_types.intersection(item_types),
+        "isolated_context_store_initialized_and_verified_empty_before_native": int(
+            initial_fabric_inventory.get("events", -1)
+        )
+        == 0
+        and verified_fabric.get("sqlite_integrity_check") == "ok"
+        and (fabric_root / "context_fabric.sqlite3").is_file(),
         "isolated_context_store_received_hook_events": int(isolated_inventory.get("events", 0)) > 0,
         "source_home_nonsecret_configuration_unchanged": source_home_fingerprints_before
         == source_home_fingerprints_after,
@@ -2045,6 +2082,12 @@ def run_live(
             "hook_sink_record_count": len(sink_records),
             "protocol_trace_sha256": _sha256_bytes(_canonical_bytes(all_messages)),
             "hook_sink_sha256": hook_sink_sha256,
+            "isolated_context_initial_inventory": initial_fabric_inventory,
+            "isolated_context_initial_verification": {
+                "sqlite_integrity_check": verified_fabric["sqlite_integrity_check"],
+                "foreign_key_violations": verified_fabric["foreign_key_violations"],
+                "authority": verified_fabric["authority"],
+            },
             "isolated_context_inventory": isolated_inventory,
             "isolated_fabric_session": fabric_session,
             "source_home_fingerprint_sha256": source_home_fingerprints_after,

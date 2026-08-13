@@ -74,6 +74,13 @@ supplied S home is used only as the S mount identity inside the isolated hook
 child. If no environment-provided credential is available, live mode returns
 typed `ineligible` and exit code `3` instead of copying `auth.json`.
 
+After all prerequisites pass and before any app-server process starts, the
+harness explicitly initializes the operation-scoped Context Fabric, runs its
+full integrity verification, and records an empty-store inventory. This is a
+live setup step, not a hook responsibility: production hooks remain fail-open
+when a store is absent. Initialization failure produces exit code `1` with
+`protocol_step=fabric_initialize` and never starts a model.
+
 An explicitly authorized run may instead use Account B's already configured
 account session without moving its credential:
 
@@ -137,7 +144,8 @@ client backlog and consumed by that check. Compact remains action-driven and is
 checked immediately after `thread/compact/start`.
 
 Failed observed receipts persist no protocol error text. They expose only an
-error type and a bounded `protocol_step` from: `hooks_trust`, `thread_start`,
+error type and a bounded `protocol_step` from: `fabric_initialize`,
+`hooks_trust`, `thread_start`,
 `startup_turn`, `startup_hook`, `correction_turn`, `compact_item`,
 `compact_turn`, `compact_hook`, `post_compact_turn`, `resume`, `resume_turn`,
 `resume_hook`, or `readback`.
