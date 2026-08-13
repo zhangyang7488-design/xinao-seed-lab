@@ -938,7 +938,9 @@ function New-ProtectedConsumerBundle {
         Set-ProtectedBundlePathAcl $stagingRoot
         foreach ($record in $SourcePlan) {
             $destination = Resolve-BundleChildPath $stagingRoot ([string]$record.relative_path)
-            $destinationParent = Split-Path -LiteralPath $destination -Parent
+            $destinationParent = [System.IO.Path]::GetDirectoryName(
+                [System.IO.Path]::GetFullPath($destination)
+            )
             [void][System.IO.Directory]::CreateDirectory($destinationParent)
             Copy-Item -LiteralPath ([string]$record.source_path) -Destination $destination -Force -ErrorAction Stop
         }

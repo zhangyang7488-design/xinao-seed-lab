@@ -621,6 +621,97 @@ Remove-OwnedBundleStaging $staging '{content_id}' '{registration_token}'
     }
 
 
+@pytest.mark.parametrize("engine_name", ["pwsh", "powershell"])
+def test_installer_builds_tiny_bundle_through_real_destination_parent_path(
+    tmp_path: Path,
+    engine_name: str,
+) -> None:
+    engine = shutil.which(engine_name)
+    if engine is None:
+        pytest.skip(f"{engine_name} is unavailable")
+    installer = consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
+    bundle_base = (tmp_path / "bundle-build[literal]").resolve()
+    python_source = (tmp_path / "source-python.exe").resolve()
+    consumer_source = (tmp_path / "source-consumer.py").resolve()
+    python_body = b"tiny-python-executable"
+    consumer_body = b"# tiny consumer\n"
+    python_source.write_bytes(python_body)
+    consumer_source.write_bytes(consumer_body)
+    registration_token = "d" * 32
+    command = rf"""
+$ErrorActionPreference = 'Stop'
+$installerText = [System.IO.File]::ReadAllText('{str(installer).replace("'", "''")}')
+$prefix = $installerText.Substring(0, $installerText.IndexOf('function Get-ConsumerTaskAudit'))
+. ([scriptblock]::Create($prefix))
+$bundleBase = '{str(bundle_base).replace("'", "''")}'
+function Ensure-ProtectedBundleBase {{
+    [void][System.IO.Directory]::CreateDirectory($bundleBase)
+}}
+function Set-ProtectedBundlePathAcl {{ param([string]$LiteralPath) }}
+function Set-ProtectedBundleTreeAcl {{ param([string]$BundleRoot) }}
+function Test-BundlePayload {{
+    param([string]$BundleRoot, [string]$ExpectedContentId, [string]$ExpectedManifestSha256)
+    return [pscustomobject]@{{
+        valid = $true
+        bundle_root = $BundleRoot
+        content_id = $ExpectedContentId
+        manifest_sha256 = $ExpectedManifestSha256
+    }}
+}}
+$plan = @(
+    [pscustomobject]@{{
+        relative_path = 'python/python.exe'
+        source_path = '{str(python_source).replace("'", "''")}'
+        size = {len(python_body)}
+        sha256 = '{hashlib.sha256(python_body).hexdigest()}'
+    }},
+    [pscustomobject]@{{
+        relative_path = 'app/scripts/context_rollout_consumer.py'
+        source_path = '{str(consumer_source).replace("'", "''")}'
+        size = {len(consumer_body)}
+        sha256 = '{hashlib.sha256(consumer_body).hexdigest()}'
+    }}
+)
+$result = New-ProtectedConsumerBundle $plan '{registration_token}'
+$finalRoot = [string]$result.bundle_root
+$stagingResidual = @(
+    [System.IO.Directory]::EnumerateDirectories($bundleBase) |
+        Where-Object {{ [System.IO.Path]::GetFileName($_).Contains('.staging.') }}
+)
+[ordered]@{{
+    final_root = $finalRoot
+    python_body = [System.IO.File]::ReadAllText((Join-Path $finalRoot 'python\python.exe'))
+    consumer_body = [System.IO.File]::ReadAllText((Join-Path $finalRoot 'app\scripts\context_rollout_consumer.py'))
+    manifest_present = [System.IO.File]::Exists((Join-Path $finalRoot 'manifest.json'))
+    staging_residual = $stagingResidual.Count
+}} | ConvertTo-Json -Compress
+"""
+    completed = subprocess.run(
+        [
+            engine,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            base64.b64encode(command.encode("utf-16-le")).decode(),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    output_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert output_lines, completed.stderr
+    result = json.loads(output_lines[-1])
+    assert Path(result["final_root"]).parent == bundle_base
+    assert result["python_body"] == python_body.decode()
+    assert result["consumer_body"] == consumer_body.decode()
+    assert result["manifest_present"] is True
+    assert result["staging_residual"] == 0
+
+
 def test_bootstrap_imports_only_latest_recent_root_and_never_opens_old_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
