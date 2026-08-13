@@ -328,11 +328,14 @@ $env:LOCALAPPDATA = '{str(local_app_data).replace("'", "''")}'
 $mockSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $mockName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $mockNow = [DateTimeOffset]::Now
+$mockRegisteredAt = $mockNow.AddMinutes(-2).ToUniversalTime().ToString('o')
+$mockReceiptNotBefore = $mockNow.AddMinutes(-1).AddSeconds(-30).ToUniversalTime().ToString('o')
 $mockLocatorHash = 'a' * 64
 $mockToken = 'c' * 32
 $mockTaskHasRun = ${str(task_has_run).lower()}
 $mockDescription = 'XINAO S context rollout consumer v1; registration=' + $mockToken +
-    ';registered_at=' + $mockNow.AddMinutes(-2).ToString('o') +
+    ';registered_at=' + $mockRegisteredAt +
+    ';receipt_not_before=' + $mockReceiptNotBefore +
     ';content_id={content_id};manifest_sha256={manifest_hash}'
 $mockReceipt = @'
 {{"schema_version":"s.context_rollout_consumer.receipt.v1","status":"{receipt_status}","started_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).ToString('o'))","bootstrap":false,"state_recovered":false,"scan_start":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","scan_end":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-1).ToString('o'))","counts":{{"appended":1,"inventoried":1{extra_count_json}}},"files":[{{"carrier_id":"s-primary","locator_sha256":"$($mockLocatorHash)","status":"imported","appended":1,"duplicate":0,"ignored":0,"incomplete_tail":false{extra_file_json}}}],"file_receipts_total":1,"file_receipts_omitted":0,"authority":false{extra_json}}}
@@ -353,7 +356,7 @@ function Get-ScheduledTask {{
         }})
         Triggers = @([pscustomobject]@{{
             Enabled = $true
-            StartBoundary = $mockNow.AddDays(-1).ToString('o')
+            StartBoundary = $mockReceiptNotBefore
             Repetition = [pscustomobject]@{{ Interval = 'PT{task_interval_minutes}M'; Duration = 'P3650D'; StopAtDurationEnd = $false }}
         }})
         Settings = [pscustomobject]@{{
@@ -825,7 +828,7 @@ def _run_upgrade_state_machine_probe(
     command = rf"""
 $ErrorActionPreference = 'Stop'
 $installerText = [System.IO.File]::ReadAllText('{str(installer).replace("'", "''")}')
-$prefix = $installerText.Substring(0, $installerText.IndexOf('if ($Upgrade)'))
+$prefix = $installerText.Substring(0, $installerText.IndexOf('function Enter-ConsumerTaskMutationMutex'))
 . ([scriptblock]::Create($prefix))
 $script:scenario = '{scenario}'
 $script:state = 'old'
@@ -875,8 +878,10 @@ function New-ConsumerTaskCandidate {{
     if ($IntervalMinutes -ne 15 -or $StartDelayMinutes -ne 10) {{
         throw 'candidate schedule mismatch'
     }}
+    $script:newReceiptNotBefore = [DateTimeOffset]::Now.AddMinutes(10).ToString('o')
     [pscustomobject]@{{
         description = $script:newDescription
+        receipt_not_before = $script:newReceiptNotBefore
         definition = [pscustomobject]@{{ candidate = $true }}
     }}
 }}
@@ -899,6 +904,10 @@ function Register-ScheduledTask {{
     }}
     $script:replaceCalls += 1
     switch ($script:scenario) {{
+        'commit_then_throw' {{
+            $script:state = 'new'
+            throw 'SIMULATED-POST-COMMIT-FAILURE'
+        }}
         'foreign_after_attempt' {{
             $script:state = 'foreign'
             throw 'SIMULATED-REPLACE-FAILURE'
@@ -946,7 +955,7 @@ function Get-ScheduledTask {{
         $newHidden = $script:scenario -eq 'owned_description_drift'
         return [pscustomobject]@{{
             Description = $script:newDescription
-            State = 'Ready'
+            State = if ($script:scenario -eq 'running_after_attempt') {{ 'Running' }} else {{ 'Ready' }}
             Actions = @([pscustomobject]@{{
                 Execute = 'C:\new\python\pythonw.exe'
                 Arguments = '-I -B "C:\new\app\scripts\context_rollout_consumer.py"'
@@ -970,7 +979,7 @@ function Get-ScheduledTask {{
             }}
             Triggers = @([pscustomobject]@{{
                 Enabled = $true
-                StartBoundary = [DateTimeOffset]::Now.AddMinutes(-1).ToString('o')
+                StartBoundary = $script:newReceiptNotBefore
                 Repetition = [pscustomobject]@{{
                     Interval = 'PT15M'
                     Duration = 'P3650D'
@@ -1002,7 +1011,7 @@ $healthValid = $false
 $consumerHealth = ''
 $errorText = ''
 try {{
-    $result = Invoke-ConsumerTaskUpgrade -IntervalMinutes 15
+    $result = Invoke-ConsumerTaskUpgradeCore -IntervalMinutes 15
     $succeeded = $true
     $status = [string]$result.status
     $valid = [bool]$result.valid
@@ -2695,6 +2704,22 @@ def test_installer_upgrade_source_identity_does_not_require_target_watchdog_inte
     assert "$preReplace = Get-ManagedUpgradeSource" in script
 
 
+def test_installer_serializes_all_task_mutations_and_delays_upgrade_first_run() -> None:
+    script = (
+        consumer.REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1"
+    ).read_text(encoding="utf-8-sig")
+
+    mutation_gate = "if ($Apply -or $Upgrade -or $Remove)"
+    assert "$mutationMutexName = 'Global\\XINAO.S.ContextRolloutConsumer.Mutation.v1'" in script
+    assert mutation_gate in script
+    assert script.index(mutation_gate) < script.index("if ($Upgrade)")
+    assert script.index(mutation_gate) < script.index("if ($Apply)")
+    assert script.index(mutation_gate) < script.index("if ($Remove)")
+    assert "$mutationMutex.ReleaseMutex()" in script
+    assert "-StartDelayMinutes 10" in script
+    assert "$startBoundary.ToUniversalTime() -eq $descriptionReceiptNotBefore" in script
+
+
 @pytest.mark.parametrize(
     "drift",
     ["description", "action", "arguments", "settings", "trigger", "xml"],
@@ -2755,6 +2780,17 @@ def test_installer_upgrade_failed_replace_leaves_unchanged_predecessor_alone() -
     assert result["rollback_calls"] == 0
 
 
+def test_installer_upgrade_restores_exact_candidate_when_register_commits_then_throws() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe("commit_then_throw")
+
+    assert exit_code == 0, raw_output
+    assert result["succeeded"] is False
+    assert "SIMULATED-POST-COMMIT-FAILURE" in result["error"]
+    assert result["state"] == "old"
+    assert result["replace_calls"] == 1
+    assert result["rollback_calls"] == 1
+
+
 def test_installer_upgrade_restores_absent_failed_replace_without_force() -> None:
     exit_code, result, raw_output = _run_upgrade_state_machine_probe("absent_after_attempt")
 
@@ -2779,6 +2815,18 @@ def test_installer_upgrade_refuses_rollback_over_foreign_concurrent_identity() -
 def test_installer_upgrade_refuses_rollback_when_owned_description_contract_drifts() -> None:
     exit_code, result, raw_output = _run_upgrade_state_machine_probe(
         "owned_description_drift"
+    )
+
+    assert exit_code == 0, raw_output
+    assert result["succeeded"] is False
+    assert "unowned identity" in result["error"]
+    assert result["state"] == "new"
+    assert result["rollback_calls"] == 0
+
+
+def test_installer_upgrade_refuses_rollback_over_running_replacement() -> None:
+    exit_code, result, raw_output = _run_upgrade_state_machine_probe(
+        "running_after_attempt"
     )
 
     assert exit_code == 0, raw_output

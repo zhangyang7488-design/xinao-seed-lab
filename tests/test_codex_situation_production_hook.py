@@ -147,6 +147,8 @@ def test_user_prompt_keeps_l0_first_and_adds_labeled_runtime_without_prompt_echo
 
     assert output["continue"] is True
     assert context.startswith(L0_CONTEXT)
+    assert "在合法边界内，生产力先于行动" in context
+    assert "任何 Skill、流程和完整性步骤都只是候选" in context
     assert DIACHRONIC_COGNITION_CONTEXT in context
     assert ACTION_BINDING_CONTEXT in context
     assert "SECRET MATERIAL" not in context

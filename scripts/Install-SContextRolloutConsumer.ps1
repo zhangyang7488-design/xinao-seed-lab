@@ -33,7 +33,7 @@ $managedUpgradeSourceContentId = '882dda531d281ac73a8ed447a438a79f511310ef1b5bd4
 $managedUpgradeSourceManifestSha256 = 'db7516e59cdf11ecef3a1b25e88b709136f29da9fd49aba0c53b1137ea5e51b0'
 $managedUpgradeSourceFileCount = 1332
 $managedUpgradeSourceNormalizedXmlSha256 = '6230ff8ef337769d49161c90d48207ed868aff5cf8b2d9e73f1fd5f161522e56'
-$upgradeMutexName = 'Local\XINAO.S.ContextRolloutConsumer.Upgrade.v1'
+$mutationMutexName = 'Global\XINAO.S.ContextRolloutConsumer.Mutation.v1'
 $bundleLockSchema = 's.context_rollout_consumer.bundle_lock.v1'
 $requiredLockedFilePaths = @(
     'python/python.exe',
@@ -179,6 +179,21 @@ function ConvertTo-StrictReceiptTimestamp {
         return $null
     }
     return $parsed.ToUniversalTime()
+}
+
+function Test-CanonicalUtcTimestamp {
+    param(
+        [string]$Text,
+        [object]$Value
+    )
+    if ($null -eq $Value) {
+        return $false
+    }
+    return [string]::Equals(
+        $Text,
+        ([DateTimeOffset]$Value).ToUniversalTime().ToString('o'),
+        [System.StringComparison]::Ordinal
+    )
 }
 
 function Get-LowerSha256 {
@@ -1031,15 +1046,20 @@ function New-ConsumerTaskCandidate {
         throw 'Consumer task registration token is invalid.'
     }
     $identity = Get-CurrentIdentityName
-    $registeredAt = [DateTimeOffset]::UtcNow.ToString('o')
-    $description = "$descriptionPrefix$RegistrationToken;registered_at=$registeredAt;content_id=$($Bundle.content_id);manifest_sha256=$($Bundle.manifest_sha256)"
+    $registeredAt = [DateTimeOffset]::UtcNow
+    $receiptNotBefore = [DateTimeOffset]::new(
+        $registeredAt.AddMinutes($StartDelayMinutes).Ticks -
+            ($registeredAt.AddMinutes($StartDelayMinutes).Ticks % [TimeSpan]::TicksPerSecond),
+        [TimeSpan]::Zero
+    )
+    $description = "$descriptionPrefix$RegistrationToken;registered_at=$($registeredAt.ToString('o'));receipt_not_before=$($receiptNotBefore.ToString('o'));content_id=$($Bundle.content_id);manifest_sha256=$($Bundle.manifest_sha256)"
     $action = New-ScheduledTaskAction `
         -Execute $Bundle.validation.action_python_path `
         -Argument $Bundle.validation.arguments `
         -WorkingDirectory $Bundle.validation.working_directory
     $trigger = New-ScheduledTaskTrigger `
         -Once `
-        -At (Get-Date).AddMinutes($StartDelayMinutes) `
+        -At $receiptNotBefore.LocalDateTime `
         -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
         -RepetitionDuration (New-TimeSpan -Days 3650)
     $trigger.Repetition.StopAtDurationEnd = $false
@@ -1061,7 +1081,8 @@ function New-ConsumerTaskCandidate {
         -Description $description
     return [pscustomobject][ordered]@{
         description = $description
-        registered_at = $registeredAt
+        registered_at = $registeredAt.ToString('o')
+        receipt_not_before = $receiptNotBefore.ToString('o')
         definition = $definition
     }
 }
@@ -1217,7 +1238,8 @@ function Get-ConsumerTaskAudit {
     $trigger = @($task.Triggers)
     $description = [string]$task.Description
     $descriptionPattern = '^' + [regex]::Escape($descriptionPrefix) +
-        '(?<token>[0-9a-f]{32});registered_at=(?<registered>[^;]+);content_id=' +
+        '(?<token>[0-9a-f]{32});registered_at=(?<registered>[^;]+);receipt_not_before=' +
+        '(?<receipt_not_before>[^;]+);content_id=' +
         '(?<content>[0-9a-f]{64});manifest_sha256=(?<manifest>[0-9a-f]{64})$'
     $descriptionMatch = [regex]::Match($description, $descriptionPattern)
     $descriptionToken = if ($descriptionMatch.Success) {
@@ -1242,8 +1264,20 @@ function Get-ConsumerTaskAudit {
     }
     $descriptionRegisteredAt = ConvertTo-StrictReceiptTimestamp $descriptionRegisteredAtText
     $descriptionRegistrationValid = $null -ne $descriptionRegisteredAt -and
+        (Test-CanonicalUtcTimestamp $descriptionRegisteredAtText $descriptionRegisteredAt) -and
         $descriptionRegisteredAt.Year -ge 2025 -and
         $descriptionRegisteredAt -le [DateTimeOffset]::Now.AddMinutes(2)
+    $descriptionReceiptNotBeforeText = if ($descriptionMatch.Success) {
+        $descriptionMatch.Groups['receipt_not_before'].Value
+    } else {
+        ''
+    }
+    $descriptionReceiptNotBefore = ConvertTo-StrictReceiptTimestamp $descriptionReceiptNotBeforeText
+    $descriptionReceiptBoundaryValid = $null -ne $descriptionReceiptNotBefore -and
+        (Test-CanonicalUtcTimestamp $descriptionReceiptNotBeforeText $descriptionReceiptNotBefore) -and
+        $descriptionRegistrationValid -and
+        $descriptionReceiptNotBefore -gt $descriptionRegisteredAt -and
+        $descriptionReceiptNotBefore -le $descriptionRegisteredAt.AddMinutes(10)
     $expectedBundleRoot = if ($descriptionMatch.Success) {
         Join-Path $bundleBase $descriptionContentId
     } else {
@@ -1551,9 +1585,9 @@ function Get-ConsumerTaskAudit {
                 $freshnessBudget = New-TimeSpan -Minutes (5 + (2 * $healthIntervalMinutes))
                 $consumerReceiptFresh = $finishedAt -ge $auditNow.Subtract($freshnessBudget) -and
                     $finishedAt -le $auditNow.AddMinutes(2) -and
-                    $descriptionRegistrationValid -and
-                    $lastRunAt -ge $descriptionRegisteredAt -and
-                    $finishedAt -ge $descriptionRegisteredAt -and
+                    $descriptionReceiptBoundaryValid -and
+                    $lastRunAt -ge $descriptionReceiptNotBefore -and
+                    $finishedAt -ge $descriptionReceiptNotBefore -and
                     $taskHasRun -and
                     $finishedAt -ge $lastRunAt.Subtract((New-TimeSpan -Minutes 1)) -and
                     $finishedAt -le $lastRunAt.AddMinutes(7)
@@ -1736,9 +1770,9 @@ function Get-ConsumerTaskAudit {
                 $presentationBudget = New-TimeSpan -Minutes (5 + (2 * $healthIntervalMinutes))
                 $presentationReceiptFresh = $presentationFinishedAt -ge [DateTimeOffset]::Now.Subtract($presentationBudget) -and
                     $presentationFinishedAt -le [DateTimeOffset]::Now.AddMinutes(2) -and
-                    $descriptionRegistrationValid -and
-                    $lastRunAt -ge $descriptionRegisteredAt -and
-                    $presentationFinishedAt -ge $descriptionRegisteredAt -and
+                    $descriptionReceiptBoundaryValid -and
+                    $lastRunAt -ge $descriptionReceiptNotBefore -and
+                    $presentationFinishedAt -ge $descriptionReceiptNotBefore -and
                     $taskHasRun -and
                     $presentationFinishedAt -ge $lastRunAt.Subtract((New-TimeSpan -Minutes 1)) -and
                     $presentationFinishedAt -le $lastRunAt.AddMinutes(7)
@@ -1752,6 +1786,7 @@ function Get-ConsumerTaskAudit {
         }
     }
     $descriptionValid = $descriptionMatch.Success -and $descriptionRegistrationValid -and
+        $descriptionReceiptBoundaryValid -and
         $payloadHashValid -and
         ([string]::IsNullOrWhiteSpace($ExpectedRegistrationToken) -or
             [string]::Equals(
@@ -1818,7 +1853,9 @@ function Get-ConsumerTaskAudit {
         $allowedIntervals -contains $intervalText -and
         $triggerEnabled -and
         $durationValid -and
-        $startBoundaryValid
+        $startBoundaryValid -and
+        $descriptionReceiptBoundaryValid -and
+        $startBoundary.ToUniversalTime() -eq $descriptionReceiptNotBefore
     if ($null -ne $ExpectedMinutes) {
         $triggerValid = $triggerValid -and $intervalText -eq "PT$([int]$ExpectedMinutes)M"
     }
@@ -1913,6 +1950,7 @@ function Get-ConsumerTaskAudit {
         content_id = $descriptionContentId
         manifest_sha256 = $descriptionManifestSha256
         registered_at = $descriptionRegisteredAtText
+        receipt_not_before = $descriptionReceiptNotBeforeText
         files_valid = $filesValid
         enabled_valid = $enabledValid
         execute = if ($action.Count -eq 1) { [string]$action[0].Execute } else { '' }
@@ -1953,13 +1991,17 @@ function Test-OwnedUpgradeReplacement {
     $taskSid = Resolve-IdentitySid ([string]$Task.Principal.UserId)
     $startBoundary = [DateTimeOffset]::MinValue
     $startBoundaryText = if ($trigger.Count -eq 1) { [string]$trigger[0].StartBoundary } else { '' }
+    $candidateReceiptNotBefore = ConvertTo-StrictReceiptTimestamp `
+        ([string]$Candidate.receipt_not_before)
     $startBoundaryValid = [DateTimeOffset]::TryParse(
             $startBoundaryText,
             [System.Globalization.CultureInfo]::InvariantCulture,
             [System.Globalization.DateTimeStyles]::AssumeLocal,
             [ref]$startBoundary
         ) -and $startBoundary.Year -ge 2025 -and
-        $startBoundary -le [DateTimeOffset]::Now.AddMinutes(10)
+        $startBoundary -le [DateTimeOffset]::Now.AddMinutes(10) -and
+        $null -ne $candidateReceiptNotBefore -and
+        $startBoundary.ToUniversalTime() -eq $candidateReceiptNotBefore
     return $action.Count -eq 1 -and
         [string]::Equals(
             [string]$Task.Description,
@@ -2014,9 +2056,9 @@ function Test-OwnedUpgradeReplacement {
         ) -and
         -not [bool]$trigger[0].Repetition.StopAtDurationEnd -and
         $startBoundaryValid -and
-        -not [string]::Equals(
+        [string]::Equals(
             [string]$Task.State,
-            'Disabled',
+            'Ready',
             [System.StringComparison]::OrdinalIgnoreCase
         )
 }
@@ -2056,6 +2098,13 @@ function Invoke-ConsumerTaskUpgradeCore {
             -TaskPath $taskPath `
             -InputObject $candidate.definition `
             -Force | Out-Null
+        if ([DateTimeOffset]::Now -ge [DateTimeOffset]::Parse(
+                [string]$candidate.receipt_not_before,
+                [System.Globalization.CultureInfo]::InvariantCulture,
+                [System.Globalization.DateTimeStyles]::RoundtripKind
+            )) {
+            throw 'Scheduled Task replacement did not finish before its first eligible run boundary.'
+        }
         $registered = Get-ScheduledTask `
             -TaskName $taskName `
             -TaskPath $taskPath `
@@ -2109,14 +2158,22 @@ function Invoke-ConsumerTaskUpgradeCore {
                 )) {
                 throw $upgradeFailure
             }
-            if ([string]::IsNullOrEmpty($ownedReplacementXml) -or
-                -not [string]::Equals(
+            $currentIsOwnedReplacement = Test-OwnedUpgradeReplacement `
+                $current `
+                $candidate `
+                $bundle `
+                $IntervalMinutes
+            if (-not $currentIsOwnedReplacement -or
+                (-not [string]::IsNullOrEmpty($ownedReplacementXml) -and
+                    -not [string]::Equals(
                     $currentXml,
                     $ownedReplacementXml,
                     [System.StringComparison]::Ordinal
-                ) -or
-                -not (Test-OwnedUpgradeReplacement $current $candidate $bundle $IntervalMinutes)) {
+                ))) {
                 throw 'Scheduled Task changed to an unowned identity during upgrade; refusing rollback overwrite.'
+            }
+            if ([string]::IsNullOrEmpty($ownedReplacementXml)) {
+                $ownedReplacementXml = $currentXml
             }
             $restoreRequired = $true
         }
@@ -2152,11 +2209,8 @@ function Invoke-ConsumerTaskUpgradeCore {
     }
 }
 
-function Invoke-ConsumerTaskUpgrade {
-    param([int]$IntervalMinutes)
-
-    $mutex = [System.Threading.Mutex]::new($false, $upgradeMutexName)
-    $acquired = $false
+function Enter-ConsumerTaskMutationMutex {
+    $mutex = [System.Threading.Mutex]::new($false, $mutationMutexName)
     try {
         try {
             $acquired = $mutex.WaitOne(0)
@@ -2165,20 +2219,25 @@ function Invoke-ConsumerTaskUpgrade {
             $acquired = $true
         }
         if (-not $acquired) {
-            throw 'Another managed consumer upgrade invocation is already active.'
+            throw 'Another managed consumer task mutation is already active.'
         }
-        return Invoke-ConsumerTaskUpgradeCore -IntervalMinutes $IntervalMinutes
+        return $mutex
     }
-    finally {
-        if ($acquired) {
-            $mutex.ReleaseMutex()
-        }
+    catch {
         $mutex.Dispose()
+        throw
     }
 }
 
+$mutationMutex = $null
+if ($Apply -or $Upgrade -or $Remove) {
+    $mutationMutex = Enter-ConsumerTaskMutationMutex
+}
+
+try {
+
 if ($Upgrade) {
-    $upgradeResult = Invoke-ConsumerTaskUpgrade -IntervalMinutes $Minutes
+    $upgradeResult = Invoke-ConsumerTaskUpgradeCore -IntervalMinutes $Minutes
     $upgradeResult | ConvertTo-Json -Depth 5
     exit 0
 }
@@ -2290,3 +2349,10 @@ if (-not $auditResult.valid) {
     exit 2
 }
 exit 0
+}
+finally {
+    if ($null -ne $mutationMutex) {
+        $mutationMutex.ReleaseMutex()
+        $mutationMutex.Dispose()
+    }
+}
