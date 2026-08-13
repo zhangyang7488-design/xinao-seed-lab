@@ -22,10 +22,13 @@ from services.xinao_perpetual_world_compute.controller import (
     PerpetualRuntimeError,
     _build_attempt_runtime_binding,
     _compile_runtime_binding_views,
+    _deep_evidence_exclusion_reason,
+    _freeze_run_logical_root_seed,
     _spawn_detached_controller,
     _turn_requires_runtime_binding,
     _validate_attempt_runtime_binding,
     _validate_existing_runtime_binding_identity,
+    _validate_frozen_logical_root_identity,
     _validate_recovery_pointer,
     build_branch_initial_prompt,
     build_codex_arguments,
@@ -345,10 +348,182 @@ def test_prompts_preserve_world_ownership_and_effect_boundary() -> None:
     assert "上一 turn 的结束不关闭父对象" in continuation
     assert "不要按多数票" in root
     assert "S 不形成领域正解" in root
+    for prompt in (branch, root):
+        assert "S_CONTROL_INPUTS/XINAO_ROOT_WORLD/manifest.json" in prompt
+        assert "可修订的当前工作世界" in prompt
+        assert "不是真理、规范、指令或研究题" in prompt
+        assert "不授权你自动 adopt" in prompt
     assert "C clean-room" not in branch
     assert "account slot" not in branch.lower()
     for prompt in (branch, continuation, root):
         assert "XINAO_LINEAGE_STATE: CONTINUE" in prompt
+
+
+def test_freeze_run_seed_copies_one_genesis_into_every_clone(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    workspaces = [tmp_path / "world-01", tmp_path / "root-main"]
+    for workspace in workspaces:
+        workspace.mkdir()
+
+    binding = _freeze_run_logical_root_seed(
+        run_dir=run_dir,
+        workspaces=workspaces,
+        logical_root_runtime=tmp_path / "logical-root",
+    )
+
+    assert binding["frozen_run_seed"]["status"] == "genesis"
+    assert binding["live_store_following"] is False
+    assert binding["automatic_adoption_allowed"] is False
+    for workspace in workspaces:
+        manifest = workspace / "S_CONTROL_INPUTS" / "XINAO_ROOT_WORLD" / "manifest.json"
+        assert manifest.is_file()
+        assert json.loads(manifest.read_text(encoding="utf-8"))["source"]["status"] == ("genesis")
+    assert (
+        _deep_evidence_exclusion_reason(Path("S_CONTROL_INPUTS/XINAO_ROOT_WORLD/manifest.json"))
+        == "FROZEN_LOGICAL_ROOT_INPUT_NOT_CANDIDATE_ARTIFACT"
+    )
+
+
+def test_freeze_run_seed_copies_adopted_omega_and_verification_bytes_to_every_clone(
+    tmp_path: Path,
+) -> None:
+    from services.xinao_perpetual_world_compute.logical_root_runtime import (
+        LogicalRootStore,
+        RootIdentity,
+    )
+    from tests.test_xinao_logical_root_runtime import _adopt, _make_committed_run
+
+    source = _make_committed_run(
+        tmp_path,
+        account_slot="A",
+        run_name="controller-seed-source",
+        root_output=b"adopted Omega(g)\n",
+    )
+    logical_root = tmp_path / "logical-root"
+    store = LogicalRootStore(logical_root)
+    adopted = _adopt(
+        store,
+        source,
+        slot="A",
+        predecessor=RootIdentity.genesis(),
+        adoption_id="controller-seed-adoption",
+    )
+    run_dir = tmp_path / "new-run"
+    workspaces = [tmp_path / "world-01", tmp_path / "root-main"]
+    for workspace in workspaces:
+        workspace.mkdir()
+
+    binding = _freeze_run_logical_root_seed(
+        run_dir=run_dir,
+        workspaces=workspaces,
+        logical_root_runtime=logical_root,
+    )
+
+    assert binding["frozen_run_seed"]["identity"] == adopted.adopted.identity.to_dict()
+    assert binding["frozen_run_seed"]["evidence_count"] >= 7
+    for workspace in workspaces:
+        seed = workspace / "S_CONTROL_INPUTS" / "XINAO_ROOT_WORLD"
+        assert (seed / "XINAO_ROOT_WORLD.txt").read_bytes() == b"adopted Omega(g)\n"
+        assert (seed / "source_generation_receipt.json").read_bytes() == (
+            adopted.adopted.receipt_path.read_bytes()
+        )
+        manifest = json.loads((seed / "manifest.json").read_text(encoding="utf-8"))
+        assert len(manifest["source_evidence"]) == binding["frozen_run_seed"]["evidence_count"]
+        assert all(
+            (seed / reference["relative_path"]).is_file()
+            for reference in manifest["source_evidence"].values()
+        )
+
+
+def test_recovery_validates_frozen_seed_and_never_follows_later_store(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    workspaces = [tmp_path / "world-01", tmp_path / "root-main"]
+    for workspace in workspaces:
+        workspace.mkdir()
+    logical_root = tmp_path / "logical-root"
+    binding = _freeze_run_logical_root_seed(
+        run_dir=run_dir,
+        workspaces=workspaces,
+        logical_root_runtime=logical_root,
+    )
+    config = {
+        "branch_lineages": [
+            {
+                "lineage_id": "world-01",
+                "role": "independent_world",
+                "workspace": str(workspaces[0]),
+            }
+        ],
+        "root_lineage": {
+            "lineage_id": "root-main",
+            "role": "late_fusion_root",
+            "workspace": str(workspaces[1]),
+        },
+        "logical_root_world_seed": binding,
+    }
+    # Recovery validation consumes only the contained seed. A later broken or
+    # unrelated live store cannot change this run's Omega(g).
+    logical_root.mkdir()
+    (logical_root / "unrelated-live-change").write_text("later", encoding="utf-8")
+
+    observed = _validate_frozen_logical_root_identity(config)
+
+    assert observed == binding["frozen_run_seed"]
+
+
+def test_recovery_rejects_one_clone_frozen_seed_drift(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    workspaces = [tmp_path / "world-01", tmp_path / "root-main"]
+    for workspace in workspaces:
+        workspace.mkdir()
+    binding = _freeze_run_logical_root_seed(
+        run_dir=run_dir,
+        workspaces=workspaces,
+        logical_root_runtime=tmp_path / "logical-root",
+    )
+    config = {
+        "branch_lineages": [{"lineage_id": "world-01", "workspace": str(workspaces[0])}],
+        "root_lineage": {"lineage_id": "root-main", "workspace": str(workspaces[1])},
+        "logical_root_world_seed": binding,
+    }
+    manifest = workspaces[0] / "S_CONTROL_INPUTS" / "XINAO_ROOT_WORLD" / "manifest.json"
+    value = json.loads(manifest.read_text(encoding="utf-8"))
+    value["truth_or_instruction"] = True
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+
+    with pytest.raises(PerpetualRuntimeError, match="LOGICAL_ROOT_SEED_VALIDATION_FAILED"):
+        _validate_frozen_logical_root_identity(config)
+
+
+def test_recovery_uses_hash_pinned_frozen_logical_root_validator(tmp_path: Path) -> None:
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["__file__"],
+    )
+    source_module = Path(controller_module.__file__).with_name("logical_root_runtime.py")
+    frozen_module = tmp_path / "logical_root_runtime_release.py"
+    shutil.copyfile(source_module, frozen_module)
+    run_dir = tmp_path / "run"
+    workspaces = [tmp_path / "world-01", tmp_path / "root-main"]
+    for workspace in workspaces:
+        workspace.mkdir()
+    binding = _freeze_run_logical_root_seed(
+        run_dir=run_dir,
+        workspaces=workspaces,
+        logical_root_runtime=tmp_path / "logical-root",
+    )
+    config = {
+        "branch_lineages": [{"lineage_id": "world-01", "workspace": str(workspaces[0])}],
+        "root_lineage": {"lineage_id": "root-main", "workspace": str(workspaces[1])},
+        "logical_root_world_seed": binding,
+        "logical_root_runtime_release_path": str(frozen_module),
+        "logical_root_runtime_release_sha256": sha256_file(frozen_module),
+    }
+    assert _validate_frozen_logical_root_identity(config) == binding["frozen_run_seed"]
+
+    frozen_module.write_bytes(frozen_module.read_bytes() + b"\n# drift\n")
+    with pytest.raises(PerpetualRuntimeError, match="RELEASE_BYTES_CHANGED"):
+        _validate_frozen_logical_root_identity(config)
 
 
 def test_event_parser_ignores_launcher_banner_and_reads_thread() -> None:
@@ -1075,7 +1250,7 @@ def test_body_incident_classification_keeps_only_hash_bound_failure_metadata(
                 "type": "command_execution",
                 "status": "failed",
                 "exit_code": 1,
-                "command": "write protected body",
+                "command": f"Set-Content -LiteralPath '{protected}' -Value data",
                 "aggregated_output": f"Access is denied: {protected}",
             },
         },
@@ -1119,6 +1294,158 @@ def test_body_incident_classification_keeps_only_hash_bound_failure_metadata(
     assert classify_body_incident_events(stdout_path, workspace=workspace) == []
 
 
+def test_body_incident_classification_binds_denial_to_its_local_target(
+    tmp_path: Path,
+) -> None:
+    stdout_path = tmp_path / "exec_stdout.jsonl"
+    workspace = tmp_path / "world-03"
+    workspace.mkdir()
+    inside_acl_target = workspace / ".xinao-audit-tmp" / "xinao-year-path-check"
+    inside_test_tmp = workspace / ".xinao-world-runtime" / "test-tmp" / "tmp-case"
+    wrapped_parent, wrapped_name = str(inside_acl_target).rsplit("\\", 1)
+    outside_python = Path(r"C:\runtime\tools\python-3.13.14\python.exe")
+    outside_stdlib = Path(r"C:\runtime\tools\python-3.13.14\Lib\pathlib\_local.py")
+
+    powershell_acl_failure = "\n".join(
+        [
+            json.dumps({"target": str(inside_acl_target), "within": True, "exists": True}),
+            "Get-Acl : Attempted to perform an unauthorized operation.",
+            "    + CategoryInfo          : NotSpecified: (:) [Get-Acl], "
+            "UnauthorizedAccessException",
+            f"Get-ChildItem : Access to the path '{wrapped_parent}\\",
+            f"{wrapped_name}' is denied.",
+            "    + CategoryInfo          : PermissionDenied: "
+            "(D:\\truncated...-path:String) [Get-ChildItem], UnauthorizedAccessException",
+            f'  File "{outside_stdlib}", line 537, in open',
+        ]
+    )
+    ordinary_test_failure = "\n".join(
+        [
+            f"command: {outside_python} -m pytest",
+            f'  File "{outside_stdlib}", line 537, in open',
+            "PermissionError: [Errno 13] Permission denied: "
+            f"'{inside_test_tmp}\\.quote-ingest.lock'",
+        ]
+    )
+    external_edge = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
+    external_read_probe = "\n".join(
+        [
+            json.dumps({"Path": str(external_edge), "Exists": True}),
+            f"Get-Content : Access to the path '{external_edge}' is denied.",
+        ]
+    )
+    mixed_inside_write = workspace / "inside-write.txt"
+    rows = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "inside-powershell-acl",
+                "type": "command_execution",
+                "status": "failed",
+                "exit_code": 1,
+                "command": "Get-Acl -LiteralPath $target; Get-ChildItem $target",
+                "aggregated_output": powershell_acl_failure,
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "inside-test-temp",
+                "type": "command_execution",
+                "status": "failed",
+                "exit_code": 1,
+                "command": "python -B -m unittest discover",
+                "aggregated_output": ordinary_test_failure,
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "external-read-probe",
+                "type": "command_execution",
+                "status": "failed",
+                "exit_code": 1,
+                "command": f"Test-Path -LiteralPath '{external_edge}'; Get-Content $target",
+                "aggregated_output": external_read_probe,
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "unrelated-write-and-external-read-denial",
+                "type": "command_execution",
+                "status": "failed",
+                "exit_code": 1,
+                "command": (
+                    f"Set-Content -LiteralPath '{mixed_inside_write}' -Value ok; "
+                    f"Get-Content -LiteralPath '{external_edge}'"
+                ),
+                "aggregated_output": external_read_probe,
+            },
+        },
+    ]
+    stdout_path.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    assert classify_body_incident_events(stdout_path, workspace=workspace) == []
+
+
+def test_body_incident_classification_retains_exact_outside_denials(tmp_path: Path) -> None:
+    stdout_path = tmp_path / "exec_stdout.jsonl"
+    workspace = tmp_path / "world-01"
+    workspace.mkdir()
+    outside_targets = [tmp_path / f"protected-{index}.txt" for index in range(5)]
+    wrapped_parent, wrapped_name = str(outside_targets[1]).rsplit("\\", 1)
+    outputs = [
+        f"Access is denied: {outside_targets[0]}",
+        f"Remove-Item : Access to the path '{wrapped_parent}\\\n{wrapped_name}' is denied.",
+        f"PermissionError: [Errno 13] Permission denied: '{outside_targets[2]}'",
+        "    + CategoryInfo : PermissionDenied: "
+        f"({outside_targets[3]}:String) [Set-Content], UnauthorizedAccessException",
+        f"PermissionError: [Errno 13] Permission denied: '{outside_targets[4]}'",
+    ]
+    commands = [
+        f"Set-Content -LiteralPath '{outside_targets[0]}' -Value data",
+        f"Remove-Item -LiteralPath '{outside_targets[1]}'",
+        f"python -c \"from pathlib import Path; Path(r'{outside_targets[2]}').open('x')\"",
+        f"Set-Content -LiteralPath '{outside_targets[3]}' -Value data",
+        f"python -c \"open(r'{outside_targets[4]}', 'wb')\"",
+    ]
+    rows = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": f"outside-{index}",
+                "type": "command_execution",
+                "status": "failed",
+                "exit_code": 1,
+                "command": commands[index],
+                "aggregated_output": output,
+            },
+        }
+        for index, output in enumerate(outputs)
+    ]
+    stdout_path.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    incidents = classify_body_incident_events(stdout_path, workspace=workspace)
+
+    assert [incident["item_id"] for incident in incidents] == [
+        "outside-0",
+        "outside-1",
+        "outside-2",
+        "outside-3",
+        "outside-4",
+    ]
+    assert [incident["denied_target_path_sha256"] for incident in incidents] == [
+        sha256_bytes(str(target.resolve()).lower().encode("utf-8")) for target in outside_targets
+    ]
+
+
 def test_completed_turn_with_boundary_denial_is_parked_as_body_incident(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1148,6 +1475,7 @@ def test_completed_turn_with_boundary_denial_is_parked_as_body_incident(
             "print(json.dumps({'type':'turn.started'}),flush=True)\n"
             "event={'type':'item.completed','item':{'id':'cmd-1',"
             "'type':'command_execution','status':'failed','exit_code':1,"
+            + f"'command':{'Set-Content -LiteralPath ' + repr(str(protected)) + ' -Value data'!r},"
             + f"'aggregated_output':{boundary_output!r}}}}}\n"
             + "print(json.dumps(event),flush=True)\n"
             "last.write_text('do not adopt\\nXINAO_LINEAGE_STATE: CONTINUE\\n',encoding='utf-8')\n"
@@ -2055,6 +2383,7 @@ def test_reconcile_outside_workspace_denial_is_body_incident(tmp_path: Path) -> 
                 "item": {
                     "type": "command_execution",
                     "status": "failed",
+                    "command": f"Set-Content -LiteralPath '{outside}' -Value data",
                     "aggregated_output": f"Access is denied: {outside}",
                 },
             }
@@ -2226,6 +2555,7 @@ def _write_uncommitted_receipt(
                     "type": "command_execution",
                     "status": "failed",
                     "exit_code": 1,
+                    "command": f"Set-Content -LiteralPath '{outside_denial}' -Value data",
                     "aggregated_output": f"Access is denied: {outside_denial}",
                 },
             }
@@ -2256,6 +2586,223 @@ def _write_uncommitted_receipt(
     }
     (attempt / "receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
     return attempt
+
+
+def _write_legacy_sealed_body_receipt(
+    controller: PerpetualController,
+    branches: list[dict[str, str]],
+    *,
+    denied_target: Path,
+    write_target: Path,
+) -> tuple[dict[str, object], Path, Path, Path]:
+    attempt = _write_uncommitted_receipt(
+        controller,
+        error_class="BODY_INCIDENT",
+        outside_denial=denied_target,
+    )
+    legacy_incidents = [{"event_sequence": 1, "legacy_global_scan": True}]
+    stdout = attempt / "exec_stdout.jsonl"
+    rows = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "legacy-denial",
+                "type": "command_execution",
+                "status": "failed",
+                "exit_code": 1,
+                "command": (
+                    f"Set-Content -LiteralPath '{write_target}' -Value data; "
+                    f"Get-Content -LiteralPath '{denied_target}'"
+                ),
+                "aggregated_output": f"Access is denied: {denied_target}",
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+    stdout.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    body_incident = {
+        "schema": "xinao.cleanroom.world-compute-body-incident.v1",
+        "incident_id": "legacy-body-test-1",
+        "run_id": controller.config["run_id"],
+        "lineage_id": "world-01",
+        "turn_number": 1,
+        "attempt_number": 1,
+        "failure_class": "WRITE_DOMAIN_DENIED",
+        "affected_evidence_refs": legacy_incidents,
+        "evidence_adoptable": False,
+        "resume_same_lineage_after_body_repair": True,
+    }
+    (attempt / "body_incident.json").write_text(
+        json.dumps(body_incident, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    receipt_path = attempt / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["stdout_sha256"] = sha256_file(stdout)
+    receipt["body_incident"] = body_incident
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    release = controller.run_dir / "legacy_controller_release.py"
+    release.write_text(
+        "def classify_body_incident_events(stdout_path, *, workspace):\n"
+        "    del stdout_path, workspace\n"
+        "    return [{'event_sequence': 1, 'legacy_global_scan': True}]\n",
+        encoding="utf-8",
+    )
+    config: dict[str, object] = {
+        **controller.config,
+        "branch_lineages": branches,
+        "controller_release_path": str(release),
+        "controller_release_sha256": sha256_file(release),
+    }
+    receipt_sha256 = sha256_file(receipt_path)
+    seal = {
+        "schema": "xinao.cleanroom.world-compute-recovery-state-commit.v1",
+        "run_id": controller.config["run_id"],
+        "lineage_id": "world-01",
+        "turn_number": 1,
+        "attempt_number": 1,
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": receipt_sha256,
+        "disposition": "BODY_INCIDENT",
+    }
+    state_path = controller.lineage_state_path("world-01")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state.update(
+        {
+            "status": "BODY_INCIDENT",
+            "last_error_class": "BODY_INCIDENT",
+            "last_error": "legacy-body-test-1",
+            "recovery_state_commits": [seal],
+            "recovery_state_commit_receipt_path": str(receipt_path),
+            "recovery_state_commit_receipt_sha256": receipt_sha256,
+            "recovery_state_commit_disposition": "BODY_INCIDENT",
+            "recovery_state_commit_turn_number": 1,
+            "recovery_state_commit_attempt_number": 1,
+        }
+    )
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    return config, attempt, state_path, release
+
+
+def test_legacy_false_body_seal_is_append_only_reclassified_for_same_turn_retry(
+    tmp_path: Path,
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    workspace = Path(branches[0]["workspace"])
+    config, attempt, state_path, legacy_release = _write_legacy_sealed_body_receipt(
+        controller,
+        branches,
+        denied_target=tmp_path / "external-read.txt",
+        write_target=workspace / "inside-write.txt",
+    )
+    original_seal = json.loads(state_path.read_text(encoding="utf-8"))["recovery_state_commits"][0]
+
+    first = reconcile_incomplete_attempts(
+        config,
+        recovery_dir=controller.run_dir / "recovery" / "legacy-reclass-first",
+    )
+    state_after_first = state_path.read_bytes()
+    review_path = attempt / "body_classification_review.json"
+    review_after_first = review_path.read_bytes()
+    current_controller = Path(
+        __import__(
+            "services.xinao_perpetual_world_compute.controller",
+            fromlist=["__file__"],
+        ).__file__
+    )
+    adopted_release = controller.run_dir / "controller_releases" / "recovery-current.py"
+    adopted_release.parent.mkdir()
+    adopted_release.write_bytes(current_controller.read_bytes())
+    adopted_config = {
+        **config,
+        "controller_release_path": str(adopted_release),
+        "controller_release_sha256": sha256_file(adopted_release),
+        "controller_release_history": [
+            {
+                "path": str(legacy_release),
+                "sha256": config["controller_release_sha256"],
+            },
+            {
+                "path": str(adopted_release),
+                "sha256": sha256_file(adopted_release),
+            },
+        ],
+    }
+    second = reconcile_incomplete_attempts(
+        adopted_config,
+        recovery_dir=controller.run_dir / "recovery" / "legacy-reclass-second",
+    )
+
+    state = json.loads(state_after_first)
+    assert first["receipt_state_commits"][0]["disposition"] == ("BODY_INCIDENT_RECLASSIFIED_RETRY")
+    assert first["receipt_state_commits"][0]["sealed_disposition"] == "BODY_INCIDENT"
+    assert second["receipt_state_commits"][0]["reused"] is True
+    assert second["receipt_state_commits"][0]["body_classification_review_reused"] is True
+    assert state_path.read_bytes() == state_after_first
+    assert review_path.read_bytes() == review_after_first
+    assert state["recovery_state_commits"] == [original_seal]
+    assert state["turns_completed"] == 0
+    assert state["status"] == "READY_TO_RETRY_RECLASSIFIED_BODY"
+    assert state["last_error_class"] is None
+    assert state["body_classification_reviews"][0]["decision"] == "RETRY_SAME_TURN"
+
+
+def test_legacy_true_outside_body_seal_remains_parked(tmp_path: Path) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    outside = tmp_path / "protected" / "outside-write.txt"
+    config, attempt, state_path, _ = _write_legacy_sealed_body_receipt(
+        controller,
+        branches,
+        denied_target=outside,
+        write_target=outside,
+    )
+
+    result = reconcile_incomplete_attempts(
+        config,
+        recovery_dir=controller.run_dir / "recovery" / "legacy-true-body",
+    )
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    review = json.loads((attempt / "body_classification_review.json").read_text(encoding="utf-8"))
+    assert result["receipt_state_commits"][0]["disposition"] == "BODY_INCIDENT"
+    assert state["turns_completed"] == 0
+    assert state["status"] == "BODY_INCIDENT"
+    assert review["decision"] == "KEEP_BODY_INCIDENT"
+    assert review["reviewed_body_incident_count"] == 1
+
+
+@pytest.mark.parametrize("drift", ["release", "receipt"])
+def test_legacy_body_reclassification_refuses_old_source_drift(tmp_path: Path, drift: str) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    workspace = Path(branches[0]["workspace"])
+    config, attempt, state_path, release = _write_legacy_sealed_body_receipt(
+        controller,
+        branches,
+        denied_target=tmp_path / "external-read.txt",
+        write_target=workspace / "inside-write.txt",
+    )
+    state_before = state_path.read_bytes()
+    if drift == "release":
+        release.write_bytes(release.read_bytes() + b"# drift\n")
+        expected = "RECOVERY_RECEIPT_CONTROLLER_RELEASE_BYTES_CHANGED"
+    else:
+        receipt_path = attempt / "receipt.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["session_id_observed"] = "tampered"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        expected = "RECOVERY_STATE_COMMIT_RECEIPT_DRIFT"
+
+    with pytest.raises(PerpetualRuntimeError, match=expected):
+        reconcile_incomplete_attempts(
+            config,
+            recovery_dir=controller.run_dir / "recovery" / f"legacy-drift-{drift}",
+        )
+
+    assert state_path.read_bytes() == state_before
 
 
 def test_reconcile_commits_receipt_written_before_lineage_state(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from services.xinao_perpetual_world_compute.logical_root_runtime import (
     LogicalRootIntegrityError,
     LogicalRootStore,
     RootIdentity,
+    validate_frozen_world_seed,
 )
 
 RUN_V1 = "xinao.cleanroom-c.perpetual-run.v1"
@@ -496,3 +498,151 @@ def test_pending_fusion_packet_is_not_guessed_as_a_committed_root(tmp_path: Path
 
     assert raised.value.code == "FUSION_COMMIT_AMBIGUOUS"
     assert store.reconstruct_current().identity == RootIdentity.genesis()
+
+
+def test_freeze_genesis_world_seed_is_explicit_and_self_verifying(tmp_path: Path) -> None:
+    store = LogicalRootStore(tmp_path / "store")
+    target = tmp_path / "frozen"
+
+    frozen = store.freeze_current_world_seed(target)
+
+    assert frozen["status"] == "genesis"
+    assert frozen["identity"] == RootIdentity.genesis().to_dict()
+    assert frozen["artifact_path"] is None
+    manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["truth_or_instruction"] is False
+    assert manifest["working_world_is_revisable"] is True
+    assert manifest["automatic_adoption_allowed"] is False
+    assert manifest["live_store_following"] is False
+    assert not (target / "XINAO_ROOT_WORLD.txt").exists()
+
+
+def test_freeze_generation_copies_exact_artifact_receipt_and_source_identity(
+    tmp_path: Path,
+) -> None:
+    run = _make_committed_run(
+        tmp_path, account_slot="A", run_name="seed-a-run", root_output=b"Omega one\n"
+    )
+    store = LogicalRootStore(tmp_path / "store")
+    adopted = _adopt(
+        store,
+        run,
+        slot="A",
+        predecessor=RootIdentity.genesis(),
+        adoption_id="seed-generation-one",
+    )
+    target = tmp_path / "frozen"
+
+    frozen = store.freeze_current_world_seed(target)
+
+    assert frozen["status"] == "generation"
+    assert frozen["identity"] == adopted.adopted.identity.to_dict()
+    assert Path(frozen["artifact_path"]).read_bytes() == b"Omega one\n"
+    assert (
+        frozen["source_output_identity"]
+        == adopted.adopted.receipt["source"]["source_output_identity"]
+    )
+    assert Path(frozen["receipt_path"]).read_bytes() == adopted.adopted.receipt_path.read_bytes()
+    assert validate_frozen_world_seed(target) == frozen
+
+
+def test_frozen_seed_does_not_follow_later_logical_root_generation(tmp_path: Path) -> None:
+    first_run = _make_committed_run(
+        tmp_path, account_slot="A", run_name="seed-a-first", root_output=b"Omega one\n"
+    )
+    second_run = _make_committed_run(
+        tmp_path,
+        account_slot="C",
+        run_name="seed-c-second",
+        root_output=b"Omega two\n",
+        legacy=True,
+    )
+    store = LogicalRootStore(tmp_path / "store")
+    first = _adopt(
+        store,
+        first_run,
+        slot="A",
+        predecessor=RootIdentity.genesis(),
+        adoption_id="seed-first",
+    )
+    target = tmp_path / "frozen"
+    frozen = store.freeze_current_world_seed(target)
+    _adopt(
+        store,
+        second_run,
+        slot="C",
+        predecessor=first.adopted.identity,
+        adoption_id="seed-second",
+    )
+
+    assert store.reconstruct_current().identity.generation == 2
+    assert validate_frozen_world_seed(target) == frozen
+    assert Path(frozen["artifact_path"]).read_bytes() == b"Omega one\n"
+
+
+def test_frozen_seed_tamper_fails_closed_without_reading_live_store(tmp_path: Path) -> None:
+    run = _make_committed_run(
+        tmp_path, account_slot="A", run_name="seed-tamper", root_output=b"Omega\n"
+    )
+    store = LogicalRootStore(tmp_path / "store")
+    _adopt(
+        store,
+        run,
+        slot="A",
+        predecessor=RootIdentity.genesis(),
+        adoption_id="seed-tamper",
+    )
+    target = tmp_path / "frozen"
+    store.freeze_current_world_seed(target)
+    (target / "XINAO_ROOT_WORLD.txt").write_bytes(b"tampered\n")
+
+    with pytest.raises(LogicalRootIntegrityError) as raised:
+        validate_frozen_world_seed(target)
+
+    assert raised.value.code == "FROZEN_WORLD_SEED_REF_HASH_MISMATCH"
+
+
+def test_frozen_seed_inventory_rejects_extra_or_missing_bytes(tmp_path: Path) -> None:
+    genesis = tmp_path / "genesis"
+    LogicalRootStore(tmp_path / "genesis-store").freeze_current_world_seed(genesis)
+    (genesis / "unlisted.txt").write_text("extra\n", encoding="utf-8")
+
+    with pytest.raises(LogicalRootIntegrityError) as extra:
+        validate_frozen_world_seed(genesis)
+
+    assert extra.value.code == "FROZEN_WORLD_SEED_INVENTORY_MISMATCH"
+
+    run = _make_committed_run(
+        tmp_path, account_slot="A", run_name="seed-inventory", root_output=b"Omega\n"
+    )
+    store = LogicalRootStore(tmp_path / "generation-store")
+    _adopt(
+        store,
+        run,
+        slot="A",
+        predecessor=RootIdentity.genesis(),
+        adoption_id="seed-inventory",
+    )
+    generation = tmp_path / "generation"
+    store.freeze_current_world_seed(generation)
+    (generation / "source_generation_receipt.json").unlink()
+
+    with pytest.raises(LogicalRootIntegrityError) as missing:
+        validate_frozen_world_seed(generation)
+
+    assert missing.value.code in {
+        "EVIDENCE_FILE_MISSING",
+        "FROZEN_WORLD_SEED_INVENTORY_MISMATCH",
+    }
+
+
+def test_frozen_seed_inventory_rejects_hardlinked_manifest(tmp_path: Path) -> None:
+    target = tmp_path / "frozen"
+    LogicalRootStore(tmp_path / "store").freeze_current_world_seed(target)
+    alias = tmp_path / "manifest-hardlink.json"
+    os.link(target / "manifest.json", alias)
+
+    with pytest.raises(LogicalRootIntegrityError) as raised:
+        validate_frozen_world_seed(target)
+
+    assert raised.value.code == "FROZEN_WORLD_SEED_INVENTORY_NONREGULAR"

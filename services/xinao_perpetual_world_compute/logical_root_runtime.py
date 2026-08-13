@@ -30,12 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_LOGICAL_ROOT_RUNTIME = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_logical_root"
-)
+DEFAULT_LOGICAL_ROOT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_logical_root")
 
 GENERATION_RECEIPT_SCHEMA = "xinao.logical-root-generation-receipt.v1"
 CURRENT_PROJECTION_SCHEMA = "xinao.logical-root-current-projection.v1"
+FROZEN_WORLD_SEED_SCHEMA = "xinao.logical-root-frozen-world-seed.v1"
 
 _RUN_V1 = "xinao.cleanroom-c.perpetual-run.v1"
 _RUN_V2 = "xinao.cleanroom.perpetual-world-compute-run.v2"
@@ -221,9 +220,7 @@ def _read_stable(path: Path, *, error_type: type[LogicalRootError]) -> bytes:
     return raw
 
 
-def _read_json(
-    path: Path, *, error_type: type[LogicalRootError]
-) -> tuple[dict[str, Any], bytes]:
+def _read_json(path: Path, *, error_type: type[LogicalRootError]) -> tuple[dict[str, Any], bytes]:
     raw = _read_stable(path, error_type=error_type)
     try:
         value = json.loads(raw)
@@ -267,6 +264,267 @@ def _parse_time(value: object, *, label: str) -> dt.datetime:
     if parsed.tzinfo is None:
         raise LogicalRootEvidenceError("EVIDENCE_TIMESTAMP_INVALID", f"{label} is naive")
     return parsed
+
+
+def _frozen_seed_file_is_regular_single_link(path: Path) -> bool:
+    try:
+        observed = path.lstat()
+    except OSError:
+        return False
+    attributes = int(getattr(observed, "st_file_attributes", 0))
+    reparse_flag = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    return (
+        stat.S_ISREG(observed.st_mode)
+        and not (reparse_flag and attributes & reparse_flag)
+        and observed.st_nlink == 1
+    )
+
+
+def _validate_frozen_seed_inventory(seed_root: Path, expected_files: set[str]) -> None:
+    observed_files: set[str] = set()
+    observed_directories: set[str] = set()
+
+    def visit(directory: Path) -> None:
+        try:
+            entries = list(os.scandir(directory))
+        except OSError as exc:
+            raise LogicalRootIntegrityError(
+                "FROZEN_WORLD_SEED_INVENTORY_UNREADABLE", str(directory)
+            ) from exc
+        for entry in entries:
+            path = Path(entry.path)
+            relative = path.relative_to(seed_root).as_posix()
+            try:
+                # CPython's Windows DirEntry.stat can report st_nlink=0 even
+                # for an ordinary single-link NTFS file; Path.lstat returns
+                # the file identity needed by this boundary check.
+                observed = path.lstat()
+            except OSError as exc:
+                raise LogicalRootIntegrityError(
+                    "FROZEN_WORLD_SEED_INVENTORY_UNREADABLE", str(path)
+                ) from exc
+            attributes = int(getattr(observed, "st_file_attributes", 0))
+            reparse_flag = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+            if reparse_flag and attributes & reparse_flag:
+                raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_INVENTORY_NONREGULAR", str(path))
+            if stat.S_ISDIR(observed.st_mode):
+                observed_directories.add(relative)
+                visit(path)
+            elif stat.S_ISREG(observed.st_mode) and observed.st_nlink == 1:
+                observed_files.add(relative)
+            else:
+                raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_INVENTORY_NONREGULAR", str(path))
+
+    visit(seed_root)
+    expected_directories: set[str] = set()
+    for relative in expected_files:
+        parent = Path(relative).parent
+        while parent != Path("."):
+            expected_directories.add(parent.as_posix())
+            parent = parent.parent
+    if observed_files != expected_files or observed_directories != expected_directories:
+        raise LogicalRootIntegrityError(
+            "FROZEN_WORLD_SEED_INVENTORY_MISMATCH",
+            f"expected_files={sorted(expected_files)} observed_files={sorted(observed_files)} ",
+        )
+
+
+def validate_frozen_world_seed(root: Path | str) -> dict[str, Any]:
+    """Validate only frozen bytes; never follow the production logical store."""
+
+    seed_root = _resolve_existing_directory(Path(root), label="frozen world seed")
+    manifest_path = seed_root / "manifest.json"
+    if not _frozen_seed_file_is_regular_single_link(manifest_path):
+        raise LogicalRootIntegrityError(
+            "FROZEN_WORLD_SEED_INVENTORY_NONREGULAR", str(manifest_path)
+        )
+    manifest, raw = _read_json(manifest_path, error_type=LogicalRootIntegrityError)
+    if raw != _canonical_json_bytes(manifest) or manifest.get("schema") != FROZEN_WORLD_SEED_SCHEMA:
+        raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_MANIFEST_INVALID", str(manifest_path))
+    seal = _require_sha256(
+        manifest.get("manifest_sha256"),
+        label="frozen world seed manifest",
+        error_type=LogicalRootIntegrityError,
+    )
+    unsigned = dict(manifest)
+    unsigned.pop("manifest_sha256", None)
+    if _sha256(_canonical_json_bytes(unsigned)) != seal:
+        raise LogicalRootIntegrityError(
+            "FROZEN_WORLD_SEED_MANIFEST_HASH_MISMATCH", str(manifest_path)
+        )
+    if (
+        manifest.get("working_world_is_revisable") is not True
+        or manifest.get("truth_or_instruction") is not False
+        or manifest.get("automatic_adoption_allowed") is not False
+        or manifest.get("live_store_following") is not False
+    ):
+        raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_BOUNDARY_INVALID", str(manifest_path))
+    source = manifest.get("source")
+    if not isinstance(source, Mapping):
+        raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_SOURCE_INVALID", str(manifest_path))
+    try:
+        identity = RootIdentity.from_mapping(source.get("identity", {}))
+    except LogicalRootConflict as exc:
+        raise LogicalRootIntegrityError(
+            "FROZEN_WORLD_SEED_SOURCE_INVALID", str(manifest_path)
+        ) from exc
+    status = source.get("status")
+    artifact_ref = manifest.get("root_world_artifact")
+    receipt_ref = manifest.get("source_generation_receipt")
+    evidence_copies = manifest.get("source_evidence")
+    if not isinstance(evidence_copies, Mapping):
+        raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_EVIDENCE_INVALID", str(manifest_path))
+    if status == "genesis":
+        if (
+            identity != RootIdentity.genesis()
+            or artifact_ref is not None
+            or receipt_ref is not None
+            or evidence_copies
+        ):
+            raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_GENESIS_INVALID", str(manifest_path))
+        if any(
+            source.get(field) is not None
+            for field in (
+                "source_output_identity",
+                "source_run_id",
+                "source_account_slot",
+                "artifact_sha256",
+                "receipt_sha256",
+            )
+        ):
+            raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_GENESIS_INVALID", str(manifest_path))
+        _validate_frozen_seed_inventory(seed_root, {"manifest.json"})
+    elif status == "generation":
+        if (
+            identity.generation < 1
+            or not isinstance(artifact_ref, Mapping)
+            or not isinstance(receipt_ref, Mapping)
+        ):
+            raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_SOURCE_INVALID", str(manifest_path))
+
+        expected_files = {
+            "manifest.json",
+            "XINAO_ROOT_WORLD.txt",
+            "source_generation_receipt.json",
+        }
+        for label, copied_raw in evidence_copies.items():
+            if not isinstance(copied_raw, Mapping):
+                raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_EVIDENCE_INVALID", str(label))
+            relative = copied_raw.get("relative_path")
+            if not isinstance(relative, str):
+                raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_REF_INVALID", str(label))
+            relative_path = Path(relative)
+            if (
+                relative_path.is_absolute()
+                or relative_path.as_posix() != relative
+                or ".." in relative_path.parts
+                or (label == "root_last_message" and relative != "XINAO_ROOT_WORLD.txt")
+                or (
+                    label != "root_last_message" and relative_path.parts[:1] != ("source_evidence",)
+                )
+            ):
+                raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_REF_INVALID", relative)
+            expected_files.add(relative)
+        _validate_frozen_seed_inventory(seed_root, expected_files)
+
+        def validate_ref(reference: Mapping[str, Any], expected_name: str) -> Path:
+            if reference.get("relative_path") != expected_name:
+                raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_REF_INVALID", expected_name)
+            path = seed_root / expected_name
+            content = _read_stable(path, error_type=LogicalRootIntegrityError)
+            digest = _require_sha256(
+                reference.get("sha256"),
+                label=f"frozen {expected_name}",
+                error_type=LogicalRootIntegrityError,
+            )
+            if _sha256(content) != digest or len(content) != reference.get("bytes"):
+                raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_REF_HASH_MISMATCH", str(path))
+            return path
+
+        artifact_path = validate_ref(artifact_ref, "XINAO_ROOT_WORLD.txt")
+        receipt_path = validate_ref(receipt_ref, "source_generation_receipt.json")
+        receipt, receipt_raw = _read_json(receipt_path, error_type=LogicalRootIntegrityError)
+        if receipt_raw != _canonical_json_bytes(receipt):
+            raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_RECEIPT_INVALID", str(receipt_path))
+        receipt_seal = _require_sha256(
+            receipt.get("receipt_sha256"),
+            label="frozen generation receipt",
+            error_type=LogicalRootIntegrityError,
+        )
+        receipt_unsigned = dict(receipt)
+        receipt_unsigned.pop("receipt_sha256", None)
+        receipt_source = receipt.get("source")
+        receipt_evidence = receipt.get("evidence_refs")
+        if (
+            not isinstance(receipt_source, Mapping)
+            or _sha256(_canonical_json_bytes(receipt_unsigned)) != receipt_seal
+        ):
+            raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_RECEIPT_INVALID", str(receipt_path))
+        if not isinstance(receipt_evidence, Mapping) or set(evidence_copies) != set(
+            receipt_evidence
+        ):
+            raise LogicalRootIntegrityError(
+                "FROZEN_WORLD_SEED_EVIDENCE_INVALID", str(manifest_path)
+            )
+        for label, copied_raw in evidence_copies.items():
+            original_raw = receipt_evidence[label]
+            if not isinstance(copied_raw, Mapping) or not isinstance(original_raw, Mapping):
+                raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_EVIDENCE_INVALID", str(label))
+            relative = str(copied_raw.get("relative_path") or "")
+            copied_path = seed_root / relative
+            try:
+                expected_evidence_root = (seed_root / "source_evidence").resolve()
+                if (label == "root_last_message" and relative != "XINAO_ROOT_WORLD.txt") or (
+                    label != "root_last_message"
+                    and not copied_path.resolve().is_relative_to(expected_evidence_root)
+                ):
+                    raise LogicalRootIntegrityError(
+                        "FROZEN_WORLD_SEED_REF_INVALID", str(copied_path)
+                    )
+            except (OSError, ValueError) as exc:
+                raise LogicalRootIntegrityError(
+                    "FROZEN_WORLD_SEED_REF_INVALID", str(copied_path)
+                ) from exc
+            copied_content = _read_stable(copied_path, error_type=LogicalRootIntegrityError)
+            if (
+                _sha256(copied_content) != copied_raw.get("sha256")
+                or len(copied_content) != copied_raw.get("bytes")
+                or copied_raw.get("sha256") != original_raw.get("sha256")
+                or copied_raw.get("bytes") != original_raw.get("bytes")
+            ):
+                raise LogicalRootIntegrityError(
+                    "FROZEN_WORLD_SEED_EVIDENCE_HASH_MISMATCH", str(label)
+                )
+        if (
+            receipt_seal != identity.receipt_sha256
+            or _sha256(_read_stable(artifact_path, error_type=LogicalRootIntegrityError))
+            != identity.artifact_sha256
+            or source.get("source_output_identity") != receipt_source.get("source_output_identity")
+            or source.get("source_run_id") != receipt_source.get("run_id")
+            or source.get("source_account_slot") != receipt_source.get("account_slot")
+            or source.get("artifact_sha256") != artifact_ref.get("sha256")
+            or source.get("receipt_sha256") != receipt_ref.get("sha256")
+        ):
+            raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_SOURCE_MISMATCH", str(manifest_path))
+    else:
+        raise LogicalRootIntegrityError("FROZEN_WORLD_SEED_SOURCE_INVALID", str(manifest_path))
+    return {
+        "root": str(seed_root),
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": _sha256(raw),
+        "status": status,
+        "identity": identity.to_dict(),
+        "source_output_identity": source.get("source_output_identity"),
+        "artifact_path": str(seed_root / "XINAO_ROOT_WORLD.txt")
+        if status == "generation"
+        else None,
+        "artifact_sha256": source.get("artifact_sha256"),
+        "receipt_path": (
+            str(seed_root / "source_generation_receipt.json") if status == "generation" else None
+        ),
+        "receipt_sha256": source.get("receipt_sha256"),
+        "evidence_count": len(evidence_copies),
+    }
 
 
 def _write_durable_file(path: Path, raw: bytes) -> None:
@@ -380,7 +638,8 @@ class LogicalRootStore:
             existing = _read_stable(destination, error_type=LogicalRootIntegrityError)
             if existing != raw:
                 raise LogicalRootIntegrityError(
-                    "CAS_CONTENT_CONFLICT", f"content-address path has different bytes: {destination}"
+                    "CAS_CONTENT_CONFLICT",
+                    f"content-address path has different bytes: {destination}",
                 )
             return reference
         temporary = self.staging_dir / f"cas-{reference['sha256']}-{uuid.uuid4().hex}.tmp"
@@ -583,9 +842,7 @@ class LogicalRootStore:
                 "FUSION_PACKET_IDENTITY_MISMATCH", "last_packet is outside the isolated root"
             )
         manifest_path = packet_dir / "PACKET_MANIFEST.json"
-        manifest, manifest_raw = _read_json(
-            manifest_path, error_type=LogicalRootEvidenceError
-        )
+        manifest, manifest_raw = _read_json(manifest_path, error_type=LogicalRootEvidenceError)
         manifest_sha = _sha256(manifest_raw)
         expected_manifest_sha = _require_sha256(
             fusion.get("last_packet_manifest_sha256"),
@@ -604,14 +861,10 @@ class LogicalRootStore:
             or manifest.get("candidate_authority") is not False
             or manifest.get("s_content_adjudication") is not False
         ):
-            raise LogicalRootEvidenceError(
-                "FUSION_PACKET_IDENTITY_MISMATCH", str(manifest_path)
-            )
+            raise LogicalRootEvidenceError("FUSION_PACKET_IDENTITY_MISMATCH", str(manifest_path))
         entries = manifest.get("entries")
         if not isinstance(entries, list) or not entries:
-            raise LogicalRootEvidenceError(
-                "FUSION_PACKET_ENTRIES_MISSING", str(manifest_path)
-            )
+            raise LogicalRootEvidenceError("FUSION_PACKET_ENTRIES_MISSING", str(manifest_path))
         deep_mode = manifest.get("deep_evidence_mode")
         if deep_mode not in {None, "thin_index_on_demand_v1"}:
             raise LogicalRootEvidenceError(
@@ -669,13 +922,7 @@ class LogicalRootStore:
             or root_state.get("lifecycle_state") in {None, "CONTINUE"}
         ):
             raise LogicalRootEvidenceError("ROOT_STATE_INVALID", str(root_state_path))
-        turn_dir = (
-            run_dir
-            / "lineages"
-            / "root-main"
-            / "turns"
-            / f"turn-{root_turn_number:06d}"
-        )
+        turn_dir = run_dir / "lineages" / "root-main" / "turns" / f"turn-{root_turn_number:06d}"
         last_completed = root_state.get("last_completed_turn_dir")
         if not last_completed or not _same_path(str(last_completed), turn_dir):
             raise LogicalRootEvidenceError(
@@ -726,7 +973,10 @@ class LogicalRootStore:
             )
             if not normal_success and not recovered_success:
                 continue
-            if _parse_time(turn_receipt.get("ended_at"), label="turn receipt ended_at") > commit_time:
+            if (
+                _parse_time(turn_receipt.get("ended_at"), label="turn receipt ended_at")
+                > commit_time
+            ):
                 continue
             message_path = attempt_dir / "last_message.txt"
             message_raw = _read_stable(message_path, error_type=LogicalRootEvidenceError)
@@ -736,15 +986,11 @@ class LogicalRootStore:
                 error_type=LogicalRootEvidenceError,
             )
             if _sha256(message_raw) != message_sha:
-                raise LogicalRootEvidenceError(
-                    "ROOT_OUTPUT_HASH_MISMATCH", str(message_path)
-                )
+                raise LogicalRootEvidenceError("ROOT_OUTPUT_HASH_MISMATCH", str(message_path))
             selected_attempt = (attempt_dir, turn_receipt, turn_receipt_raw, message_raw)
             break
         if selected_attempt is None:
-            raise LogicalRootEvidenceError(
-                "ROOT_COMMITTED_OUTPUT_MISSING", str(turn_dir)
-            )
+            raise LogicalRootEvidenceError("ROOT_COMMITTED_OUTPUT_MISSING", str(turn_dir))
         attempt_dir, turn_receipt, turn_receipt_raw, message_raw = selected_attempt
         root_receipt_path = attempt_dir / "receipt.json"
         root_message_path = attempt_dir / "last_message.txt"
@@ -768,9 +1014,7 @@ class LogicalRootStore:
         # to combine bytes from two waves.
         for label, path in evidence_paths.items():
             if _read_stable(path, error_type=LogicalRootEvidenceError) != evidence_blobs[label]:
-                raise LogicalRootEvidenceError(
-                    "EVIDENCE_CHANGED_DURING_VERIFICATION", str(path)
-                )
+                raise LogicalRootEvidenceError("EVIDENCE_CHANGED_DURING_VERIFICATION", str(path))
 
         root_receipt_sha = _sha256(turn_receipt_raw)
         root_output_sha = _sha256(message_raw)
@@ -805,7 +1049,9 @@ class LogicalRootStore:
             evidence_paths=evidence_paths,
         )
 
-    def _receipt_snapshot(self, generation_dir: Path, expected_generation: int) -> LogicalRootSnapshot:
+    def _receipt_snapshot(
+        self, generation_dir: Path, expected_generation: int
+    ) -> LogicalRootSnapshot:
         entries = list(generation_dir.iterdir())
         if len(entries) != 1 or not entries[0].is_file() or entries[0].suffix != ".json":
             raise LogicalRootIntegrityError(
@@ -814,9 +1060,7 @@ class LogicalRootStore:
         receipt_path = entries[0]
         receipt, raw = _read_json(receipt_path, error_type=LogicalRootIntegrityError)
         if raw != _canonical_json_bytes(receipt):
-            raise LogicalRootIntegrityError(
-                "GENERATION_RECEIPT_NOT_CANONICAL", str(receipt_path)
-            )
+            raise LogicalRootIntegrityError("GENERATION_RECEIPT_NOT_CANONICAL", str(receipt_path))
         if receipt.get("schema") != GENERATION_RECEIPT_SCHEMA:
             raise LogicalRootIntegrityError("GENERATION_RECEIPT_SCHEMA_INVALID", str(receipt_path))
         try:
@@ -826,9 +1070,7 @@ class LogicalRootStore:
                 "GENERATION_RECEIPT_INVALID", str(receipt_path)
             ) from exc
         if generation != expected_generation:
-            raise LogicalRootIntegrityError(
-                "GENERATION_NUMBER_MISMATCH", str(receipt_path)
-            )
+            raise LogicalRootIntegrityError("GENERATION_NUMBER_MISMATCH", str(receipt_path))
         seal = _require_sha256(
             receipt.get("receipt_sha256"),
             label="generation receipt",
@@ -873,7 +1115,9 @@ class LogicalRootStore:
         if _sha256(_canonical_json_bytes(source_identity_core)) != source.get(
             "source_output_identity"
         ):
-            raise LogicalRootIntegrityError("GENERATION_SOURCE_IDENTITY_MISMATCH", str(receipt_path))
+            raise LogicalRootIntegrityError(
+                "GENERATION_SOURCE_IDENTITY_MISMATCH", str(receipt_path)
+            )
         evidence_refs = receipt.get("evidence_refs")
         if not isinstance(evidence_refs, Mapping) or "root_last_message" not in evidence_refs:
             raise LogicalRootIntegrityError("GENERATION_EVIDENCE_REFS_INVALID", str(receipt_path))
@@ -903,9 +1147,7 @@ class LogicalRootStore:
         for entry in self.receipts_dir.iterdir():
             match = _GENERATION_RE.fullmatch(entry.name)
             if match is None or not entry.is_dir():
-                raise LogicalRootIntegrityError(
-                    "GENERATION_RECEIPT_LAYOUT_INVALID", str(entry)
-                )
+                raise LogicalRootIntegrityError("GENERATION_RECEIPT_LAYOUT_INVALID", str(entry))
             generation_dirs.append((int(match.group("number")), entry))
         generation_dirs.sort()
         chain: list[LogicalRootSnapshot] = []
@@ -965,6 +1207,132 @@ class LogicalRootStore:
         if current.artifact_path is None:
             return None
         return _read_stable(current.artifact_path, error_type=LogicalRootIntegrityError)
+
+    def freeze_current_world_seed(self, destination: Path | str) -> dict[str, Any]:
+        """Freeze exactly one current ``Omega(g)`` for a future run.
+
+        The returned seed is a copied, self-verifying input.  It is not a live
+        pointer, authority, scientific truth, or instruction.  Genesis is
+        explicit and carries no invented artifact.  Once frozen, recovery can
+        validate the destination without consulting this store again.
+        """
+
+        target = Path(destination).absolute()
+        if target.exists():
+            raise LogicalRootConflict("FROZEN_WORLD_SEED_EXISTS", str(target))
+        current = self.reconstruct_current()
+        target.mkdir(parents=True)
+        try:
+            if current.identity.generation == 0:
+                source = {
+                    "status": "genesis",
+                    "identity": current.identity.to_dict(),
+                    "source_output_identity": None,
+                    "source_run_id": None,
+                    "source_account_slot": None,
+                    "artifact_sha256": None,
+                    "receipt_sha256": None,
+                }
+                artifact_ref = None
+                receipt_ref = None
+            else:
+                assert current.receipt is not None
+                assert current.receipt_path is not None
+                assert current.artifact_path is not None
+                receipt_raw = _read_stable(
+                    current.receipt_path, error_type=LogicalRootIntegrityError
+                )
+                artifact_raw = _read_stable(
+                    current.artifact_path, error_type=LogicalRootIntegrityError
+                )
+                receipt_path = target / "source_generation_receipt.json"
+                artifact_path = target / "XINAO_ROOT_WORLD.txt"
+                _write_durable_file(receipt_path, receipt_raw)
+                _write_durable_file(artifact_path, artifact_raw)
+                artifact_sha = _sha256(artifact_raw)
+                receipt_file_sha = _sha256(receipt_raw)
+                if (
+                    artifact_sha != current.identity.artifact_sha256
+                    or str(current.receipt.get("receipt_sha256") or "")
+                    != current.identity.receipt_sha256
+                ):
+                    raise LogicalRootIntegrityError(
+                        "FROZEN_WORLD_SEED_SOURCE_DRIFT", str(current.receipt_path)
+                    )
+                source_record = current.receipt["source"]
+                source = {
+                    "status": "generation",
+                    "identity": current.identity.to_dict(),
+                    "source_output_identity": source_record["source_output_identity"],
+                    "source_run_id": source_record["run_id"],
+                    "source_account_slot": source_record["account_slot"],
+                    "artifact_sha256": artifact_sha,
+                    "receipt_sha256": receipt_file_sha,
+                }
+                artifact_ref = {
+                    "relative_path": artifact_path.relative_to(target).as_posix(),
+                    "bytes": len(artifact_raw),
+                    "sha256": artifact_sha,
+                }
+                receipt_ref = {
+                    "relative_path": receipt_path.relative_to(target).as_posix(),
+                    "bytes": len(receipt_raw),
+                    "sha256": receipt_file_sha,
+                }
+                evidence_copies: dict[str, dict[str, Any]] = {}
+                evidence_refs = current.receipt.get("evidence_refs")
+                if not isinstance(evidence_refs, Mapping):
+                    raise LogicalRootIntegrityError(
+                        "FROZEN_WORLD_SEED_SOURCE_DRIFT", "generation evidence refs are absent"
+                    )
+                for index, (label, reference) in enumerate(sorted(evidence_refs.items()), start=1):
+                    if not isinstance(reference, Mapping):
+                        raise LogicalRootIntegrityError(
+                            "FROZEN_WORLD_SEED_SOURCE_DRIFT", f"evidence ref: {label}"
+                        )
+                    evidence_raw = _read_stable(
+                        self.root / str(reference.get("relative_path") or ""),
+                        error_type=LogicalRootIntegrityError,
+                    )
+                    evidence_sha = _sha256(evidence_raw)
+                    if evidence_sha != reference.get("sha256") or len(
+                        evidence_raw
+                    ) != reference.get("bytes"):
+                        raise LogicalRootIntegrityError(
+                            "FROZEN_WORLD_SEED_SOURCE_DRIFT", f"evidence ref: {label}"
+                        )
+                    if label == "root_last_message":
+                        copy_path = artifact_path
+                    else:
+                        copy_path = target / "source_evidence" / f"{index:04d}.blob"
+                        _write_durable_file(copy_path, evidence_raw)
+                    evidence_copies[str(label)] = {
+                        "relative_path": copy_path.relative_to(target).as_posix(),
+                        "bytes": len(evidence_raw),
+                        "sha256": evidence_sha,
+                    }
+            if current.identity.generation == 0:
+                evidence_copies = {}
+            core = {
+                "schema": FROZEN_WORLD_SEED_SCHEMA,
+                "frozen_from_logical_root": str(self.root),
+                "source": source,
+                "root_world_artifact": artifact_ref,
+                "source_generation_receipt": receipt_ref,
+                "source_evidence": evidence_copies,
+                "working_world_is_revisable": True,
+                "truth_or_instruction": False,
+                "automatic_adoption_allowed": False,
+                "live_store_following": False,
+            }
+            manifest = {**core, "manifest_sha256": _sha256(_canonical_json_bytes(core))}
+            manifest_path = target / "manifest.json"
+            _write_durable_file(manifest_path, _canonical_json_bytes(manifest))
+            _fsync_directory(target)
+            return validate_frozen_world_seed(target)
+        except BaseException:
+            shutil.rmtree(target, ignore_errors=True)
+            raise
 
     def _write_projection(self, snapshot: LogicalRootSnapshot) -> None:
         core = {
@@ -1064,9 +1432,10 @@ class LogicalRootStore:
                 assert receipt is not None
                 if receipt["request"].get("adoption_id") != request["adoption_id"]:
                     continue
-                if receipt.get("request_sha256") != request_sha or dict(
-                    receipt["request"]
-                ) != request:
+                if (
+                    receipt.get("request_sha256") != request_sha
+                    or dict(receipt["request"]) != request
+                ):
                     raise LogicalRootConflict(
                         "IDEMPOTENCY_KEY_CONFLICT",
                         f"adoption_id {request['adoption_id']} is bound to different request bytes",
@@ -1127,6 +1496,7 @@ __all__ = [
     "AdoptionResult",
     "CURRENT_PROJECTION_SCHEMA",
     "DEFAULT_LOGICAL_ROOT_RUNTIME",
+    "FROZEN_WORLD_SEED_SCHEMA",
     "GENERATION_RECEIPT_SCHEMA",
     "LogicalRootConflict",
     "LogicalRootError",
@@ -1135,4 +1505,5 @@ __all__ = [
     "LogicalRootSnapshot",
     "LogicalRootStore",
     "RootIdentity",
+    "validate_frozen_world_seed",
 ]

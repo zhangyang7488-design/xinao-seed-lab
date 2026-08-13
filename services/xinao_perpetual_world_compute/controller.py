@@ -34,6 +34,7 @@ DEEP_EVIDENCE_REF_SCHEMA = "xinao.cleanroom.world-compute-deep-evidence-ref.v1"
 DEEP_EVIDENCE_TRAJECTORY_INDEX_SCHEMA = "xinao.cleanroom.world-compute-trajectory-index.v1"
 DEEP_EVIDENCE_ARTIFACT_MANIFEST_SCHEMA = "xinao.cleanroom.world-compute-artifact-manifest.v1"
 BODY_INCIDENT_SCHEMA = "xinao.cleanroom.world-compute-body-incident.v1"
+BODY_CLASSIFICATION_REVIEW_SCHEMA = "xinao.cleanroom.body-classification-review.v1"
 WORLD_ISOLATED_LAUNCHER_SCHEMA = "xinao.cleanroom.world-isolated-launcher.v1"
 WORLD_RUNTIME_BINDING_SCHEMA = "xinao.cleanroom.world-runtime-binding.v1"
 WORLD_RUNTIME_BINDING_APPLIED_SCHEMA = "xinao.cleanroom.world-runtime-binding-applied.v1"
@@ -91,6 +92,8 @@ DEFAULT_WORLD_TURN_CONCURRENCY_LIMIT = 4
 DEFAULT_WORLD_TURN_QUOTA_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_world_turn_quota")
 DEFAULT_XINAO_LIVE_REALITY_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\xinao\live-reality")
 DEFAULT_XINAO_WORLD_COMPUTE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\xinao\world-compute")
+DEFAULT_LOGICAL_ROOT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_logical_root")
+FROZEN_LOGICAL_ROOT_SEED_RELATIVE = Path("S_CONTROL_INPUTS") / "XINAO_ROOT_WORLD"
 ACCOUNT_SLOTS = ("A", "C")
 CONTEXT_CONSUMER_TASK_NAME = r"\XINAO-S-Context-Rollout-Consumer-v1"
 
@@ -232,15 +235,6 @@ _WORLD_SANDBOXED_LAUNCH_LINE = (
     b"-c 'approval_policy=\"never\"' "
     b"-c 'sandbox_workspace_write.network_access=true' "
     b"@slotSpecificCodexArgs @CodexArgs"
-)
-_BODY_BOUNDARY_OS_DENIAL_TOKENS = (
-    "access is denied",
-    "access denied",
-    "permission denied",
-    "operation not permitted",
-    "unauthorizedaccessexception",
-    "write access denied",
-    "write access is denied",
 )
 _WORLD_RUNTIME_BINDING_PARAM_SEAM = b'    [string]$CodexArgsFile = "",\r\n    [switch]$PrepareOnly,'
 _WORLD_RUNTIME_BINDING_PARAM_REPLACEMENT = (
@@ -569,7 +563,54 @@ elseif ($worldRuntimeBindingMandatory) {
     throw "WORLD_RUNTIME_BINDING_REQUIRED"
 }
 """.replace(b"\n", b"\r\n")
-_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(?i)(?<![A-Za-z0-9_])([A-Z]:[\\/][^\r\n\"'<>|]+)")
+_BODY_DENIAL_PATH_BEFORE_RULE_RE = re.compile(
+    r"(?i)(?P<path>[A-Z]:[\\/][^\r\n]*?)\s*:\s*"
+    r"(?P<rule>access is denied|access denied|permission denied|operation not permitted|"
+    r"write access (?:is )?denied)\b"
+)
+_BODY_DENIAL_RULE_BEFORE_PATH_RE = re.compile(
+    r"(?i)(?P<rule>access is denied|access denied|permission denied|operation not permitted|"
+    r"write access (?:is )?denied)\s*:\s*['\"]?"
+    r"(?P<path>[A-Z]:[\\/][^'\"\r\n]+?)['\"]?\s*$"
+)
+_BODY_DENIAL_QUOTED_EXCEPTION_RE = re.compile(
+    r"(?i)(?P<rule>permission denied|operation not permitted)\s*:\s*"
+    r"['\"](?P<path>[A-Z]:[\\/][^'\"\r\n]+)['\"]"
+)
+_BODY_DENIAL_ACCESS_TO_PATH_RE = re.compile(
+    r"(?i)access to the path\s+['\"](?P<path>[A-Z]:[\\/][^'\"]+)"
+    r"['\"]\s+is denied\b"
+)
+_BODY_DENIAL_POWERSHELL_CATEGORY_RE = re.compile(
+    r"(?i)permissiondenied\s*:\s*\((?P<path>[A-Z]:[\\/][^)\r\n]+?)"
+    r"(?::string)?\)"
+)
+_BODY_POWERSHELL_WRITE_TARGET_RE = re.compile(
+    r"(?ix)\b(?:set-content|add-content|out-file|new-item|remove-item|clear-content|"
+    r"set-acl)\b(?:(?![;\r\n]).){0,1024}?"
+    r"-(?:literalpath|filepath|path)\s+(?P<quote>['\"])"
+    r"(?P<path>[A-Z]:[\\/][^'\"\r\n]+)(?P=quote)"
+)
+_BODY_PATHLIB_WRITE_TARGET_RE = re.compile(
+    r"(?ix)\bpath\s*\(\s*(?:r|u|b|br|rb)?(?P<quote>['\"])"
+    r"(?P<path>[A-Z]:[\\/][^'\"\r\n]+)(?P=quote)\s*\)\s*\."
+    r"(?:write_text|write_bytes|unlink|mkdir|rmdir|touch)\s*\("
+)
+_BODY_PATHLIB_OPEN_WRITE_TARGET_RE = re.compile(
+    r"(?ix)\bpath\s*\(\s*(?:r|u|b|br|rb)?(?P<quote>['\"])"
+    r"(?P<path>[A-Z]:[\\/][^'\"\r\n]+)(?P=quote)\s*\)\s*\.open\s*\("
+    r"\s*(?P<mode_quote>['\"])[wax+][^'\"\r\n]*(?P=mode_quote)"
+)
+_BODY_BUILTIN_OPEN_WRITE_TARGET_RE = re.compile(
+    r"(?ix)(?<![.\w])open\s*\(\s*(?:r|u|b|br|rb)?(?P<quote>['\"])"
+    r"(?P<path>[A-Z]:[\\/][^'\"\r\n]+)(?P=quote)\s*,\s*"
+    r"(?P<mode_quote>['\"])[wax+][^'\"\r\n]*(?P=mode_quote)"
+)
+_BODY_OS_WRITE_TARGET_RE = re.compile(
+    r"(?ix)\b(?:os|shutil)\.(?:remove|unlink|mkdir|makedirs|rmdir|removedirs|rmtree)"
+    r"\s*\(\s*(?:r|u|b|br|rb)?(?P<quote>['\"])"
+    r"(?P<path>[A-Z]:[\\/][^'\"\r\n]+)(?P=quote)"
+)
 
 _DEEP_EVIDENCE_SECRET_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     (
@@ -965,6 +1006,8 @@ def _safe_workspace_relative_path(raw: str) -> Path:
 
 def _deep_evidence_exclusion_reason(relative_path: Path) -> str | None:
     lowered_parts = [part.lower() for part in relative_path.parts]
+    if lowered_parts[:2] == ["s_control_inputs", "xinao_root_world"]:
+        return "FROZEN_LOGICAL_ROOT_INPUT_NOT_CANDIDATE_ARTIFACT"
     if ".xinao-world-runtime" in lowered_parts:
         return "PRIVATE_LINEAGE_RUNTIME_STATE_NOT_RESEARCH_ARTIFACT"
     if any(part in _DEEP_EVIDENCE_CACHE_PARTS for part in lowered_parts):
@@ -1574,10 +1617,16 @@ XINAO_LINEAGE_STATE: CONTINUE
 CONTINUE 只表示：你从自己的整个当前 world 判断，现在确有下一单位正收益认识计算，应由同一 session 立即续接。WAIT 表示等待现实或具名事件；BLOCKED 表示真实 runtime/材料阻塞；NO_POSITIVE_FRONTIER 表示当前合法空间已无正收益前沿；PAUSE 表示你明确要求暂停该 lineage。这个回执只让 S 管理生命周期，不限制你的研究内容，也不能把局部 no-action、ABSTAIN、一次反证或一轮报告冒充整个新澳父对象关闭。"""
 
 
+def frozen_logical_root_prompt_context() -> str:
+    return """本 run 在创建你之前已把当时唯一 Logical Root Ω(g) 冻结到工作树内 `S_CONTROL_INPUTS/XINAO_ROOT_WORLD/manifest.json`。若 manifest 的 `source.status` 是 `generation`，同目录 `XINAO_ROOT_WORLD.txt` 是该代 exact working-world bytes，`source_generation_receipt.json` 是 exact provenance；若是 `genesis`，表示开工时还没有已采用 generation，不能自行补造一个。它只是可修订的当前工作世界与认识起点，不是真理、规范、指令或研究题；你可以通过现实计算修正、拒绝或超越它。该冻结种子不随生产 Logical Root 后续变化，不授权你自动 adopt，也不会热注入现役 run。"""
+
+
 def build_branch_initial_prompt(*, lineage_id: str, run_id: str, source_head: str) -> str:
     return f"""你是 clean-room 中一条独立、完整、长期存续的 GPT-5.6 Sol 新澳 world-owning cognition lineage。
 
 当前活动已经明确进入新澳。你面对的现实 W 是当前工作树的完整精确 bytes；该独立 clone 的基线 HEAD 为 {source_head}，run identity 为 {run_id}，lineage identity 为 {lineage_id}。先按本工作树 AGENTS.md 与新澳入口地图接触完整现实，再由你自己形成 working world、关系、表示、问题、计算、工具、模拟、网络查询、代码和实验。你不是 S 预先分配的统计员、代码员、审稿人或某个固定假设分支；S 不给你研究题，也不规定下一关系。工具和现实展开由你的 cognition 自然长出，Reality Return 必须回到整个当前 world。
+
+{frozen_logical_root_prompt_context()}
 
 这不是一次性报告任务。一个局部计算、null/no-action、阶段报告或当前 turn 结束，都不自动关闭仍存活的父对象。只要没有真实等待、阻塞、应暂停或已经可核的无正收益前沿，就由同一 lineage 自然进入下一单位，不等用户再说“继续”。
 
@@ -1611,6 +1660,8 @@ def build_root_fusion_prompt(
     return f"""{opening}
 
 当前 run identity 为 {run_id}，独立 clone 的基线 HEAD 为 {source_head}。S 只冻结了多条独立 world-owning Sol 的原始候选回执与 provenance；新的 packet 位于你工作树内 `{packet_relative_path}`。这些材料默认只是 candidate/evidence，不是投票、结论、canonical answer 或对你的研究 steering。
+
+{frozen_logical_root_prompt_context()}
 
 `PACKET_MANIFEST.json` 同时给每条 lineage 一个薄的 `DEEP_EVIDENCE_XX.json` 导航面：它指向 completed-turn 的逐事件索引与内容寻址 artifact blobs，并给出本 run 冻结 controller 的 `inspect-evidence` 查询命令前缀。`CANDIDATE_XX.txt` 不是该 lineage 的全部认识；当某个分歧、推导、工具结果、撤回或现实产物会改变你的重综合时，按需打开对应事件或 artifact。不要先把所有 raw trajectory 批量灌进上下文，也不要在输出中复现偶然遇到的账户/秘密材料。
 
@@ -1670,6 +1721,73 @@ def sanitize_command(command: Sequence[str]) -> list[str]:
     return result
 
 
+def _body_denial_local_records(output: str) -> Iterator[str]:
+    """Yield only records where an OS denial and its target can be read together."""
+
+    lines = output.splitlines()
+    for index, line in enumerate(lines):
+        yield line
+        lowered = line.casefold()
+        if "access to the path" not in lowered or re.search(r"(?i)['\"]\s+is denied\b", line):
+            continue
+
+        # PowerShell display wrapping can split one quoted path across physical
+        # lines.  Rejoin only the bounded continuation of that same denial
+        # sentence; traceback and CategoryInfo lines are never pulled in.
+        record = line.rstrip()
+        for continuation in lines[index + 1 : index + 3]:
+            stripped = continuation.strip()
+            if not stripped or stripped.startswith(("At line:", "+", "Traceback ")):
+                break
+            record += stripped
+            if re.search(r"(?i)['\"]\s+is denied\b", record):
+                yield record
+                break
+
+
+def _body_denial_targets(output: str) -> Iterator[tuple[str, str]]:
+    patterns: tuple[tuple[re.Pattern[str], str | None], ...] = (
+        (_BODY_DENIAL_ACCESS_TO_PATH_RE, "access is denied"),
+        (_BODY_DENIAL_PATH_BEFORE_RULE_RE, None),
+        (_BODY_DENIAL_RULE_BEFORE_PATH_RE, None),
+        (_BODY_DENIAL_QUOTED_EXCEPTION_RE, None),
+        (_BODY_DENIAL_POWERSHELL_CATEGORY_RE, "permission denied"),
+    )
+    for record in _body_denial_local_records(output):
+        for pattern, fixed_rule in patterns:
+            for match in pattern.finditer(record):
+                path = match.group("path").strip().rstrip(" .,:;)]}")
+                # PowerShell's formatted CategoryInfo abbreviates long values.
+                # Such a locator cannot establish the denied target identity.
+                if "..." in path or "…" in path:
+                    continue
+                rule = fixed_rule or match.group("rule").casefold()
+                yield rule, path
+
+
+def _command_write_targets(command: object) -> Iterator[Path]:
+    if not isinstance(command, str):
+        return
+    patterns = (
+        _BODY_POWERSHELL_WRITE_TARGET_RE,
+        _BODY_PATHLIB_WRITE_TARGET_RE,
+        _BODY_PATHLIB_OPEN_WRITE_TARGET_RE,
+        _BODY_BUILTIN_OPEN_WRITE_TARGET_RE,
+        _BODY_OS_WRITE_TARGET_RE,
+    )
+    observed: set[str] = set()
+    for pattern in patterns:
+        for match in pattern.finditer(command):
+            try:
+                target = resolve_path(match.group("path"))
+            except (OSError, ValueError):
+                continue
+            key = os.path.normcase(str(target))
+            if key not in observed:
+                observed.add(key)
+                yield target
+
+
 def classify_body_incident_events(stdout_path: Path, *, workspace: Path) -> list[dict[str, Any]]:
     """Return mechanical tool-boundary incidents without copying command/output bodies."""
 
@@ -1685,21 +1803,25 @@ def classify_body_incident_events(stdout_path: Path, *, workspace: Path) -> list
                 continue
             if item.get("status") != "failed" and item.get("exit_code") in {0, None}:
                 continue
+            write_targets = set(_command_write_targets(item.get("command")))
+            if not write_targets:
+                continue
             output = str(item.get("aggregated_output") or "")
-            lowered = output.lower()
-            denial = next(
-                (token for token in _BODY_BOUNDARY_OS_DENIAL_TOKENS if token in lowered), None
-            )
+            denial: str | None = None
             denied_target: Path | None = None
-            if denial is not None:
-                for candidate in _WINDOWS_ABSOLUTE_PATH_RE.findall(output):
-                    try:
-                        resolved = resolve_path(candidate.rstrip(" .,:;)]}"))
-                    except (OSError, ValueError):
-                        continue
-                    if resolved != workspace and not resolved.is_relative_to(workspace):
-                        denied_target = resolved
-                        break
+            for candidate_rule, candidate in _body_denial_targets(output):
+                try:
+                    resolved = resolve_path(candidate)
+                except (OSError, ValueError):
+                    continue
+                if (
+                    resolved in write_targets
+                    and resolved != workspace
+                    and not resolved.is_relative_to(workspace)
+                ):
+                    denial = candidate_rule
+                    denied_target = resolved
+                    break
             if denied_target is None:
                 continue
             incidents.append(
@@ -1720,6 +1842,77 @@ def classify_body_incident_events(stdout_path: Path, *, workspace: Path) -> list
                 }
             )
     return incidents
+
+
+_CONTROLLER_RELEASE_CLASSIFIER_CACHE: dict[tuple[str, str], ModuleType] = {}
+
+
+def _controller_release_reference(config: Mapping[str, Any]) -> dict[str, str] | None:
+    path = config.get("controller_release_path")
+    digest = config.get("controller_release_sha256")
+    if not isinstance(path, str) or not isinstance(digest, str):
+        return None
+    return {"path": str(resolve_path(path)), "sha256": digest.casefold()}
+
+
+def _known_controller_release_references(config: Mapping[str, Any]) -> list[dict[str, str]]:
+    references: list[dict[str, str]] = []
+    current = _controller_release_reference(config)
+    if current is not None:
+        references.append(current)
+    history = config.get("controller_release_history")
+    if isinstance(history, list):
+        for item in history:
+            if not isinstance(item, Mapping):
+                continue
+            path = item.get("path")
+            digest = item.get("sha256")
+            if isinstance(path, str) and isinstance(digest, str):
+                candidate = {"path": str(resolve_path(path)), "sha256": digest.casefold()}
+                if candidate not in references:
+                    references.append(candidate)
+    return references
+
+
+def _validate_controller_release_reference(
+    config: Mapping[str, Any], reference: Mapping[str, Any]
+) -> dict[str, str]:
+    path_value = reference.get("path")
+    digest_value = reference.get("sha256")
+    if not isinstance(path_value, str) or not isinstance(digest_value, str):
+        raise PerpetualRuntimeError("RECOVERY_RECEIPT_CONTROLLER_RELEASE_IDENTITY_INVALID")
+    normalized = {"path": str(resolve_path(path_value)), "sha256": digest_value.casefold()}
+    if normalized not in _known_controller_release_references(config):
+        raise PerpetualRuntimeError("RECOVERY_RECEIPT_CONTROLLER_RELEASE_NOT_IN_HISTORY")
+    path = Path(normalized["path"])
+    if not path.is_file() or sha256_file(path).casefold() != normalized["sha256"]:
+        raise PerpetualRuntimeError("RECOVERY_RECEIPT_CONTROLLER_RELEASE_BYTES_CHANGED")
+    return normalized
+
+
+def _load_controller_release_classifier(
+    config: Mapping[str, Any], reference: Mapping[str, Any]
+) -> tuple[dict[str, str], Callable[..., list[dict[str, Any]]]]:
+    normalized = _validate_controller_release_reference(config, reference)
+    cache_key = (normalized["path"], normalized["sha256"])
+    module = _CONTROLLER_RELEASE_CLASSIFIER_CACHE.get(cache_key)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(
+            f"xinao_frozen_controller_classifier_{normalized['sha256']}",
+            normalized["path"],
+        )
+        if spec is None or spec.loader is None:
+            raise PerpetualRuntimeError("RECOVERY_CONTROLLER_RELEASE_IMPORT_FAILED")
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except Exception as exc:
+            raise PerpetualRuntimeError("RECOVERY_CONTROLLER_RELEASE_IMPORT_FAILED") from exc
+        _CONTROLLER_RELEASE_CLASSIFIER_CACHE[cache_key] = module
+    classifier = getattr(module, "classify_body_incident_events", None)
+    if not callable(classifier):
+        raise PerpetualRuntimeError("RECOVERY_CONTROLLER_RELEASE_CLASSIFIER_MISSING")
+    return normalized, classifier
 
 
 def build_codex_arguments(
@@ -2214,6 +2407,7 @@ class PerpetualController:
                 "CLEANROOM_SHARED_CONFIG_SEMANTICS_CHANGED: "
                 f"expected={expected_semantic} observed={identity['semantic_sha256']}"
             )
+        _validate_frozen_logical_root_identity(self.config)
 
     def reject_live_orphaned_children(self) -> None:
         live: dict[str, int] = {}
@@ -2867,6 +3061,7 @@ class PerpetualController:
                 sha256_file(last_message_path) if last_message_path.exists() else None
             ),
             "body_boundary": self.config.get("body_boundary"),
+            "controller_release": _controller_release_reference(self.config),
             "body_incident": body_incident,
             "deep_evidence": deep_evidence,
             "runtime_binding": runtime_binding_reference,
@@ -3601,6 +3796,7 @@ def validate_recovery_identity(config: Mapping[str, Any]) -> dict[str, Any]:
         validate_lineage_runtime_repo(resolve_path(spec["workspace"]), str(config["source_head"]))
         for spec in [*config["branch_lineages"], config["root_lineage"]]
     ]
+    logical_root_world_seed = _validate_frozen_logical_root_identity(config)
     return {
         "run_dir": str(run_dir),
         "frozen_release_path": str(release_path),
@@ -3610,6 +3806,7 @@ def validate_recovery_identity(config: Mapping[str, Any]) -> dict[str, Any]:
         "lineages": lineages,
         "account_slot": account_slot,
         "runtime_binding_migration": migration_identity,
+        "logical_root_world_seed": logical_root_world_seed,
     }
 
 
@@ -3976,6 +4173,97 @@ def make_run_id(head: str) -> str:
     return f"world-compute-{stamp}-{head[:8]}"
 
 
+def _load_logical_root_module(config: Mapping[str, Any] | None = None) -> ModuleType:
+    if config is not None and config.get("logical_root_runtime_release_path") is not None:
+        path = resolve_path(config["logical_root_runtime_release_path"])
+        expected = str(config.get("logical_root_runtime_release_sha256") or "").lower()
+    else:
+        path = Path(__file__).resolve().with_name("logical_root_runtime.py")
+        expected = ""
+    if not path.is_file():
+        raise PerpetualRuntimeError("LOGICAL_ROOT_RUNTIME_COMPONENT_MISSING")
+    observed = sha256_file(path).lower()
+    if expected and observed != expected:
+        raise PerpetualRuntimeError("LOGICAL_ROOT_RUNTIME_RELEASE_BYTES_CHANGED")
+    spec = importlib.util.spec_from_file_location(f"xinao_logical_root_seed_{observed}", path)
+    if spec is None or spec.loader is None:
+        raise PerpetualRuntimeError("LOGICAL_ROOT_RUNTIME_IMPORT_FAILED")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(spec.name, None)
+        raise
+    return module
+
+
+def _freeze_run_logical_root_seed(
+    *,
+    run_dir: Path,
+    workspaces: Sequence[Path],
+    logical_root_runtime: Path,
+) -> dict[str, Any]:
+    module = _load_logical_root_module()
+    run_seed_root = run_dir / FROZEN_LOGICAL_ROOT_SEED_RELATIVE
+    try:
+        frozen = module.LogicalRootStore(logical_root_runtime).freeze_current_world_seed(
+            run_seed_root
+        )
+    except Exception as exc:
+        code = getattr(exc, "code", type(exc).__name__)
+        raise PerpetualRuntimeError(f"LOGICAL_ROOT_SEED_FREEZE_FAILED:{code}") from exc
+    lineage_views: dict[str, dict[str, Any]] = {}
+    for workspace in workspaces:
+        contained = workspace / FROZEN_LOGICAL_ROOT_SEED_RELATIVE
+        shutil.copytree(run_seed_root, contained)
+        try:
+            view = module.validate_frozen_world_seed(contained)
+        except Exception as exc:
+            code = getattr(exc, "code", type(exc).__name__)
+            raise PerpetualRuntimeError(f"LOGICAL_ROOT_SEED_CLONE_READBACK_FAILED:{code}") from exc
+        lineage_views[workspace.name] = view
+    return {
+        "schema": str(module.FROZEN_WORLD_SEED_SCHEMA),
+        "production_store_observed_once": str(logical_root_runtime),
+        "frozen_run_seed": frozen,
+        "lineage_views": lineage_views,
+        "live_store_following": False,
+        "automatic_adoption_allowed": False,
+    }
+
+
+def _validate_frozen_logical_root_identity(config: Mapping[str, Any]) -> dict[str, Any] | None:
+    binding = config.get("logical_root_world_seed")
+    if binding is None:
+        return None
+    if not isinstance(binding, Mapping) or binding.get("live_store_following") is not False:
+        raise PerpetualRuntimeError("LOGICAL_ROOT_SEED_CONFIG_INVALID")
+    module = _load_logical_root_module(config)
+    run_seed = binding.get("frozen_run_seed")
+    views = binding.get("lineage_views")
+    if not isinstance(run_seed, Mapping) or not isinstance(views, Mapping):
+        raise PerpetualRuntimeError("LOGICAL_ROOT_SEED_CONFIG_INVALID")
+    try:
+        observed_run = module.validate_frozen_world_seed(resolve_path(run_seed["root"]))
+        if observed_run != dict(run_seed):
+            raise PerpetualRuntimeError("LOGICAL_ROOT_SEED_RUN_DRIFT")
+        for raw_spec in [*config["branch_lineages"], config["root_lineage"]]:
+            lineage_id = str(raw_spec["lineage_id"])
+            view = views.get(lineage_id)
+            if not isinstance(view, Mapping):
+                raise PerpetualRuntimeError(f"LOGICAL_ROOT_SEED_VIEW_MISSING:{lineage_id}")
+            observed = module.validate_frozen_world_seed(resolve_path(view["root"]))
+            if observed != dict(view) or observed["identity"] != observed_run["identity"]:
+                raise PerpetualRuntimeError(f"LOGICAL_ROOT_SEED_VIEW_DRIFT:{lineage_id}")
+    except PerpetualRuntimeError:
+        raise
+    except Exception as exc:
+        code = getattr(exc, "code", type(exc).__name__)
+        raise PerpetualRuntimeError(f"LOGICAL_ROOT_SEED_VALIDATION_FAILED:{code}") from exc
+    return dict(observed_run)
+
+
 def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     if os.name != "nt":
         raise PerpetualRuntimeError("WINDOWS_RUNTIME_REQUIRED")
@@ -4020,6 +4308,11 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     source_file = Path(__file__).resolve()
     release_path = run_dir / "controller_release.py"
     shutil.copyfile(source_file, release_path)
+    logical_root_runtime_source = source_file.with_name("logical_root_runtime.py")
+    if not logical_root_runtime_source.is_file():
+        raise PerpetualRuntimeError("LOGICAL_ROOT_RUNTIME_COMPONENT_MISSING")
+    logical_root_runtime_release_path = run_dir / "logical_root_runtime_release.py"
+    shutil.copyfile(logical_root_runtime_source, logical_root_runtime_release_path)
     world_launcher_path = run_dir / "Open-Codex-World-Isolated.ps1"
     branch_specs: list[dict[str, Any]] = []
     setup_receipts: list[dict[str, Any]] = []
@@ -4031,10 +4324,6 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         branch_specs.append(spec)
         lineage_dir = run_dir / "lineages" / lineage_id
         lineage_dir.mkdir(parents=True)
-        prompt = build_branch_initial_prompt(
-            lineage_id=lineage_id, run_id=run_id, source_head=source["head"]
-        )
-        atomic_write_text(lineage_dir / "initial_prompt.txt", prompt)
         setup_receipts.append(spec)
     root_id = "root-main"
     root_workspace = clone_run_root / root_id
@@ -4042,6 +4331,17 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     root_spec = {"lineage_id": root_id, "role": "late_fusion_root", **root_clone_receipt}
     (run_dir / "lineages" / root_id).mkdir(parents=True)
     setup_receipts.append(root_spec)
+    logical_root_world_seed = _freeze_run_logical_root_seed(
+        run_dir=run_dir,
+        workspaces=[resolve_path(spec["workspace"]) for spec in [*branch_specs, root_spec]],
+        logical_root_runtime=resolve_path(DEFAULT_LOGICAL_ROOT_RUNTIME),
+    )
+    for spec in branch_specs:
+        lineage_id = str(spec["lineage_id"])
+        prompt = build_branch_initial_prompt(
+            lineage_id=lineage_id, run_id=run_id, source_head=source["head"]
+        )
+        atomic_write_text(run_dir / "lineages" / lineage_id / "initial_prompt.txt", prompt)
     source_after = validate_source_repo(source_repo)
     if source_after != source:
         raise PerpetualRuntimeError(
@@ -4099,6 +4399,7 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         "source_head": source["head"],
         "source_branch": source["branch"],
         "source_status_sha256": source["status_sha256"],
+        "logical_root_world_seed": logical_root_world_seed,
         "launcher_path": str(world_launcher_path),
         "launcher_sha256": world_launcher["sha256"],
         "launcher_source_path": str(launcher),
@@ -4124,6 +4425,8 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         "park_poll_seconds": int(args.park_poll_seconds),
         "controller_release_path": str(release_path),
         "controller_release_sha256": sha256_file(release_path),
+        "logical_root_runtime_release_path": str(logical_root_runtime_release_path),
+        "logical_root_runtime_release_sha256": sha256_file(logical_root_runtime_release_path),
         "deep_evidence_required": True,
         "deep_evidence_required_from_turn": {
             str(spec["lineage_id"]): 1 for spec in [*branch_specs, root_spec]
@@ -4736,6 +5039,176 @@ def _validate_recovered_receipt_sources(
         atomic_write_json(state_path, state)
 
 
+def _read_body_classification_review(
+    *,
+    config: Mapping[str, Any],
+    attempt_dir: Path,
+    receipt_path: Path,
+    receipt_sha256: str,
+) -> dict[str, Any] | None:
+    review_path = attempt_dir / "body_classification_review.json"
+    if not review_path.is_file():
+        return None
+    raw = review_path.read_bytes()
+    review = read_json_object(review_path)
+    if raw != canonical_json_bytes(review):
+        raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_BYTES_INVALID: {review_path}")
+    seal = review.get("review_sha256")
+    unsigned = dict(review)
+    unsigned.pop("review_sha256", None)
+    if not isinstance(seal, str) or sha256_bytes(canonical_json_bytes(unsigned)) != seal:
+        raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_SEAL_INVALID: {review_path}")
+    if (
+        review.get("schema") != BODY_CLASSIFICATION_REVIEW_SCHEMA
+        or review.get("receipt_path") != str(receipt_path)
+        or review.get("receipt_sha256") != receipt_sha256
+        or review.get("decision") not in {"KEEP_BODY_INCIDENT", "RETRY_SAME_TURN"}
+        or review.get("original_disposition") != "BODY_INCIDENT"
+        or review.get("original_receipt_and_state_seal_preserved") is not True
+    ):
+        raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_IDENTITY_INVALID: {review_path}")
+    source_release = review.get("source_controller_release")
+    if not isinstance(source_release, Mapping):
+        raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_SOURCE_INVALID: {review_path}")
+    _validate_controller_release_reference(config, source_release)
+    current_sha = review.get("reviewing_controller_sha256")
+    known_hashes = {item["sha256"] for item in _known_controller_release_references(config)}
+    known_hashes.add(sha256_file(Path(__file__).resolve()).casefold())
+    if not isinstance(current_sha, str) or current_sha.casefold() not in known_hashes:
+        raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_RELEASE_UNKNOWN: {review_path}")
+    for name, expected in (
+        ("exec_stdout.jsonl", review.get("stdout_sha256")),
+        ("body_incident.json", review.get("body_incident_sha256")),
+    ):
+        path = attempt_dir / name
+        if not isinstance(expected, str) or not path.is_file() or sha256_file(path) != expected:
+            raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_SOURCE_DRIFT: {path}")
+    return review
+
+
+def _body_reclassification_candidate(
+    *,
+    config: Mapping[str, Any],
+    spec: Mapping[str, Any],
+    attempt_dir: Path,
+    receipt_path: Path,
+    receipt: Mapping[str, Any],
+    receipt_sha256: str,
+    source_release: Mapping[str, str],
+    source_incidents: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    body_incident = receipt.get("body_incident")
+    body_path = attempt_dir / "body_incident.json"
+    if (
+        not isinstance(body_incident, Mapping)
+        or body_incident.get("affected_evidence_refs") != list(source_incidents)
+        or not body_path.is_file()
+        or read_json_object(body_path) != dict(body_incident)
+    ):
+        raise PerpetualRuntimeError(
+            f"RECOVERY_BODY_RECLASSIFICATION_EVIDENCE_INCOMPLETE: {attempt_dir}"
+        )
+    current_incidents = classify_body_incident_events(
+        attempt_dir / "exec_stdout.jsonl",
+        workspace=resolve_path(spec["workspace"]),
+    )
+    decision = "KEEP_BODY_INCIDENT" if current_incidents else "RETRY_SAME_TURN"
+    return {
+        "schema": BODY_CLASSIFICATION_REVIEW_SCHEMA,
+        "run_id": config["run_id"],
+        "lineage_id": spec["lineage_id"],
+        "turn_number": int(receipt["turn_number"]),
+        "attempt_number": int(receipt["attempt_number"]),
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": receipt_sha256,
+        "stdout_sha256": sha256_file(attempt_dir / "exec_stdout.jsonl"),
+        "body_incident_sha256": sha256_file(body_path),
+        "source_controller_release": dict(source_release),
+        "source_body_incident_count": len(source_incidents),
+        "source_body_incidents_sha256": sha256_bytes(canonical_json_bytes(list(source_incidents))),
+        "reviewing_controller_sha256": sha256_file(Path(__file__).resolve()).casefold(),
+        "reviewed_body_incident_count": len(current_incidents),
+        "reviewed_body_incidents_sha256": sha256_bytes(canonical_json_bytes(current_incidents)),
+        "original_disposition": "BODY_INCIDENT",
+        "decision": decision,
+        "original_receipt_and_state_seal_preserved": True,
+        "old_attempt_never_promoted_to_success_or_fusion": True,
+    }
+
+
+def _ensure_body_classification_review(
+    *, attempt_dir: Path, candidate: Mapping[str, Any]
+) -> tuple[dict[str, Any], str, bool]:
+    review_path = attempt_dir / "body_classification_review.json"
+    if review_path.is_file():
+        existing = read_json_object(review_path)
+        immutable = dict(existing)
+        immutable.pop("reviewed_at", None)
+        immutable.pop("review_sha256", None)
+        if immutable != dict(candidate):
+            raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_DRIFT: {review_path}")
+        return existing, sha256_file(review_path), True
+    unsigned = {**dict(candidate), "reviewed_at": now_iso()}
+    review = {
+        **unsigned,
+        "review_sha256": sha256_bytes(canonical_json_bytes(unsigned)),
+    }
+    digest = atomic_write_json(review_path, review)
+    return review, digest, False
+
+
+def _apply_body_classification_review_to_state(
+    *,
+    state_path: Path,
+    state: dict[str, Any],
+    review: Mapping[str, Any],
+    review_path: Path,
+    review_file_sha256: str,
+) -> bool:
+    pointer = {
+        "schema": BODY_CLASSIFICATION_REVIEW_SCHEMA,
+        "turn_number": int(review["turn_number"]),
+        "attempt_number": int(review["attempt_number"]),
+        "receipt_sha256": review["receipt_sha256"],
+        "review_path": str(review_path),
+        "review_file_sha256": review_file_sha256,
+        "decision": review["decision"],
+    }
+    raw_reviews = state.get("body_classification_reviews", [])
+    if not isinstance(raw_reviews, list) or not all(
+        isinstance(item, Mapping) for item in raw_reviews
+    ):
+        raise PerpetualRuntimeError("BODY_CLASSIFICATION_REVIEW_LEDGER_INVALID")
+    matches = [
+        item
+        for item in raw_reviews
+        if item.get("turn_number") == pointer["turn_number"]
+        and item.get("attempt_number") == pointer["attempt_number"]
+    ]
+    changed = False
+    if matches:
+        if len(matches) != 1 or dict(matches[0]) != pointer:
+            raise PerpetualRuntimeError("BODY_CLASSIFICATION_REVIEW_LEDGER_DRIFT")
+    else:
+        state["body_classification_reviews"] = [*raw_reviews, pointer]
+        changed = True
+    if review["decision"] == "RETRY_SAME_TURN":
+        ready = {
+            "status": "READY_TO_RETRY_RECLASSIFIED_BODY",
+            "active_pid": None,
+            "lifecycle_state": None,
+            "last_error_class": None,
+            "last_error": None,
+        }
+        if any(state.get(key) != value for key, value in ready.items()):
+            state.update(ready)
+            changed = True
+    if changed:
+        state["updated_at"] = now_iso()
+        atomic_write_json(state_path, state)
+    return changed
+
+
 def _validate_attempt_receipt_sources(
     *,
     config: Mapping[str, Any],
@@ -4746,6 +5219,7 @@ def _validate_attempt_receipt_sources(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     receipt_path = attempt_dir / "receipt.json"
     receipt = read_json_object(receipt_path)
+    receipt_sha256 = sha256_file(receipt_path)
     attempt_match = re.fullmatch(r"attempt-(\d+)", attempt_dir.name)
     if attempt_match is None:
         raise PerpetualRuntimeError(f"RECOVERY_ATTEMPT_NAME_INVALID: {attempt_dir}")
@@ -4788,13 +5262,78 @@ def _validate_attempt_receipt_sources(
     )
     if receipt.get("lifecycle_state") != lifecycle:
         raise PerpetualRuntimeError(f"RECOVERY_TURN_RECEIPT_LIFECYCLE_MISMATCH: {receipt_path}")
-    body_incidents = classify_body_incident_events(
-        stdout_path,
-        workspace=resolve_path(spec["workspace"]),
+    body_review = _read_body_classification_review(
+        config=config,
+        attempt_dir=attempt_dir,
+        receipt_path=receipt_path,
+        receipt_sha256=receipt_sha256,
     )
+    if body_review is not None and (
+        body_review.get("run_id") != config["run_id"]
+        or body_review.get("lineage_id") != spec["lineage_id"]
+        or body_review.get("turn_number") != turn_number
+        or body_review.get("attempt_number") != attempt_number
+    ):
+        raise PerpetualRuntimeError(f"BODY_CLASSIFICATION_REVIEW_ATTEMPT_MISMATCH: {receipt_path}")
+    raw_receipt_release = receipt.get("controller_release")
+    raw_source_release = (
+        body_review.get("source_controller_release")
+        if body_review is not None
+        else raw_receipt_release
+    )
+    if raw_source_release is None:
+        raw_source_release = _controller_release_reference(config)
+    source_release: dict[str, str] | None = None
+    if isinstance(raw_source_release, Mapping):
+        source_release, source_classifier = _load_controller_release_classifier(
+            config, raw_source_release
+        )
+        classified = source_classifier(
+            stdout_path,
+            workspace=resolve_path(spec["workspace"]),
+        )
+        if not isinstance(classified, list) or not all(
+            isinstance(item, Mapping) for item in classified
+        ):
+            raise PerpetualRuntimeError(
+                f"RECOVERY_CONTROLLER_RELEASE_CLASSIFIER_RESULT_INVALID: {receipt_path}"
+            )
+        body_incidents = [dict(item) for item in classified]
+    elif raw_source_release is None:
+        body_incidents = classify_body_incident_events(
+            stdout_path,
+            workspace=resolve_path(spec["workspace"]),
+        )
+    else:
+        raise PerpetualRuntimeError(
+            f"RECOVERY_TURN_RECEIPT_CONTROLLER_RELEASE_INVALID: {receipt_path}"
+        )
     receipt_error = receipt.get("error_class")
     if bool(body_incidents) != (receipt_error == "BODY_INCIDENT"):
         raise PerpetualRuntimeError(f"RECOVERY_TURN_RECEIPT_BODY_CLASS_MISMATCH: {receipt_path}")
+    review_candidate: dict[str, Any] | None = None
+    if receipt_error == "BODY_INCIDENT" and source_release is not None:
+        current_sha = sha256_file(Path(__file__).resolve()).casefold()
+        if source_release["sha256"] != current_sha:
+            if body_review is None:
+                review_candidate = _body_reclassification_candidate(
+                    config=config,
+                    spec=spec,
+                    attempt_dir=attempt_dir,
+                    receipt_path=receipt_path,
+                    receipt=receipt,
+                    receipt_sha256=receipt_sha256,
+                    source_release=source_release,
+                    source_incidents=body_incidents,
+                )
+            elif body_review.get("source_body_incident_count") != len(
+                body_incidents
+            ) or body_review.get("source_body_incidents_sha256") != sha256_bytes(
+                canonical_json_bytes(body_incidents)
+            ):
+                raise PerpetualRuntimeError(
+                    f"BODY_CLASSIFICATION_REVIEW_SOURCE_CLASS_DRIFT: {receipt_path}"
+                )
     normal_success = (
         receipt_error is None
         and receipt.get("turn_status") == "turn.completed"
@@ -4849,9 +5388,11 @@ def _validate_attempt_receipt_sources(
         "disposition": disposition,
         "attempt_number": attempt_number,
         "receipt_path": str(receipt_path),
-        "receipt_sha256": sha256_file(receipt_path),
+        "receipt_sha256": receipt_sha256,
         "event_summary": event_summary,
         "body_incident_count": len(body_incidents),
+        "body_classification_review": body_review,
+        "body_classification_review_candidate": review_candidate,
         "state_turns_before": int(state.get("turns_completed", 0)),
     }
 
@@ -4873,6 +5414,19 @@ def _commit_receipt_bearing_attempt_to_state(
         turn_number=turn_number,
     )
     disposition = verified["disposition"]
+    body_review = verified.get("body_classification_review")
+    body_review_path = attempt_dir / "body_classification_review.json"
+    body_review_reused = False
+    if body_review is not None:
+        body_review_sha256 = sha256_file(body_review_path)
+        body_review_reused = True
+    elif verified.get("body_classification_review_candidate") is not None:
+        body_review, body_review_sha256, body_review_reused = _ensure_body_classification_review(
+            attempt_dir=attempt_dir,
+            candidate=verified["body_classification_review_candidate"],
+        )
+    else:
+        body_review_sha256 = None
     turn_dir = attempt_dir.parent
     sealed_commits, legacy_migration_required = _normalized_recovery_state_commits(
         config=config,
@@ -4905,14 +5459,29 @@ def _commit_receipt_bearing_attempt_to_state(
             raise PerpetualRuntimeError(
                 f"RECOVERY_STATE_COMMIT_SEAL_DRIFT: {spec['lineage_id']} turn={turn_number}"
             )
+        if body_review is not None and body_review_sha256 is not None:
+            _apply_body_classification_review_to_state(
+                state_path=state_path,
+                state=state,
+                review=body_review,
+                review_path=body_review_path,
+                review_file_sha256=body_review_sha256,
+            )
+        effective_disposition = (
+            "BODY_INCIDENT_RECLASSIFIED_RETRY"
+            if body_review is not None and body_review.get("decision") == "RETRY_SAME_TURN"
+            else disposition
+        )
         return {
             "lineage_id": spec["lineage_id"],
             "turn_number": turn_number,
             "attempt_number": verified["attempt_number"],
-            "disposition": disposition,
+            "disposition": effective_disposition,
+            "sealed_disposition": disposition,
             "receipt_path": verified["receipt_path"],
             "receipt_sha256": verified["receipt_sha256"],
             "reused": True,
+            "body_classification_review_reused": body_review_reused,
         }
     sealed_commits = [*sealed_commits, seal]
     common = {
@@ -4962,14 +5531,29 @@ def _commit_receipt_bearing_attempt_to_state(
             }
         )
     atomic_write_json(state_path, state)
+    if body_review is not None and body_review_sha256 is not None:
+        _apply_body_classification_review_to_state(
+            state_path=state_path,
+            state=state,
+            review=body_review,
+            review_path=body_review_path,
+            review_file_sha256=body_review_sha256,
+        )
+    effective_disposition = (
+        "BODY_INCIDENT_RECLASSIFIED_RETRY"
+        if body_review is not None and body_review.get("decision") == "RETRY_SAME_TURN"
+        else disposition
+    )
     return {
         "lineage_id": spec["lineage_id"],
         "turn_number": turn_number,
         "attempt_number": verified["attempt_number"],
-        "disposition": disposition,
+        "disposition": effective_disposition,
+        "sealed_disposition": disposition,
         "receipt_path": verified["receipt_path"],
         "receipt_sha256": verified["receipt_sha256"],
         "reused": False,
+        "body_classification_review_reused": body_review_reused,
     }
 
 
@@ -5178,6 +5762,7 @@ def reconcile_incomplete_attempts(
                 "stderr_sha256": sha256_file(stderr_path),
                 "last_message_sha256": sha256_file(message_path),
                 "body_boundary": config.get("body_boundary"),
+                "controller_release": _controller_release_reference(config),
                 "body_incident": None,
                 "deep_evidence": {
                     "status": "AVAILABLE" if evidence_available else "PARTIAL",
