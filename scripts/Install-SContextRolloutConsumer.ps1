@@ -106,7 +106,7 @@ function Get-ConsumerTaskAudit {
     $allowedIntervals = @('PT1M', 'PT2M', 'PT5M')
     $triggerValid = $trigger.Count -eq 1 -and $allowedIntervals -contains $intervalText
     if ($null -ne $ExpectedMinutes) {
-        $triggerValid = $triggerValid -and $intervalText -eq "PT$($ExpectedMinutes.Value)M"
+        $triggerValid = $triggerValid -and $intervalText -eq "PT$([int]$ExpectedMinutes)M"
     }
     $filesValid = (Test-Path -LiteralPath $pythonPath -PathType Leaf) -and
         (Test-Path -LiteralPath $consumerScript -PathType Leaf)

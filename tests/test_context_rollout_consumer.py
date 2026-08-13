@@ -577,6 +577,7 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
     assert "WindowsIdentity]::GetCurrent().Name" in script
     assert "WindowsIdentity]::GetCurrent().User.Value" in script
     assert "Resolve-IdentitySid" in script
+    assert '"PT$([int]$ExpectedMinutes)M"' in script
     assert "D:\\XINAO_RESEARCH_RUNTIME\\tools\\cpython-3.13.14-official\\python.exe" in script
     assert "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\context_rollout_consumer.py" in script
     assert "Get-ConsumerTaskAudit" in script
