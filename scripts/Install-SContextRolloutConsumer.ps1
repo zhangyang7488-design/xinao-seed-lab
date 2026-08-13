@@ -1145,7 +1145,8 @@ function Get-ManagedUpgradeSource {
 
     $description = [string]$task.Description
     $descriptionPattern = '^' + [regex]::Escape($descriptionPrefix) +
-        '(?<token>[0-9a-f]{32});registered_at=(?<registered>[^;]+);content_id=' +
+        '(?<token>[0-9a-f]{32});registered_at=(?<registered>[^;]+);receipt_not_before=' +
+        '(?<receipt_not_before>[^;]+);content_id=' +
         '(?<content>[0-9a-f]{64});manifest_sha256=(?<manifest>[0-9a-f]{64})$'
     $descriptionMatch = [regex]::Match($description, $descriptionPattern)
     if (-not $descriptionMatch.Success -or

@@ -784,6 +784,7 @@ function Export-ScheduledTask {{ return $script:mockManagedXml }}
 function Get-ScheduledTask {{
     $description = 'XINAO S context rollout consumer v1; registration=' + ('a' * 32) +
         ';registered_at=2026-08-13T10:58:08.7987777+00:00' +
+        ';receipt_not_before=2026-08-13T11:08:08.0000000+00:00' +
         ';content_id=ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e' +
         ';manifest_sha256=ae9d1041929a0e6f24f06c1afe6203dc3b1579ad3de457c90c23d8dcce9b983e'
     $execute = 'C:\owned\python\{action_name}'
