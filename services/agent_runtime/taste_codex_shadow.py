@@ -26,7 +26,7 @@ from services.agent_runtime.execution_contract import canonical_json_bytes
 
 CODEX_PAIR_SCHEMA = "s.taste_codex_app_server_pair.v1"
 CODEX_EXECUTION_SCHEMA = "s.taste_codex_app_server_execution.v1"
-CODEX_SCORE_SCHEMA = "s.taste_codex_app_server_score.v1"
+CODEX_SCORE_SCHEMA = "s.taste_codex_app_server_score.v2"
 
 _MAX_BYTES = 32 * 1024 * 1024
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -81,6 +81,25 @@ def _candidate_prefix_sources(candidate: Mapping[str, object], arm: str) -> Sequ
     if not isinstance(sources, Sequence) or isinstance(sources, (str, bytes)) or not sources:
         _fail("INPUT_BINDING_MISMATCH", f"{arm} candidate prefix sources are invalid")
     return sources
+
+
+def _oracle_needles(plan: Mapping[str, object]) -> list[bytes]:
+    evaluation = plan.get("evaluation")
+    if not isinstance(evaluation, Mapping):
+        _fail("EVALUATION_INVALID", "verified plan lacks held-out evaluation evidence")
+    oracle = evaluation.get("oracle")
+    if not isinstance(oracle, Mapping):
+        _fail("EVALUATION_INVALID", "verified plan lacks a held-out oracle")
+    rows = [
+        oracle.get("bad_continuation"),
+        *(oracle.get("human_corrections") or []),
+        oracle.get("desired_continuation"),
+    ]
+    return [
+        str(row["text"]).encode("utf-8")
+        for row in rows
+        if isinstance(row, Mapping) and isinstance(row.get("text"), str)
+    ]
 
 
 def _sha(raw: bytes) -> str:
@@ -528,12 +547,11 @@ def _rollout_evidence(
     oracle_needles: Sequence[bytes] = (),
 ) -> dict[str, object]:
     session_ids: set[str] = set()
-    surfaces: list[dict[str, str]] = []
-    assistant_outputs: list[str] = []
-    forbidden_tools: list[str] = []
-    body_records: list[dict[str, object]] = []
-    generated_started = False
-    for raw_line in raw.splitlines():
+    surfaces: list[tuple[int, dict[str, str]]] = []
+    assistant_outputs: list[tuple[int, str]] = []
+    tool_records: list[tuple[int, str]] = []
+    body_records: list[tuple[int, dict[str, object]]] = []
+    for ordinal, raw_line in enumerate(raw.splitlines(), start=1):
         if not raw_line:
             continue
         record = _json(raw_line, "native rollout record")
@@ -543,8 +561,8 @@ def _rollout_evidence(
             session_ids.add(str(payload.get("id") or payload.get("session_id") or ""))
         if record_type == "response_item" and isinstance(payload, Mapping):
             item_type = str(payload.get("type") or "")
-            if generated_started and (item_type in _TOOL_ITEM_TYPES or item_type.endswith("_call")):
-                forbidden_tools.append(item_type)
+            if item_type in _TOOL_ITEM_TYPES or item_type.endswith("_call"):
+                tool_records.append((ordinal, item_type))
             if item_type == "message" and payload.get("role") in {"user", "assistant"}:
                 content = payload.get("content")
                 if not isinstance(content, list):
@@ -558,29 +576,30 @@ def _rollout_evidence(
                 ]
                 if texts:
                     row = {"role": str(payload["role"]), "content": "\n".join(texts)}
-                    surfaces.append(row)
-                    if row == {"role": "user", "content": final_user}:
-                        generated_started = True
+                    surfaces.append((ordinal, row))
                     if row["role"] == "assistant" and payload.get("phase") == "final_answer":
-                        assistant_outputs.append(row["content"])
-            if not generated_started and payload.get("role") in {"developer", "system"}:
+                        assistant_outputs.append((ordinal, row["content"]))
+            if payload.get("role") in {"developer", "system"}:
                 body_records.append(
-                    {
-                        "type": "message",
-                        "role": payload["role"],
-                        "content": [
-                            {
-                                "type": item.get("type"),
-                                "text": item.get("text"),
-                            }
-                            for item in payload.get("content", [])
-                            if isinstance(item, Mapping)
-                            and isinstance(item.get("type"), str)
-                            and isinstance(item.get("text"), str)
-                        ],
-                    }
+                    (
+                        ordinal,
+                        {
+                            "type": "message",
+                            "role": payload["role"],
+                            "content": [
+                                {
+                                    "type": item.get("type"),
+                                    "text": item.get("text"),
+                                }
+                                for item in payload.get("content", [])
+                                if isinstance(item, Mapping)
+                                and isinstance(item.get("type"), str)
+                                and isinstance(item.get("text"), str)
+                            ],
+                        },
+                    )
                 )
-        elif not generated_started and record_type in {"world_state", "turn_context"}:
+        elif record_type in {"world_state", "turn_context"}:
             normalized = dict(record)
             normalized.pop("timestamp", None)
             normalized_payload = normalized.get("payload")
@@ -588,31 +607,47 @@ def _rollout_evidence(
                 normalized_payload = dict(normalized_payload)
                 normalized_payload.pop("turn_id", None)
                 normalized["payload"] = normalized_payload
-            body_records.append(normalized)
+            body_records.append((ordinal, normalized))
     if session_ids != {thread_id}:
         _fail("ROLLOUT_IDENTITY", "native rollout session differs from thread/start")
     expected_prefix = [*injected, {"role": "user", "content": final_user}]
-    observed = [row for row in surfaces if row in expected_prefix]
+    matched_indices: list[int] = []
     cursor = 0
     for expected in expected_prefix:
-        while cursor < len(surfaces) and surfaces[cursor] != expected:
+        while cursor < len(surfaces) and surfaces[cursor][1] != expected:
             cursor += 1
         if cursor >= len(surfaces):
             _fail("INJECT_NOT_OBSERVED", "native rollout did not preserve the exact replay prefix")
+        matched_indices.append(cursor)
         cursor += 1
-    if not generated_started:
-        _fail("INJECT_NOT_OBSERVED", "native rollout lacks the final evaluation user message")
+    final_user_ordinal = surfaces[matched_indices[-1]][0]
+    ambient_surfaces = [
+        row
+        for index, (ordinal, row) in enumerate(surfaces)
+        if ordinal < final_user_ordinal and index not in set(matched_indices[:-1])
+    ]
+    forbidden_tools = [
+        item_type for ordinal, item_type in tool_records if ordinal > final_user_ordinal
+    ]
+    generated_outputs = [
+        text for ordinal, text in assistant_outputs if ordinal > final_user_ordinal
+    ]
     if forbidden_tools:
         _fail("TOOL_USED", "native qualification turn used a tool")
-    if not assistant_outputs:
+    if not generated_outputs:
         _fail("OUTPUT_MISSING", "native qualification turn produced no final answer")
     if any(needle and needle in raw for needle in oracle_needles):
         _fail("EVALUATION_ORACLE_LEAK", "native rollout contains a held-out oracle surface")
+    effective_body_records = [
+        record for ordinal, record in body_records if ordinal < final_user_ordinal
+    ]
     return {
-        "response_text": assistant_outputs[-1],
-        "body_sha256": _sha(canonical_json_bytes(body_records)),
-        "body_records": body_records,
-        "surface_prefix": observed,
+        "response_text": generated_outputs[-1],
+        "body_sha256": _sha(canonical_json_bytes(effective_body_records)),
+        "body_records": effective_body_records,
+        "ambient_surface_sha256": _sha(canonical_json_bytes(ambient_surfaces)),
+        "ambient_surfaces": ambient_surfaces,
+        "surface_prefix": [surfaces[index][1] for index in matched_indices],
         "tool_item_types": forbidden_tools,
     }
 
@@ -753,6 +788,7 @@ def _arm(
         "config_sha256": _sha(config_raw),
         "command_sha256": _sha(command_raw),
         "environment_sha256": _sha(canonical_json_bytes(_environment_identity(environment))),
+        "ambient_surface_sha256": evidence["ambient_surface_sha256"],
         "injected_message_sha256": _sha(canonical_json_bytes(injected)),
         "common_prefix_sha256": _sha(canonical_json_bytes(request_messages)),
         "files": {
@@ -870,20 +906,7 @@ def run_fresh_codex_shadow_pair(
     request = plan["request"]
     conditions = plan["conditions"]
     assert isinstance(request, bytes) and isinstance(conditions, Mapping)
-    evaluation = plan["evaluation"]
-    assert isinstance(evaluation, Mapping)
-    oracle = evaluation["oracle"]
-    assert isinstance(oracle, Mapping)
-    oracle_rows = [
-        oracle["bad_continuation"],
-        *oracle["human_corrections"],
-        oracle["desired_continuation"],
-    ]
-    oracle_needles = [
-        str(row["text"]).encode("utf-8")
-        for row in oracle_rows
-        if isinstance(row, Mapping) and isinstance(row.get("text"), str)
-    ]
+    oracle_needles = _oracle_needles(plan)
     output_root = Path(output_root)
     pair_id = f"codex-pair-{uuid.uuid4().hex}"
     run_parent = output_root / f".{pair_id}.runs"
@@ -1019,6 +1042,7 @@ def _verify_execution(root: Path, *, arm: str, plan: Mapping[str, object]) -> di
         thread_id=thread_id,
         injected=injected,
         final_user=request_messages[-1]["content"],
+        oracle_needles=_oracle_needles(plan),
     )
     environment_value = _json(raw["environment"], f"{arm} environment")
     if any(
@@ -1049,6 +1073,7 @@ def _verify_execution(root: Path, *, arm: str, plan: Mapping[str, object]) -> di
         "turn_id": turn_id,
         "response": raw["response"],
         "condition_sha256": _sha(raw["condition"]),
+        "ambient_surface_sha256": evidence["ambient_surface_sha256"],
         "common_inputs": _common_inputs(
             {
                 "body_sha256": evidence["body_sha256"],
@@ -1101,6 +1126,7 @@ def verify_codex_shadow_pair(
     if (
         arms["baseline"]["process_id"] == arms["treatment"]["process_id"]
         or arms["baseline"]["thread_id"] == arms["treatment"]["thread_id"]
+        or arms["baseline"]["ambient_surface_sha256"] != arms["treatment"]["ambient_surface_sha256"]
         or arms["baseline"]["common_inputs"] != arms["treatment"]["common_inputs"]
         or manifest.get("common_inputs") != arms["baseline"]["common_inputs"]
     ):
@@ -1255,7 +1281,11 @@ def score_codex_shadow_pair(
     files = {
         "baseline": canonical_json_bytes(outcomes["baseline"]),
         "treatment": canonical_json_bytes(outcomes["treatment"]),
+        "offline_oracle": evaluation["offline_oracle"],
+        "offline_scorer": evaluation["scorer_raw"],
     }
+    if not all(isinstance(files[name], bytes) for name in ("offline_oracle", "offline_scorer")):
+        _fail("EVALUATION_INVALID", "verified evaluation lacks sealed offline judge bytes")
     if receipt is not None:
         files["qualification"] = canonical_json_bytes(receipt)
     for name, raw in files.items():
@@ -1330,16 +1360,46 @@ def verify_codex_shadow_score(
     files = manifest.get("files")
     if not isinstance(files, Mapping):
         _fail("BINDING_INVALID", "native score file bindings are missing")
-    observed = {
-        name: _json(_bound_file(root, binding, f"score {name}"), f"score {name}")
+    observed_raw = {
+        name: _bound_file(root, binding, f"score {name}")
         for name, binding in files.items()
         if isinstance(name, str) and isinstance(binding, Mapping)
     }
-    expected_names = {"baseline", "treatment"} | (
+    expected_names = {"baseline", "treatment", "offline_oracle", "offline_scorer"} | (
         {"qualification"} if manifest.get("qualified") is True else set()
     )
-    if set(observed) != expected_names:
+    if set(observed_raw) != expected_names:
         _fail("BINDING_INVALID", "native score evidence set drifted")
+    evaluation = plan["evaluation"]
+    assert isinstance(evaluation, Mapping)
+    if (
+        observed_raw["offline_oracle"] != evaluation["offline_oracle"]
+        or observed_raw["offline_scorer"] != evaluation["scorer_raw"]
+    ):
+        _fail("EVALUATION_INVALID", "native score offline judge evidence drifted")
+    observed = {
+        name: _json(observed_raw[name], f"score {name}")
+        for name in ({"baseline", "treatment", "qualification"} & set(observed_raw))
+    }
+    for arm in ("baseline", "treatment"):
+        execution = pair[arm]
+        assert isinstance(execution, Mapping)
+        response = execution["response"]
+        assert isinstance(response, bytes)
+        ref = {
+            "source_ref": f"codex-shadow://{pair['pair_id']}/{arm}/{_sha(response)}",
+            "byte_sha256": _sha(response),
+            "byte_length": len(response),
+            "rollout_locator": f"codex-shadow://{pair['pair_id']}/{arm}/rollout",
+            "ordinal": 1,
+        }
+        expected_metrics = _literal_metrics(
+            response,
+            scorer=evaluation["scorer"],
+            evidence_ref=ref,
+        )
+        if observed[arm].get("metrics") != expected_metrics:
+            _fail("SCORE_MISMATCH", f"{arm} native metrics are not reproducible")
     qualified = True
     reason_code = ""
     expected_receipt: dict[str, object] | None = None

@@ -127,6 +127,57 @@ def test_rollout_must_contain_exact_replay_prefix_and_output() -> None:
     assert observed["tool_item_types"] == []
 
 
+def test_rollout_binds_ambient_product_surfaces_outside_the_replay_prefix() -> None:
+    thread = "019ffb9a-6106-7a33-bdd0-30c3a3b7e390"
+    first = _rollout_evidence(
+        _rollout(
+            thread,
+            [
+                {"role": "user", "content": "ambient-a"},
+                {"role": "user", "content": "current"},
+                {"role": "assistant", "content": "now"},
+            ],
+        ),
+        thread_id=thread,
+        injected=[],
+        final_user="current",
+    )
+    second = _rollout_evidence(
+        _rollout(
+            thread,
+            [
+                {"role": "user", "content": "ambient-b"},
+                {"role": "user", "content": "current"},
+                {"role": "assistant", "content": "now"},
+            ],
+        ),
+        thread_id=thread,
+        injected=[],
+        final_user="current",
+    )
+    assert first["ambient_surface_sha256"] != second["ambient_surface_sha256"]
+
+
+def test_offline_rollout_readback_rechecks_heldout_oracle_absence() -> None:
+    thread = "019ffb9a-6106-7a33-bdd0-30c3a3b7e390"
+    raw = _rollout(
+        thread,
+        [
+            {"role": "user", "content": "current"},
+            {"role": "assistant", "content": "sealed oracle surface"},
+        ],
+    )
+    with pytest.raises(TasteCodexShadowError) as raised:
+        _rollout_evidence(
+            raw,
+            thread_id=thread,
+            injected=[],
+            final_user="current",
+            oracle_needles=[b"sealed oracle surface"],
+        )
+    assert raised.value.reason_code == "EVALUATION_ORACLE_LEAK"
+
+
 def test_rollout_rejects_missing_injected_assistant() -> None:
     thread = "019ffb9a-6106-7a33-bdd0-30c3a3b7e390"
     raw = _rollout(
