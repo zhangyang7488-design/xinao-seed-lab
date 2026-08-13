@@ -1,10 +1,9 @@
-"""Cold corpus bridge from explicit Context events to qualified Taste pairs.
+"""Non-leaking cold corpus bridge for dynamic Taste qualification.
 
-This module does not search for examples, run a model, retrieve into a live
-prompt, or mutate AGENTS/Skills.  It only (1) snapshots an explicitly named
-real trajectory and its cold conditions, and (2) admits that snapshot to the
-qualified cold set after the existing Taste qualifier accepts both sealed
-shadow outcomes and their receipt.
+Explicit source correction episodes are projected mechanically into treatment
+bytes.  Separate held-out episodes keep their correction/desired oracle and
+scorer offline.  Only a recomputable source -> evaluation -> plan -> pair ->
+score chain may enter the cold qualified set; this module never activates it.
 """
 
 from __future__ import annotations
@@ -25,16 +24,17 @@ from services.agent_runtime.execution_contract import canonical_json_bytes
 from services.agent_runtime.taste_qualification import (
     TasteQualificationError,
     build_taste_candidate,
-    validate_sealed_taste_outcome,
-    validate_taste_candidate,
-    validate_taste_qualification_receipt,
 )
 
-CANDIDATE_BUNDLE_SCHEMA = "s.taste_corpus_candidate_bundle.v2"
-QUALIFIED_BUNDLE_SCHEMA = "s.taste_corpus_qualified_bundle.v2"
+SOURCE_BUNDLE_SCHEMA = "s.taste_source_bundle.v1"
+EVALUATION_BUNDLE_SCHEMA = "s.taste_evaluation_bundle.v1"
+QUALIFICATION_PLAN_SCHEMA = "s.taste_qualification_plan.v1"
+SOURCE_PROJECTION_SCHEMA = "s.taste_source_projection.v1"
+EVALUATION_REQUEST_SCHEMA = "s.taste_shadow_request.v2"
+EVALUATION_ORACLE_SCHEMA = "s.taste_evaluation_oracle.v1"
+NONLEAKING_QUALIFIED_BUNDLE_SCHEMA = "s.taste_qualified_chain.v1"
 
 _EVENT_ID_RE = re.compile(r"^evt_[0-9a-f]{64}$")
-_MAX_CONDITION_BYTES = 8 * 1024 * 1024
 _MAX_JSON_BYTES = 16 * 1024 * 1024
 
 
@@ -392,6 +392,20 @@ def _bound_file(root: Path, binding: Mapping[str, object], field: str) -> bytes:
     return raw
 
 
+def _assert_exact_files(root: Path, expected: set[str], field: str) -> None:
+    observed: set[str] = set()
+    for path in Path(root).rglob("*"):
+        if path.is_symlink():
+            _fail("BUNDLE_PATH_INVALID", f"{field} contains a link")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            _fail("BUNDLE_PATH_INVALID", f"{field} contains a non-regular file")
+        observed.add(path.relative_to(root).as_posix())
+    if observed != expected:
+        _fail("BUNDLE_FILE_SET_MISMATCH", f"{field} contains undeclared or missing files")
+
+
 def _episode_contract(
     *,
     prefix_ids: Sequence[str],
@@ -454,153 +468,6 @@ def _episode_contract(
     }
 
 
-def build_cold_taste_candidate(
-    *,
-    context_root: Path,
-    corpus_root: Path,
-    prefix_event_ids: Sequence[str],
-    bad_continuation_event_id: str,
-    correction_event_ids: Sequence[str],
-    desired_continuation_event_id: str,
-    baseline_condition_path: Path,
-    treatment_condition_path: Path,
-    model_identity: str,
-    body_identity: str,
-    config_identity: str,
-    carrier_homes: Mapping[str, Path | str] | None = None,
-    session_rollout_paths: Mapping[str, Path | str] | None = None,
-) -> dict[str, object]:
-    """Snapshot one explicit real-trajectory contrastive candidate."""
-
-    if isinstance(prefix_event_ids, (str, bytes)) or not prefix_event_ids:
-        _fail("EVENT_IDS_MISSING", "prefix event IDs must be explicit and non-empty")
-    prefix_ids = [_event_id(item) for item in prefix_event_ids]
-    bad_id = _event_id(bad_continuation_event_id)
-    if isinstance(correction_event_ids, (str, bytes)):
-        _fail("CORRECTION_MISSING", "correction event IDs must be an explicit sequence")
-    correction_ids = [_event_id(item) for item in correction_event_ids]
-    desired_id = _event_id(desired_continuation_event_id)
-    event_ids = [*prefix_ids, bad_id, *correction_ids, desired_id]
-    if len(event_ids) != len(set(event_ids)):
-        _fail("EVENT_IDS_DUPLICATE", "Taste source event IDs must be distinct")
-
-    homes = _carrier_homes(carrier_homes)
-    rollout_paths = {
-        str(session): Path(path) for session, path in (session_rollout_paths or {}).items()
-    }
-    try:
-        context_chain = context_fabric.verify_event_chain(Path(context_root))
-    except (OSError, context_fabric.ContextFabricError) as exc:
-        raise TasteCorpusError(
-            "CONTEXT_CHAIN_INVALID", "Context event chain failed verification"
-        ) from exc
-    bindings: list[dict[str, object]] = []
-    source_bytes: dict[str, bytes] = {}
-    record_bytes: dict[str, bytes] = {}
-    for event_id in event_ids:
-        binding, raw, record = _load_source(
-            event_id,
-            context_root=context_root,
-            homes=homes,
-            session_rollouts=rollout_paths,
-        )
-        bindings.append(binding)
-        source_bytes[event_id] = raw
-        record_bytes[event_id] = record
-    episode = _episode_contract(
-        prefix_ids=prefix_ids,
-        bad_id=bad_id,
-        correction_ids=correction_ids,
-        desired_id=desired_id,
-        bindings=bindings,
-    )
-
-    baseline = _read_file(
-        baseline_condition_path, limit=_MAX_CONDITION_BYTES, field="baseline condition"
-    )
-    treatment = _read_file(
-        treatment_condition_path, limit=_MAX_CONDITION_BYTES, field="treatment condition"
-    )
-    refs = [_source_ref(item) for item in bindings]
-    bad_index = len(prefix_ids)
-    desired_index = len(bindings) - 1
-    try:
-        candidate = build_taste_candidate(
-            baseline_prefix=refs[: len(prefix_ids)],
-            treatment_prefix=[dict(item) for item in refs[: len(prefix_ids)]],
-            bad_continuation={
-                "text": source_bytes[bad_id].decode("utf-8"),
-                "source": refs[bad_index],
-            },
-            desired_continuation={
-                "text": source_bytes[desired_id].decode("utf-8"),
-                "source": refs[desired_index],
-            },
-            model_identity=model_identity,
-            body_identity=body_identity,
-            config_identity=config_identity,
-            baseline_condition_sha256=_sha(baseline),
-            treatment_condition_sha256=_sha(treatment),
-        )
-    except TasteQualificationError as exc:
-        raise TasteCorpusError(exc.reason_code, str(exc)) from exc
-
-    candidate_sha = str(candidate["candidate_sha256"])
-    conditions = {
-        "baseline": {
-            "relative_path": "conditions/baseline.condition",
-            "byte_sha256": _sha(baseline),
-            "byte_length": len(baseline),
-        },
-        "treatment": {
-            "relative_path": "conditions/treatment.condition",
-            "byte_sha256": _sha(treatment),
-            "byte_length": len(treatment),
-        },
-    }
-    manifest = _seal(
-        {
-            "schema_version": CANDIDATE_BUNDLE_SCHEMA,
-            "authority": False,
-            "cold_only": True,
-            "live_activation_allowed": False,
-            "selection_mode": "explicit_context_event_ids_only",
-            "candidate_sha256": candidate_sha,
-            "source_event_ids": event_ids,
-            "prefix_count": len(prefix_ids),
-            "correction_count": len(correction_ids),
-            "episode": episode,
-            "context_chain": {
-                "event_count": context_chain["event_count"],
-                "tip_event_hash": context_chain["tip_event_hash"],
-                "sqlite_quick_check": context_chain["sqlite_quick_check"],
-            },
-            "source_bindings": bindings,
-            "conditions": conditions,
-        },
-        "bundle_sha256",
-    )
-    target = Path(corpus_root) / "candidates" / candidate_sha
-    files = {
-        "candidate.json": canonical_json_bytes(candidate),
-        "manifest.json": canonical_json_bytes(manifest),
-        "conditions/baseline.condition": baseline,
-        "conditions/treatment.condition": treatment,
-        **{f"sources/{event_id}.utf8": source_bytes[event_id] for event_id in event_ids},
-        **{f"sources/{event_id}.rollout.jsonl": record_bytes[event_id] for event_id in event_ids},
-    }
-    status = _write_directory(target, files)
-    verified = verify_candidate_bundle(target)
-    return {
-        "status": status,
-        "candidate_sha256": candidate_sha,
-        "bundle_sha256": verified["bundle_sha256"],
-        "candidate_directory": str(target.resolve()),
-        "source_event_ids": event_ids,
-        "live_activation_allowed": False,
-    }
-
-
 def _verify_rollout_record(
     binding: Mapping[str, object], *, record_line: bytes, surface: bytes
 ) -> None:
@@ -633,33 +500,225 @@ def _verify_rollout_record(
         _fail("SOURCE_BINDING_MISMATCH", "rollout record surface bytes drifted")
 
 
-def verify_candidate_bundle(candidate_dir: Path) -> dict[str, Any]:
-    """Verify all bytes needed to replay a cold candidate."""
+def _episode_snapshot(
+    *,
+    context_root: Path,
+    prefix_event_ids: Sequence[str],
+    bad_continuation_event_id: str,
+    correction_event_ids: Sequence[str],
+    desired_continuation_event_id: str,
+    carrier_homes: Mapping[str, Path | str] | None,
+    session_rollout_paths: Mapping[str, Path | str] | None,
+) -> dict[str, Any]:
+    if isinstance(prefix_event_ids, (str, bytes)) or not prefix_event_ids:
+        _fail("EVENT_IDS_MISSING", "prefix event IDs must be explicit and non-empty")
+    if isinstance(correction_event_ids, (str, bytes)):
+        _fail("CORRECTION_MISSING", "correction event IDs must be an explicit sequence")
+    prefix_ids = [_event_id(item) for item in prefix_event_ids]
+    bad_id = _event_id(bad_continuation_event_id)
+    correction_ids = [_event_id(item) for item in correction_event_ids]
+    desired_id = _event_id(desired_continuation_event_id)
+    event_ids = [*prefix_ids, bad_id, *correction_ids, desired_id]
+    if len(event_ids) != len(set(event_ids)):
+        _fail("EVENT_IDS_DUPLICATE", "episode event IDs must be distinct")
 
-    root = Path(candidate_dir)
-    manifest, _ = _read_json(root / "manifest.json", "candidate manifest")
-    bundle_sha = _verify_seal(manifest, "bundle_sha256")
-    if (
-        manifest.get("schema_version") != CANDIDATE_BUNDLE_SCHEMA
-        or manifest.get("authority") is not False
-        or manifest.get("cold_only") is not True
-        or manifest.get("live_activation_allowed") is not False
-        or manifest.get("selection_mode") != "explicit_context_event_ids_only"
-    ):
-        _fail("BUNDLE_POLICY_INVALID", "candidate bundle is not cold and explicit")
-    candidate_value, candidate_raw = _read_json(root / "candidate.json", "candidate")
     try:
-        candidate = validate_taste_candidate(candidate_value)
-    except TasteQualificationError as exc:
-        raise TasteCorpusError(exc.reason_code, str(exc)) from exc
-    candidate_sha = candidate["candidate_sha256"]
-    if (
-        candidate_raw != canonical_json_bytes(candidate)
-        or candidate_sha != manifest.get("candidate_sha256")
-        or root.name != candidate_sha
-    ):
-        _fail("CANDIDATE_MISMATCH", "candidate bytes or identity differ from the manifest")
+        context_fabric.verify_event_chain(Path(context_root))
+    except (OSError, context_fabric.ContextFabricError) as exc:
+        raise TasteCorpusError(
+            "CONTEXT_CHAIN_INVALID", "Context event chain failed verification"
+        ) from exc
+    homes = _carrier_homes(carrier_homes)
+    rollout_paths = {
+        str(session): Path(path) for session, path in (session_rollout_paths or {}).items()
+    }
+    bindings: list[dict[str, object]] = []
+    blobs: list[bytes] = []
+    records: list[bytes] = []
+    for event_id in event_ids:
+        binding, raw, record = _load_source(
+            event_id,
+            context_root=Path(context_root),
+            homes=homes,
+            session_rollouts=rollout_paths,
+        )
+        bindings.append(binding)
+        blobs.append(raw)
+        records.append(record)
+    episode = _episode_contract(
+        prefix_ids=prefix_ids,
+        bad_id=bad_id,
+        correction_ids=correction_ids,
+        desired_id=desired_id,
+        bindings=bindings,
+    )
+    return {
+        "event_ids": event_ids,
+        "prefix_count": len(prefix_ids),
+        "correction_count": len(correction_ids),
+        "bindings": bindings,
+        "blobs": blobs,
+        "records": records,
+        "episode": episode,
+    }
 
+
+def _episode_files(snapshot: Mapping[str, object]) -> dict[str, bytes]:
+    files: dict[str, bytes] = {}
+    for event_id, blob, record in zip(
+        snapshot["event_ids"], snapshot["blobs"], snapshot["records"], strict=True
+    ):
+        files[f"sources/{event_id}.utf8"] = blob
+        files[f"sources/{event_id}.rollout.jsonl"] = record
+    return files
+
+
+def _source_projection(snapshot: Mapping[str, object]) -> dict[str, object]:
+    prefix_count = int(snapshot["prefix_count"])
+    correction_count = int(snapshot["correction_count"])
+    bindings = snapshot["bindings"]
+    blobs = snapshot["blobs"]
+    assert isinstance(bindings, list) and isinstance(blobs, list)
+
+    def message(index: int) -> dict[str, object]:
+        binding = bindings[index]
+        assert isinstance(binding, Mapping)
+        return {
+            "event_id": binding["event_id"],
+            "role": binding["speaker"],
+            "content": blobs[index].decode("utf-8"),
+        }
+
+    correction_start = prefix_count + 1
+    return {
+        "schema_version": SOURCE_PROJECTION_SCHEMA,
+        "mode": "source_contrastive_episode",
+        "episodes": [
+            {
+                "prefix": [message(index) for index in range(prefix_count)],
+                "bad_continuation": message(prefix_count),
+                "human_corrections": [
+                    message(index)
+                    for index in range(correction_start, correction_start + correction_count)
+                ],
+                "desired_continuation": message(len(blobs) - 1),
+            }
+        ],
+    }
+
+
+def _evaluation_request(snapshot: Mapping[str, object]) -> dict[str, object]:
+    prefix_count = int(snapshot["prefix_count"])
+    bindings = snapshot["bindings"]
+    blobs = snapshot["blobs"]
+    assert isinstance(bindings, list) and isinstance(blobs, list)
+    messages = []
+    for index in range(prefix_count):
+        binding = bindings[index]
+        assert isinstance(binding, Mapping)
+        messages.append({"role": binding["speaker"], "content": blobs[index].decode("utf-8")})
+    return {
+        "schema_version": EVALUATION_REQUEST_SCHEMA,
+        "messages": messages,
+        "prefix_sha256": _sha(canonical_json_bytes(messages)),
+    }
+
+
+def _evaluation_oracle(snapshot: Mapping[str, object]) -> dict[str, object]:
+    prefix_count = int(snapshot["prefix_count"])
+    correction_count = int(snapshot["correction_count"])
+    bindings = snapshot["bindings"]
+    blobs = snapshot["blobs"]
+    assert isinstance(bindings, list) and isinstance(blobs, list)
+
+    def row(index: int) -> dict[str, object]:
+        binding = bindings[index]
+        assert isinstance(binding, Mapping)
+        return {
+            "event_id": binding["event_id"],
+            "byte_sha256": binding["byte_sha256"],
+            "text": blobs[index].decode("utf-8"),
+        }
+
+    correction_start = prefix_count + 1
+    return {
+        "schema_version": EVALUATION_ORACLE_SCHEMA,
+        "mode": "offline_only",
+        "available_to_consumers": False,
+        "bad_continuation": row(prefix_count),
+        "human_corrections": [
+            row(index) for index in range(correction_start, correction_start + correction_count)
+        ],
+        "desired_continuation": row(len(blobs) - 1),
+    }
+
+
+def _binding(relative_path: str, raw: bytes) -> dict[str, object]:
+    return {
+        "relative_path": relative_path,
+        "byte_sha256": _sha(raw),
+        "byte_length": len(raw),
+    }
+
+
+def build_cold_taste_source(
+    *,
+    context_root: Path,
+    corpus_root: Path,
+    prefix_event_ids: Sequence[str],
+    bad_continuation_event_id: str,
+    correction_event_ids: Sequence[str],
+    desired_continuation_event_id: str,
+    carrier_homes: Mapping[str, Path | str] | None = None,
+    session_rollout_paths: Mapping[str, Path | str] | None = None,
+) -> dict[str, object]:
+    """Seal one source-only correction episode and its mechanical Taste projection."""
+
+    snapshot = _episode_snapshot(
+        context_root=context_root,
+        prefix_event_ids=prefix_event_ids,
+        bad_continuation_event_id=bad_continuation_event_id,
+        correction_event_ids=correction_event_ids,
+        desired_continuation_event_id=desired_continuation_event_id,
+        carrier_homes=carrier_homes,
+        session_rollout_paths=session_rollout_paths,
+    )
+    projection_raw = canonical_json_bytes(_source_projection(snapshot))
+    manifest = _seal(
+        {
+            "schema_version": SOURCE_BUNDLE_SCHEMA,
+            "authority": False,
+            "cold_only": True,
+            "live_activation_allowed": False,
+            "selection_mode": "explicit_context_event_ids_only",
+            "source_event_ids": snapshot["event_ids"],
+            "prefix_count": snapshot["prefix_count"],
+            "correction_count": snapshot["correction_count"],
+            "episode": snapshot["episode"],
+            "source_bindings": snapshot["bindings"],
+            "treatment_projection": _binding("projection/treatment.condition.json", projection_raw),
+        },
+        "source_bundle_sha256",
+    )
+    bundle_sha = str(manifest["source_bundle_sha256"])
+    target = Path(corpus_root) / "sources" / bundle_sha
+    files = {
+        "manifest.json": canonical_json_bytes(manifest),
+        "projection/treatment.condition.json": projection_raw,
+        **_episode_files(snapshot),
+    }
+    status = _write_directory(target, files)
+    verified = verify_source_bundle(target)
+    return {
+        "status": status,
+        "source_bundle_sha256": verified["source_bundle_sha256"],
+        "source_directory": str(target.resolve()),
+        "source_event_ids": verified["source_event_ids"],
+        "live_activation_allowed": False,
+    }
+
+
+def _verify_episode_bundle(root: Path, manifest: Mapping[str, object]) -> dict[str, object]:
     ids = manifest.get("source_event_ids")
     bindings = manifest.get("source_bindings")
     prefix_count = manifest.get("prefix_count")
@@ -677,9 +736,10 @@ def verify_candidate_bundle(candidate_dir: Path) -> dict[str, Any]:
         or len(ids) != prefix_count + correction_count + 2
         or not isinstance(episode, Mapping)
     ):
-        _fail("SOURCE_BINDING_MISMATCH", "source event bindings are incomplete")
-    refs: list[dict[str, object]] = []
+        _fail("SOURCE_BINDING_MISMATCH", "episode source bindings are incomplete")
     blobs: list[bytes] = []
+    refs: list[dict[str, object]] = []
+    normalized_bindings: list[dict[str, object]] = []
     for event_id, raw_binding in zip(ids, bindings, strict=True):
         event_id = _event_id(event_id)
         if not isinstance(raw_binding, Mapping) or raw_binding.get("event_id") != event_id:
@@ -692,336 +752,721 @@ def verify_candidate_bundle(candidate_dir: Path) -> dict[str, Any]:
             "byte_length": binding.get("rollout_record_byte_length"),
         }
         record_line = _bound_file(root, record_binding, f"rollout record {event_id}")
-        if binding.get("rollout_record_sha256") is None or binding.get("ordinal") is None:
-            _fail("SOURCE_BINDING_MISMATCH", "source lacks exact rollout provenance")
         _verify_rollout_record(binding, record_line=record_line, surface=blob)
-        refs.append(_source_ref(binding))
         blobs.append(blob)
+        refs.append(_source_ref(binding))
+        normalized_bindings.append(binding)
     normalized_episode = _episode_contract(
         prefix_ids=[_event_id(item) for item in episode.get("prefix_event_ids", [])],
         bad_id=_event_id(episode.get("bad_continuation_event_id")),
         correction_ids=[_event_id(item) for item in episode.get("correction_event_ids", [])],
         desired_id=_event_id(episode.get("desired_continuation_event_id")),
-        bindings=bindings,
+        bindings=normalized_bindings,
     )
     if dict(episode) != normalized_episode or normalized_episode["ordered_event_ids"] != ids:
         _fail("EPISODE_INVALID", "episode manifest differs from exact source bindings")
-    if candidate["baseline_prefix"]["sources"] != refs[:prefix_count]:
-        _fail("SOURCE_BINDING_MISMATCH", "candidate prefix refs differ from source blobs")
-    provenance = candidate["offline_oracle"]["source_provenance"]
-    oracle = candidate["offline_oracle"]
-    bad_index = prefix_count
-    desired_index = len(ids) - 1
-    if (
-        provenance["bad_continuation"] != refs[bad_index]
-        or provenance["desired_continuation"] != refs[desired_index]
-        or oracle["bad_continuation"]["text"].encode("utf-8") != blobs[bad_index]
-        or oracle["desired_continuation"]["text"].encode("utf-8") != blobs[desired_index]
-    ):
-        _fail("SOURCE_BINDING_MISMATCH", "continuation refs or bytes drifted")
-
-    conditions = manifest.get("conditions")
-    if not isinstance(conditions, Mapping):
-        _fail("CONDITION_MISMATCH", "condition bindings are missing")
-    for arm in ("baseline", "treatment"):
-        binding = conditions.get(arm)
-        if not isinstance(binding, Mapping):
-            _fail("CONDITION_MISMATCH", f"{arm} condition binding is missing")
-        _bound_file(root, binding, f"{arm} condition")
-        if binding.get("byte_sha256") != candidate["conditions"][arm]:
-            _fail("CONDITION_MISMATCH", f"{arm} condition differs from the candidate")
     return {
-        "candidate": candidate,
-        "candidate_sha256": candidate_sha,
-        "bundle_sha256": bundle_sha,
-        "source_event_ids": ids,
-        "manifest": manifest,
+        "event_ids": list(ids),
+        "prefix_count": prefix_count,
+        "correction_count": correction_count,
+        "bindings": normalized_bindings,
+        "blobs": blobs,
+        "refs": refs,
+        "episode": normalized_episode,
     }
 
 
-def promote_qualified_taste_candidate(
-    *,
-    candidate_dir: Path,
-    qualified_root: Path,
-    baseline_outcome_path: Path,
-    treatment_outcome_path: Path,
-    qualification_receipt_path: Path,
-    baseline_shadow_dir: Path | None = None,
-    treatment_shadow_dir: Path | None = None,
-) -> dict[str, object]:
-    """Admit one receipt-verified pair to the cold qualified set."""
+def verify_source_bundle(source_dir: Path) -> dict[str, object]:
+    root = Path(source_dir)
+    manifest, manifest_raw = _read_json(root / "manifest.json", "source manifest")
+    bundle_sha = _verify_seal(manifest, "source_bundle_sha256")
+    if (
+        manifest.get("schema_version") != SOURCE_BUNDLE_SCHEMA
+        or manifest.get("authority") is not False
+        or manifest.get("cold_only") is not True
+        or manifest.get("live_activation_allowed") is not False
+        or manifest.get("selection_mode") != "explicit_context_event_ids_only"
+        or root.name != bundle_sha
+        or manifest_raw != canonical_json_bytes(manifest)
+    ):
+        _fail("BUNDLE_POLICY_INVALID", "source bundle is not exact, cold, and explicit")
+    episode = _verify_episode_bundle(root, manifest)
+    projection_binding = manifest.get("treatment_projection")
+    if not isinstance(projection_binding, Mapping):
+        _fail("PROJECTION_MISSING", "source treatment projection is missing")
+    projection_raw = _bound_file(root, projection_binding, "source treatment projection")
+    expected = canonical_json_bytes(_source_projection(episode))
+    if projection_raw != expected:
+        _fail("PROJECTION_MISMATCH", "treatment projection is not a mechanical source projection")
+    expected_files = {"manifest.json", str(projection_binding["relative_path"])}
+    for event_id in episode["event_ids"]:
+        expected_files.update(
+            {
+                f"sources/{event_id}.utf8",
+                f"sources/{event_id}.rollout.jsonl",
+            }
+        )
+    _assert_exact_files(root, expected_files, "source bundle")
+    return {
+        "manifest": manifest,
+        "source_bundle_sha256": bundle_sha,
+        "source_event_ids": episode["event_ids"],
+        "episode": episode,
+        "treatment_condition": projection_raw,
+    }
 
-    if baseline_shadow_dir is None or treatment_shadow_dir is None:
-        _fail(
-            "SHADOW_EVIDENCE_MISSING",
-            "qualified cold admission requires both exact shadow outcome bundles",
-        )
-    bundle = verify_candidate_bundle(candidate_dir)
-    candidate = bundle["candidate"]
-    baseline_value, _ = _read_json(baseline_outcome_path, "baseline outcome")
-    treatment_value, _ = _read_json(treatment_outcome_path, "treatment outcome")
-    receipt_value, _ = _read_json(qualification_receipt_path, "qualification receipt")
+
+def build_heldout_taste_evaluation(
+    *,
+    context_root: Path,
+    corpus_root: Path,
+    prefix_event_ids: Sequence[str],
+    bad_continuation_event_id: str,
+    correction_event_ids: Sequence[str],
+    desired_continuation_event_id: str,
+    scorer_spec: Mapping[str, object],
+    carrier_homes: Mapping[str, Path | str] | None = None,
+    session_rollout_paths: Mapping[str, Path | str] | None = None,
+) -> dict[str, object]:
+    """Seal one held-out episode with consumer prefix and offline-only oracle/scorer."""
+
+    from services.agent_runtime.taste_shadow_runner import (
+        TasteShadowRunnerError,
+        validate_scorer_spec,
+    )
+
+    snapshot = _episode_snapshot(
+        context_root=context_root,
+        prefix_event_ids=prefix_event_ids,
+        bad_continuation_event_id=bad_continuation_event_id,
+        correction_event_ids=correction_event_ids,
+        desired_continuation_event_id=desired_continuation_event_id,
+        carrier_homes=carrier_homes,
+        session_rollout_paths=session_rollout_paths,
+    )
+    request_raw = canonical_json_bytes(_evaluation_request(snapshot))
+    oracle_raw = canonical_json_bytes(_evaluation_oracle(snapshot))
     try:
-        baseline = validate_sealed_taste_outcome(
-            baseline_value, candidate=candidate, expected_arm="baseline"
+        scorer_raw = canonical_json_bytes(validate_scorer_spec(scorer_spec))
+    except TasteShadowRunnerError as exc:
+        raise TasteCorpusError(exc.reason_code, str(exc)) from exc
+    manifest = _seal(
+        {
+            "schema_version": EVALUATION_BUNDLE_SCHEMA,
+            "authority": False,
+            "cold_only": True,
+            "live_activation_allowed": False,
+            "consumer_oracle_access": False,
+            "selection_mode": "explicit_context_event_ids_only",
+            "source_event_ids": snapshot["event_ids"],
+            "prefix_count": snapshot["prefix_count"],
+            "correction_count": snapshot["correction_count"],
+            "episode": snapshot["episode"],
+            "source_bindings": snapshot["bindings"],
+            "consumer_request": _binding("consumer/request.json", request_raw),
+            "offline_oracle": _binding("offline/oracle.json", oracle_raw),
+            "offline_scorer": _binding("offline/scorer.json", scorer_raw),
+        },
+        "evaluation_bundle_sha256",
+    )
+    bundle_sha = str(manifest["evaluation_bundle_sha256"])
+    target = Path(corpus_root) / "evaluations" / bundle_sha
+    files = {
+        "manifest.json": canonical_json_bytes(manifest),
+        "consumer/request.json": request_raw,
+        "offline/oracle.json": oracle_raw,
+        "offline/scorer.json": scorer_raw,
+        **_episode_files(snapshot),
+    }
+    status = _write_directory(target, files)
+    verified = verify_evaluation_bundle(target)
+    return {
+        "status": status,
+        "evaluation_bundle_sha256": verified["evaluation_bundle_sha256"],
+        "evaluation_directory": str(target.resolve()),
+        "evaluation_event_ids": verified["evaluation_event_ids"],
+        "live_activation_allowed": False,
+    }
+
+
+def verify_evaluation_bundle(evaluation_dir: Path) -> dict[str, object]:
+    from services.agent_runtime.taste_shadow_runner import (
+        TasteShadowRunnerError,
+        validate_scorer_spec,
+    )
+
+    root = Path(evaluation_dir)
+    manifest, manifest_raw = _read_json(root / "manifest.json", "evaluation manifest")
+    bundle_sha = _verify_seal(manifest, "evaluation_bundle_sha256")
+    if (
+        manifest.get("schema_version") != EVALUATION_BUNDLE_SCHEMA
+        or manifest.get("authority") is not False
+        or manifest.get("cold_only") is not True
+        or manifest.get("live_activation_allowed") is not False
+        or manifest.get("consumer_oracle_access") is not False
+        or manifest.get("selection_mode") != "explicit_context_event_ids_only"
+        or root.name != bundle_sha
+        or manifest_raw != canonical_json_bytes(manifest)
+    ):
+        _fail("BUNDLE_POLICY_INVALID", "evaluation bundle is not exact, cold, and offline-only")
+    episode = _verify_episode_bundle(root, manifest)
+    request_binding = manifest.get("consumer_request")
+    oracle_binding = manifest.get("offline_oracle")
+    scorer_binding = manifest.get("offline_scorer")
+    if not all(
+        isinstance(item, Mapping) for item in (request_binding, oracle_binding, scorer_binding)
+    ):
+        _fail("EVALUATION_BINDING_MISSING", "evaluation request/oracle/scorer bindings are missing")
+    assert isinstance(request_binding, Mapping)
+    assert isinstance(oracle_binding, Mapping)
+    assert isinstance(scorer_binding, Mapping)
+    request_raw = _bound_file(root, request_binding, "evaluation consumer request")
+    oracle_raw = _bound_file(root, oracle_binding, "evaluation offline oracle")
+    scorer_raw = _bound_file(root, scorer_binding, "evaluation offline scorer")
+    if request_raw != canonical_json_bytes(_evaluation_request(episode)):
+        _fail("REQUEST_MISMATCH", "consumer request is not exactly the held-out prefix")
+    if oracle_raw != canonical_json_bytes(_evaluation_oracle(episode)):
+        _fail("ORACLE_MISMATCH", "offline oracle differs from held-out source bytes")
+    try:
+        scorer_value = json.loads(scorer_raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TasteCorpusError("SCORER_INVALID", "offline scorer is invalid JSON") from exc
+    if not isinstance(scorer_value, Mapping):
+        _fail("SCORER_INVALID", "offline scorer must be an object")
+    try:
+        scorer = validate_scorer_spec(scorer_value)
+    except TasteShadowRunnerError as exc:
+        raise TasteCorpusError(exc.reason_code, str(exc)) from exc
+    if scorer_raw != canonical_json_bytes(scorer):
+        _fail("SCORER_INVALID", "offline scorer is not canonical")
+    expected_files = {
+        "manifest.json",
+        str(request_binding["relative_path"]),
+        str(oracle_binding["relative_path"]),
+        str(scorer_binding["relative_path"]),
+    }
+    for event_id in episode["event_ids"]:
+        expected_files.update(
+            {
+                f"sources/{event_id}.utf8",
+                f"sources/{event_id}.rollout.jsonl",
+            }
         )
-        treatment = validate_sealed_taste_outcome(
-            treatment_value, candidate=candidate, expected_arm="treatment"
-        )
-        receipt = validate_taste_qualification_receipt(
-            receipt_value,
-            candidate=candidate,
-            baseline_outcome=baseline,
-            treatment_outcome=treatment,
+    _assert_exact_files(root, expected_files, "evaluation bundle")
+    return {
+        "manifest": manifest,
+        "evaluation_bundle_sha256": bundle_sha,
+        "evaluation_event_ids": episode["event_ids"],
+        "episode": episode,
+        "consumer_request": request_raw,
+        "offline_oracle": oracle_raw,
+        "oracle": _evaluation_oracle(episode),
+        "scorer": scorer,
+        "scorer_raw": scorer_raw,
+    }
+
+
+def _baseline_condition() -> bytes:
+    return canonical_json_bytes(
+        {"schema_version": SOURCE_PROJECTION_SCHEMA, "mode": "baseline_none", "episodes": []}
+    )
+
+
+def _oracle_text_bytes(evaluation: Mapping[str, object]) -> list[bytes]:
+    oracle = evaluation["oracle"]
+    assert isinstance(oracle, Mapping)
+    rows = [
+        oracle["bad_continuation"],
+        *oracle["human_corrections"],
+        oracle["desired_continuation"],
+    ]
+    result: list[bytes] = []
+    for row in rows:
+        assert isinstance(row, Mapping)
+        result.append(str(row["text"]).encode("utf-8"))
+    return result
+
+
+def _assert_nonleaking_projection(
+    *, treatment: bytes, baseline: bytes, evaluation: Mapping[str, object]
+) -> None:
+    for oracle_raw in _oracle_text_bytes(evaluation):
+        if oracle_raw in treatment or oracle_raw in baseline:
+            _fail(
+                "EVALUATION_ORACLE_LEAK",
+                "held-out bad/correction/desired bytes appear in a model-visible condition",
+            )
+
+
+def _assert_source_evaluation_independence(
+    source: Mapping[str, object], evaluation: Mapping[str, object]
+) -> dict[str, object]:
+    source_episode = source["episode"]
+    evaluation_episode = evaluation["episode"]
+    assert isinstance(source_episode, Mapping) and isinstance(evaluation_episode, Mapping)
+    source_ids = set(source_episode["event_ids"])
+    evaluation_ids = set(evaluation_episode["event_ids"])
+    if source_ids & evaluation_ids:
+        _fail("EPISODE_OVERLAP", "source and held-out evaluation reuse Context events")
+    source_bindings = source_episode["bindings"]
+    evaluation_bindings = evaluation_episode["bindings"]
+    assert isinstance(source_bindings, list) and isinstance(evaluation_bindings, list)
+    source_records = {str(item["rollout_record_file_sha256"]) for item in source_bindings}
+    evaluation_records = {str(item["rollout_record_file_sha256"]) for item in evaluation_bindings}
+    if source_records & evaluation_records:
+        _fail("ROLLOUT_OVERLAP", "source and held-out evaluation reuse exact rollout records")
+    same_session = (
+        source_episode["episode"]["carrier_id"] == evaluation_episode["episode"]["carrier_id"]
+        and source_episode["episode"]["session_id"] == evaluation_episode["episode"]["session_id"]
+    )
+    if same_session:
+        source_ordinals = source_episode["episode"]["ordered_rollout_ordinals"]
+        evaluation_ordinals = evaluation_episode["episode"]["ordered_rollout_ordinals"]
+        source_seqs = source_episode["episode"]["ordered_context_seqs"]
+        evaluation_seqs = evaluation_episode["episode"]["ordered_context_seqs"]
+        if max(source_ordinals) >= min(evaluation_ordinals) or max(source_seqs) >= min(
+            evaluation_seqs
+        ):
+            _fail(
+                "HELDOUT_ORDER_INVALID",
+                "same-session source must end before held-out Context and rollout time",
+            )
+    return {
+        "event_ids_disjoint": True,
+        "rollout_records_disjoint": True,
+        "independence_class": "same_session_later_episode" if same_session else "cross_session",
+        "source_max_ordinal": max(source_episode["episode"]["ordered_rollout_ordinals"]),
+        "evaluation_min_ordinal": min(evaluation_episode["episode"]["ordered_rollout_ordinals"]),
+        "source_max_context_seq": max(source_episode["episode"]["ordered_context_seqs"]),
+        "evaluation_min_context_seq": min(evaluation_episode["episode"]["ordered_context_seqs"]),
+    }
+
+
+def _build_offline_candidate(
+    *,
+    evaluation: Mapping[str, object],
+    baseline_condition: bytes,
+    treatment_condition: bytes,
+    model_identity: str,
+    body_identity: str,
+    config_identity: str,
+) -> dict[str, object]:
+    episode = evaluation["episode"]
+    assert isinstance(episode, Mapping)
+    prefix_count = int(episode["prefix_count"])
+    refs = episode["refs"]
+    blobs = episode["blobs"]
+    assert isinstance(refs, list) and isinstance(blobs, list)
+    bad_index = prefix_count
+    desired_index = len(blobs) - 1
+    try:
+        return build_taste_candidate(
+            baseline_prefix=refs[:prefix_count],
+            treatment_prefix=[dict(item) for item in refs[:prefix_count]],
+            bad_continuation={
+                "text": blobs[bad_index].decode("utf-8"),
+                "source": refs[bad_index],
+            },
+            desired_continuation={
+                "text": blobs[desired_index].decode("utf-8"),
+                "source": refs[desired_index],
+            },
+            model_identity=model_identity,
+            body_identity=body_identity,
+            config_identity=config_identity,
+            baseline_condition_sha256=_sha(baseline_condition),
+            treatment_condition_sha256=_sha(treatment_condition),
         )
     except TasteQualificationError as exc:
         raise TasteCorpusError(exc.reason_code, str(exc)) from exc
 
-    from services.agent_runtime.taste_shadow_runner import (
-        TasteShadowRunnerError,
-        verify_shadow_outcome_bundle,
-    )
 
-    try:
-        shadow = {
-            "baseline": verify_shadow_outcome_bundle(
-                Path(baseline_shadow_dir), candidate_dir=Path(candidate_dir)
-            ),
-            "treatment": verify_shadow_outcome_bundle(
-                Path(treatment_shadow_dir), candidate_dir=Path(candidate_dir)
-            ),
-        }
-    except TasteShadowRunnerError as exc:
-        raise TasteCorpusError(exc.reason_code, str(exc)) from exc
-    if (
-        shadow["baseline"]["outcome"] != baseline
-        or shadow["treatment"]["outcome"] != treatment
-        or shadow["baseline"]["consumer_session_identity"]
-        == shadow["treatment"]["consumer_session_identity"]
-        or shadow["baseline"]["process_id"] == shadow["treatment"]["process_id"]
-        or shadow["baseline"]["same_inputs"] != shadow["treatment"]["same_inputs"]
-        or shadow["baseline"]["condition_sha256"] == shadow["treatment"]["condition_sha256"]
+def build_taste_qualification_plan(
+    *,
+    source_dir: Path,
+    evaluation_dir: Path,
+    plan_root: Path,
+    model_identity: str,
+    body_identity: str,
+    config_identity: str,
+) -> dict[str, object]:
+    """Join source and held-out evaluation without accepting caller-supplied conditions."""
+
+    if not model_identity or not all(
+        isinstance(item, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", item)
+        for item in (body_identity, config_identity)
     ):
-        _fail("SHADOW_EVIDENCE_MISMATCH", "shadow evidence differs or reused one session")
-
-    candidate_sha = str(bundle["candidate_sha256"])
-    nested = f"candidate/{candidate_sha}"
-    baseline_raw = canonical_json_bytes(baseline)
-    treatment_raw = canonical_json_bytes(treatment)
-    receipt_raw = canonical_json_bytes(receipt)
-    files = {
-        f"{nested}/manifest.json": canonical_json_bytes(bundle["manifest"]),
-        f"{nested}/candidate.json": canonical_json_bytes(candidate),
-        "outcomes/baseline.json": baseline_raw,
-        "outcomes/treatment.json": treatment_raw,
-        "qualification_receipt.json": receipt_raw,
-    }
-    source_root = Path(candidate_dir)
-    for binding in bundle["manifest"]["source_bindings"]:
-        relative = str(binding["relative_path"])
-        files[f"{nested}/{relative}"] = _bound_file(source_root, binding, relative)
-        record_binding = {
-            "relative_path": binding["rollout_record_relative_path"],
-            "byte_sha256": binding["rollout_record_file_sha256"],
-            "byte_length": binding["rollout_record_byte_length"],
-        }
-        record_relative = str(binding["rollout_record_relative_path"])
-        files[f"{nested}/{record_relative}"] = _bound_file(
-            source_root, record_binding, record_relative
-        )
-    for binding in bundle["manifest"]["conditions"].values():
-        relative = str(binding["relative_path"])
-        files[f"{nested}/{relative}"] = _bound_file(source_root, binding, relative)
-
-    outputs = {
-        "baseline": {
-            "relative_path": "outcomes/baseline.json",
-            "logical_sha256": baseline["outcome_sha256"],
-            "byte_sha256": _sha(baseline_raw),
-            "byte_length": len(baseline_raw),
-        },
-        "treatment": {
-            "relative_path": "outcomes/treatment.json",
-            "logical_sha256": treatment["outcome_sha256"],
-            "byte_sha256": _sha(treatment_raw),
-            "byte_length": len(treatment_raw),
-        },
-        "receipt": {
-            "relative_path": "qualification_receipt.json",
-            "logical_sha256": receipt["receipt_sha256"],
-            "byte_sha256": _sha(receipt_raw),
-            "byte_length": len(receipt_raw),
-        },
-    }
-    qualified_manifest = _seal(
+        _fail("IDENTITY_INVALID", "model/body/config identities must be exact and byte-bound")
+    source = verify_source_bundle(source_dir)
+    evaluation = verify_evaluation_bundle(evaluation_dir)
+    independence = _assert_source_evaluation_independence(source, evaluation)
+    baseline = _baseline_condition()
+    treatment = source["treatment_condition"]
+    assert isinstance(treatment, bytes)
+    _assert_nonleaking_projection(treatment=treatment, baseline=baseline, evaluation=evaluation)
+    candidate = _build_offline_candidate(
+        evaluation=evaluation,
+        baseline_condition=baseline,
+        treatment_condition=treatment,
+        model_identity=model_identity,
+        body_identity=body_identity,
+        config_identity=config_identity,
+    )
+    candidate_raw = canonical_json_bytes(candidate)
+    manifest = _seal(
         {
-            "schema_version": QUALIFIED_BUNDLE_SCHEMA,
+            "schema_version": QUALIFICATION_PLAN_SCHEMA,
             "authority": False,
             "cold_only": True,
             "live_activation_allowed": False,
-            "candidate_sha256": candidate_sha,
-            "candidate_bundle_sha256": bundle["bundle_sha256"],
-            "sealed_outputs": outputs,
-            "shadow_outcomes": {
-                arm: {
-                    "relative_path": f"shadow/{arm}",
-                    "bundle_sha256": shadow[arm]["bundle_sha256"],
-                    "outcome_sha256": shadow[arm]["outcome"]["outcome_sha256"],
-                    "consumer_session_identity": shadow[arm]["consumer_session_identity"],
-                }
-                for arm in ("baseline", "treatment")
+            "source_bundle_sha256": source["source_bundle_sha256"],
+            "evaluation_bundle_sha256": evaluation["evaluation_bundle_sha256"],
+            "evaluation_request_sha256": _sha(evaluation["consumer_request"]),
+            "candidate_sha256": candidate["candidate_sha256"],
+            "identities": {
+                "model": model_identity,
+                "body": body_identity,
+                "config": config_identity,
             },
+            "conditions": {
+                "baseline": _binding("conditions/baseline.condition.json", baseline),
+                "treatment": _binding("conditions/treatment.condition.json", treatment),
+            },
+            "offline_candidate": _binding("offline/candidate.json", candidate_raw),
+            "independence": independence,
+            "consumer_visibility": {
+                "request": "evaluation_prefix_only",
+                "conditions": "baseline_none_or_source_projection_only",
+                "oracle": False,
+                "scorer": False,
+            },
+        },
+        "plan_bundle_sha256",
+    )
+    plan_sha = str(manifest["plan_bundle_sha256"])
+    target = Path(plan_root) / plan_sha
+    files = {
+        "manifest.json": canonical_json_bytes(manifest),
+        "conditions/baseline.condition.json": baseline,
+        "conditions/treatment.condition.json": treatment,
+        "offline/candidate.json": candidate_raw,
+    }
+    status = _write_directory(target, files)
+    verified = verify_qualification_plan(
+        target, source_dir=Path(source_dir), evaluation_dir=Path(evaluation_dir)
+    )
+    return {
+        "status": status,
+        "plan_bundle_sha256": verified["plan_bundle_sha256"],
+        "candidate_sha256": verified["candidate"]["candidate_sha256"],
+        "plan_directory": str(target.resolve()),
+        "live_activation_allowed": False,
+    }
+
+
+def verify_qualification_plan(
+    plan_dir: Path, *, source_dir: Path, evaluation_dir: Path
+) -> dict[str, object]:
+    root = Path(plan_dir)
+    manifest, manifest_raw = _read_json(root / "manifest.json", "qualification plan")
+    plan_sha = _verify_seal(manifest, "plan_bundle_sha256")
+    if (
+        manifest.get("schema_version") != QUALIFICATION_PLAN_SCHEMA
+        or manifest.get("authority") is not False
+        or manifest.get("cold_only") is not True
+        or manifest.get("live_activation_allowed") is not False
+        or root.name != plan_sha
+        or manifest_raw != canonical_json_bytes(manifest)
+    ):
+        _fail("BUNDLE_POLICY_INVALID", "qualification plan is not exact and cold")
+    source = verify_source_bundle(source_dir)
+    evaluation = verify_evaluation_bundle(evaluation_dir)
+    if (
+        manifest.get("source_bundle_sha256") != source["source_bundle_sha256"]
+        or manifest.get("evaluation_bundle_sha256") != evaluation["evaluation_bundle_sha256"]
+        or manifest.get("evaluation_request_sha256") != _sha(evaluation["consumer_request"])
+    ):
+        _fail("PLAN_CHAIN_MISMATCH", "plan source/evaluation chain drifted")
+    independence = _assert_source_evaluation_independence(source, evaluation)
+    if manifest.get("independence") != independence:
+        _fail("PLAN_CHAIN_MISMATCH", "plan independence receipt drifted")
+    conditions = manifest.get("conditions")
+    if not isinstance(conditions, Mapping):
+        _fail("CONDITION_MISMATCH", "plan condition bindings are missing")
+    baseline_binding = conditions.get("baseline")
+    treatment_binding = conditions.get("treatment")
+    if not isinstance(baseline_binding, Mapping) or not isinstance(treatment_binding, Mapping):
+        _fail("CONDITION_MISMATCH", "plan condition bindings are invalid")
+    baseline = _bound_file(root, baseline_binding, "baseline condition")
+    treatment = _bound_file(root, treatment_binding, "treatment condition")
+    if baseline != _baseline_condition() or treatment != source["treatment_condition"]:
+        _fail("CONDITION_MISMATCH", "conditions are not canonical source-only projections")
+    _assert_nonleaking_projection(treatment=treatment, baseline=baseline, evaluation=evaluation)
+    identities = manifest.get("identities")
+    if not isinstance(identities, Mapping) or set(identities) != {"model", "body", "config"}:
+        _fail("IDENTITY_INVALID", "plan identities are incomplete")
+    candidate = _build_offline_candidate(
+        evaluation=evaluation,
+        baseline_condition=baseline,
+        treatment_condition=treatment,
+        model_identity=str(identities["model"]),
+        body_identity=str(identities["body"]),
+        config_identity=str(identities["config"]),
+    )
+    candidate_binding = manifest.get("offline_candidate")
+    if not isinstance(candidate_binding, Mapping):
+        _fail("CANDIDATE_MISMATCH", "offline candidate binding is missing")
+    candidate_raw = _bound_file(root, candidate_binding, "offline candidate")
+    if (
+        candidate_raw != canonical_json_bytes(candidate)
+        or manifest.get("candidate_sha256") != candidate["candidate_sha256"]
+    ):
+        _fail("CANDIDATE_MISMATCH", "offline candidate differs from the verified chain")
+    visibility = manifest.get("consumer_visibility")
+    if visibility != {
+        "request": "evaluation_prefix_only",
+        "conditions": "baseline_none_or_source_projection_only",
+        "oracle": False,
+        "scorer": False,
+    }:
+        _fail("VISIBILITY_POLICY_INVALID", "plan consumer visibility drifted")
+    _assert_exact_files(
+        root,
+        {
+            "manifest.json",
+            str(baseline_binding["relative_path"]),
+            str(treatment_binding["relative_path"]),
+            str(candidate_binding["relative_path"]),
+        },
+        "qualification plan",
+    )
+    return {
+        "manifest": manifest,
+        "plan_bundle_sha256": plan_sha,
+        "source": source,
+        "evaluation": evaluation,
+        "candidate": candidate,
+        "conditions": {"baseline": baseline, "treatment": treatment},
+        "request": evaluation["consumer_request"],
+    }
+
+
+def _copy_tree_files(source: Path, prefix: str, files: dict[str, bytes]) -> None:
+    source = Path(source)
+    for path in source.rglob("*"):
+        if path.is_symlink():
+            _fail("BUNDLE_PATH_INVALID", f"{prefix} contains a link")
+        if path.is_dir():
+            continue
+        relative = path.relative_to(source).as_posix()
+        files[f"{prefix}/{relative}"] = _read_file(
+            path,
+            limit=_MAX_JSON_BYTES,
+            field=f"{prefix}/{relative}",
+            allow_empty=True,
+        )
+
+
+def promote_qualified_taste_candidate(
+    *,
+    source_dir: Path,
+    evaluation_dir: Path,
+    plan_dir: Path,
+    pair_dir: Path,
+    score_dir: Path,
+    qualified_root: Path,
+) -> dict[str, object]:
+    """Admit only a fully recomputable non-leaking chain to the cold set."""
+
+    from services.agent_runtime.taste_shadow_runner import (
+        TasteShadowRunnerError,
+        verify_shadow_pair,
+        verify_shadow_score_bundle,
+    )
+
+    plan = verify_qualification_plan(plan_dir, source_dir=source_dir, evaluation_dir=evaluation_dir)
+    try:
+        pair = verify_shadow_pair(
+            pair_dir,
+            plan_dir=plan_dir,
+            source_dir=source_dir,
+            evaluation_dir=evaluation_dir,
+        )
+        score = verify_shadow_score_bundle(
+            score_dir,
+            pair_dir=pair_dir,
+            plan_dir=plan_dir,
+            source_dir=source_dir,
+            evaluation_dir=evaluation_dir,
+        )
+    except TasteShadowRunnerError as exc:
+        raise TasteCorpusError(exc.reason_code, str(exc)) from exc
+    candidate_sha = str(plan["candidate"]["candidate_sha256"])
+    chain = {
+        "source_bundle_sha256": plan["source"]["source_bundle_sha256"],
+        "evaluation_bundle_sha256": plan["evaluation"]["evaluation_bundle_sha256"],
+        "plan_bundle_sha256": plan["plan_bundle_sha256"],
+        "pair_bundle_sha256": pair["pair_bundle_sha256"],
+        "pair_id": pair["pair_id"],
+        "score_bundle_sha256": score["score_bundle_sha256"],
+        "score_id": score["score_id"],
+        "candidate_sha256": candidate_sha,
+        "qualification_receipt_sha256": score["qualification_receipt_sha256"],
+    }
+    roots = {
+        "source": f"chain/source/{chain['source_bundle_sha256']}",
+        "evaluation": f"chain/evaluation/{chain['evaluation_bundle_sha256']}",
+        "plan": f"chain/plan/{chain['plan_bundle_sha256']}",
+        "pair": f"chain/pair/{chain['pair_id']}",
+        "score": f"chain/score/{chain['score_id']}",
+    }
+    manifest = _seal(
+        {
+            "schema_version": NONLEAKING_QUALIFIED_BUNDLE_SCHEMA,
+            "authority": False,
+            "cold_only": True,
+            "live_activation_allowed": False,
+            "chain": chain,
+            "roots": roots,
         },
         "qualified_bundle_sha256",
     )
-    for arm, source in (
-        ("baseline", Path(baseline_shadow_dir)),
-        ("treatment", Path(treatment_shadow_dir)),
+    files: dict[str, bytes] = {"qualified_manifest.json": canonical_json_bytes(manifest)}
+    for name, directory in (
+        ("source", source_dir),
+        ("evaluation", evaluation_dir),
+        ("plan", plan_dir),
+        ("pair", pair_dir),
+        ("score", score_dir),
     ):
-        for path in source.rglob("*"):
-            if path.is_dir():
-                continue
-            if path.is_symlink():
-                _fail("BUNDLE_PATH_INVALID", "shadow evidence contains a link")
-            relative = path.relative_to(source).as_posix()
-            files[f"shadow/{arm}/{relative}"] = _read_file(
-                path,
-                limit=_MAX_JSON_BYTES,
-                field=f"shadow {arm} {relative}",
-                allow_empty=True,
-            )
-    files["qualified_manifest.json"] = canonical_json_bytes(qualified_manifest)
+        _copy_tree_files(Path(directory), roots[name], files)
     target = Path(qualified_root) / candidate_sha
     status = _write_directory(target, files)
     verified = verify_qualified_bundle(target)
-    if verified["qualification_receipt_sha256"] != receipt["receipt_sha256"] or verified[
-        "shadow_bundle_sha256"
-    ] != {
-        "baseline": shadow["baseline"]["bundle_sha256"],
-        "treatment": shadow["treatment"]["bundle_sha256"],
-    }:
-        _fail(
-            "QUALIFIED_SET_CONFLICT",
-            "candidate already has a different qualified shadow pair",
-        )
+    if verified["chain"] != chain:
+        _fail("QUALIFIED_SET_CONFLICT", "qualified member contains another evidence chain")
     return {
         "status": status,
         "candidate_sha256": candidate_sha,
         "qualified_directory": str(target.resolve()),
         "qualified_bundle_sha256": verified["qualified_bundle_sha256"],
-        "qualification_receipt_sha256": verified["qualification_receipt_sha256"],
+        "qualification_receipt_sha256": verified["chain"]["qualification_receipt_sha256"],
         "live_activation_allowed": False,
     }
 
 
 def verify_qualified_bundle(qualified_dir: Path) -> dict[str, object]:
-    """Recompute the qualification before accepting a cold-set member."""
+    from services.agent_runtime.taste_shadow_runner import (
+        TasteShadowRunnerError,
+        verify_shadow_pair,
+        verify_shadow_score_bundle,
+    )
 
     root = Path(qualified_dir)
-    manifest, _ = _read_json(root / "qualified_manifest.json", "qualified manifest")
+    manifest, manifest_raw = _read_json(root / "qualified_manifest.json", "qualified manifest")
     qualified_sha = _verify_seal(manifest, "qualified_bundle_sha256")
     if (
-        manifest.get("schema_version") != QUALIFIED_BUNDLE_SCHEMA
+        manifest.get("schema_version") != NONLEAKING_QUALIFIED_BUNDLE_SCHEMA
         or manifest.get("authority") is not False
         or manifest.get("cold_only") is not True
         or manifest.get("live_activation_allowed") is not False
+        or manifest_raw != canonical_json_bytes(manifest)
     ):
-        _fail("BUNDLE_POLICY_INVALID", "qualified member is not cold and non-authoritative")
-    candidate_sha = str(manifest.get("candidate_sha256") or "")
-    bundle = verify_candidate_bundle(root / "candidate" / candidate_sha)
+        _fail("BUNDLE_POLICY_INVALID", "qualified member is not exact, cold, and inert")
+    roots = manifest.get("roots")
+    chain = manifest.get("chain")
+    if not isinstance(roots, Mapping) or not isinstance(chain, Mapping):
+        _fail("QUALIFIED_CHAIN_MISSING", "qualified member lacks its evidence chain")
+    expected_chain_keys = {
+        "source_bundle_sha256",
+        "evaluation_bundle_sha256",
+        "plan_bundle_sha256",
+        "pair_bundle_sha256",
+        "pair_id",
+        "score_bundle_sha256",
+        "score_id",
+        "candidate_sha256",
+        "qualification_receipt_sha256",
+    }
+    hash_keys = expected_chain_keys - {"pair_id", "score_id"}
     if (
-        bundle["candidate_sha256"] != candidate_sha
-        or bundle["bundle_sha256"] != manifest.get("candidate_bundle_sha256")
-        or root.name != candidate_sha
+        set(chain) != expected_chain_keys
+        or any(
+            not isinstance(chain.get(key), str)
+            or re.fullmatch(r"[0-9a-f]{64}", str(chain[key])) is None
+            for key in hash_keys
+        )
+        or not isinstance(chain.get("pair_id"), str)
+        or re.fullmatch(r"pair-[0-9a-f]{32}", str(chain["pair_id"])) is None
+        or not isinstance(chain.get("score_id"), str)
+        or re.fullmatch(r"score-[0-9a-f]{32}", str(chain["score_id"])) is None
     ):
-        _fail("CANDIDATE_MISMATCH", "qualified member contains another candidate")
-    outputs = manifest.get("sealed_outputs")
-    if not isinstance(outputs, Mapping):
-        _fail("SEALED_OUTPUT_MISMATCH", "sealed output bindings are missing")
-    values: dict[str, dict[str, Any]] = {}
-    for name in ("baseline", "treatment", "receipt"):
-        binding = outputs.get(name)
-        if not isinstance(binding, Mapping):
-            _fail("SEALED_OUTPUT_MISMATCH", f"{name} binding is missing")
-        raw = _bound_file(root, binding, name)
-        try:
-            value = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise TasteCorpusError("SEALED_OUTPUT_MISMATCH", f"{name} is invalid") from exc
-        if not isinstance(value, Mapping):
-            _fail("SEALED_OUTPUT_MISMATCH", f"{name} is not an object")
-        values[name] = dict(value)
-    candidate = bundle["candidate"]
+        _fail("QUALIFIED_CHAIN_MISMATCH", "qualified chain identities are invalid")
+    expected_roots = {
+        "source": f"chain/source/{chain.get('source_bundle_sha256')}",
+        "evaluation": f"chain/evaluation/{chain.get('evaluation_bundle_sha256')}",
+        "plan": f"chain/plan/{chain.get('plan_bundle_sha256')}",
+        "pair": f"chain/pair/{chain.get('pair_id')}",
+        "score": f"chain/score/{chain.get('score_id')}",
+    }
+    if dict(roots) != expected_roots:
+        _fail("QUALIFIED_CHAIN_MISMATCH", "qualified chain roots drifted")
+    top_entries = {path.name for path in root.iterdir()}
+    if top_entries != {"qualified_manifest.json", "chain"}:
+        _fail("QUALIFIED_CHAIN_MISMATCH", "qualified root contains undeclared objects")
+    chain_root = root / "chain"
+    if chain_root.is_symlink() or not chain_root.is_dir():
+        _fail("QUALIFIED_CHAIN_MISMATCH", "qualified chain root is invalid")
+    if {path.name for path in chain_root.iterdir()} != set(expected_roots):
+        _fail("QUALIFIED_CHAIN_MISMATCH", "qualified chain categories drifted")
+    for category, relative in expected_roots.items():
+        category_root = chain_root / category
+        target_root = root / relative
+        if (
+            category_root.is_symlink()
+            or not category_root.is_dir()
+            or target_root.is_symlink()
+            or not target_root.is_dir()
+            or list(category_root.iterdir()) != [target_root]
+        ):
+            _fail("QUALIFIED_CHAIN_MISMATCH", f"qualified {category} carrier drifted")
+    source_dir = root / expected_roots["source"]
+    evaluation_dir = root / expected_roots["evaluation"]
+    plan_dir = root / expected_roots["plan"]
+    pair_dir = root / expected_roots["pair"]
+    score_dir = root / expected_roots["score"]
+    plan = verify_qualification_plan(plan_dir, source_dir=source_dir, evaluation_dir=evaluation_dir)
     try:
-        baseline = validate_sealed_taste_outcome(
-            values["baseline"], candidate=candidate, expected_arm="baseline"
+        pair = verify_shadow_pair(
+            pair_dir,
+            plan_dir=plan_dir,
+            source_dir=source_dir,
+            evaluation_dir=evaluation_dir,
         )
-        treatment = validate_sealed_taste_outcome(
-            values["treatment"], candidate=candidate, expected_arm="treatment"
+        score = verify_shadow_score_bundle(
+            score_dir,
+            pair_dir=pair_dir,
+            plan_dir=plan_dir,
+            source_dir=source_dir,
+            evaluation_dir=evaluation_dir,
         )
-        receipt = validate_taste_qualification_receipt(
-            values["receipt"],
-            candidate=candidate,
-            baseline_outcome=baseline,
-            treatment_outcome=treatment,
-        )
-    except TasteQualificationError as exc:
-        raise TasteCorpusError(exc.reason_code, str(exc)) from exc
-    if (
-        outputs["baseline"].get("logical_sha256") != baseline["outcome_sha256"]
-        or outputs["treatment"].get("logical_sha256") != treatment["outcome_sha256"]
-        or outputs["receipt"].get("logical_sha256") != receipt["receipt_sha256"]
-    ):
-        _fail("SEALED_OUTPUT_MISMATCH", "sealed logical identities drifted")
-    shadow_manifest = manifest.get("shadow_outcomes")
-    if not isinstance(shadow_manifest, Mapping) or set(shadow_manifest) != {
-        "baseline",
-        "treatment",
-    }:
-        _fail("SHADOW_EVIDENCE_MISSING", "qualified member lacks exact shadow evidence")
-    from services.agent_runtime.taste_shadow_runner import (
-        TasteShadowRunnerError,
-        verify_shadow_outcome_bundle,
-    )
-
-    verified_shadow: dict[str, dict[str, object]] = {}
-    try:
-        for arm in ("baseline", "treatment"):
-            binding = shadow_manifest[arm]
-            if not isinstance(binding, Mapping):
-                _fail("SHADOW_EVIDENCE_MISMATCH", f"{arm} shadow binding is invalid")
-            relative = binding.get("relative_path")
-            if relative != f"shadow/{arm}":
-                _fail("SHADOW_EVIDENCE_MISMATCH", f"{arm} shadow path drifted")
-            verified_shadow[arm] = verify_shadow_outcome_bundle(
-                root / str(relative), candidate_dir=root / "candidate" / candidate_sha
-            )
-            if (
-                verified_shadow[arm]["bundle_sha256"] != binding.get("bundle_sha256")
-                or verified_shadow[arm]["outcome"]["outcome_sha256"]
-                != binding.get("outcome_sha256")
-                or verified_shadow[arm]["consumer_session_identity"]
-                != binding.get("consumer_session_identity")
-                or verified_shadow[arm]["outcome"] != values[arm]
-            ):
-                _fail("SHADOW_EVIDENCE_MISMATCH", f"{arm} shadow evidence drifted")
     except TasteShadowRunnerError as exc:
         raise TasteCorpusError(exc.reason_code, str(exc)) from exc
-    if (
-        verified_shadow["baseline"]["consumer_session_identity"]
-        == verified_shadow["treatment"]["consumer_session_identity"]
-        or verified_shadow["baseline"]["process_id"] == verified_shadow["treatment"]["process_id"]
-        or verified_shadow["baseline"]["same_inputs"] != verified_shadow["treatment"]["same_inputs"]
-        or verified_shadow["baseline"]["condition_sha256"]
-        == verified_shadow["treatment"]["condition_sha256"]
-    ):
-        _fail("SHADOW_EVIDENCE_MISMATCH", "qualified member reused one shadow session")
+    observed_chain = {
+        "source_bundle_sha256": plan["source"]["source_bundle_sha256"],
+        "evaluation_bundle_sha256": plan["evaluation"]["evaluation_bundle_sha256"],
+        "plan_bundle_sha256": plan["plan_bundle_sha256"],
+        "pair_bundle_sha256": pair["pair_bundle_sha256"],
+        "pair_id": pair["pair_id"],
+        "score_bundle_sha256": score["score_bundle_sha256"],
+        "score_id": score["score_id"],
+        "candidate_sha256": plan["candidate"]["candidate_sha256"],
+        "qualification_receipt_sha256": score["qualification_receipt_sha256"],
+    }
+    if dict(chain) != observed_chain or root.name != observed_chain["candidate_sha256"]:
+        _fail("QUALIFIED_CHAIN_MISMATCH", "qualified evidence chain does not recompute")
     return {
-        "candidate_sha256": candidate_sha,
         "qualified_bundle_sha256": qualified_sha,
-        "qualification_receipt_sha256": receipt["receipt_sha256"],
-        "shadow_bundle_sha256": {
-            arm: verified_shadow[arm]["bundle_sha256"] for arm in ("baseline", "treatment")
-        },
+        "chain": observed_chain,
         "live_activation_allowed": False,
     }

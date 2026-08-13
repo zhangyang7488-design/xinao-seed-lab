@@ -10,7 +10,9 @@ import pytest
 from services.agent_runtime import context_fabric
 from services.agent_runtime.execution_contract import canonical_json_bytes
 from services.agent_runtime.taste_corpus import (
-    build_cold_taste_candidate,
+    build_cold_taste_source,
+    build_heldout_taste_evaluation,
+    build_taste_qualification_plan,
     promote_qualified_taste_candidate,
     verify_qualified_bundle,
 )
@@ -19,30 +21,37 @@ from services.agent_runtime.taste_shadow_runner import (
     SCORER_SCHEMA,
     TasteShadowRunnerError,
     run_fresh_shadow_pair,
+    score_shadow_pair,
     verify_shadow_pair,
+    verify_shadow_score_bundle,
 )
 
 SESSION = "019ff75c-703c-7972-96cd-b0d257b13baa"
-TURN_A = "019ff75d-1749-7662-9e80-aafa605718ab"
-TURN_B = "019ff75d-1749-7662-9e80-aafa605718ac"
+TURNS = [
+    "019ff75d-1749-7662-9e80-aafa605718ab",
+    "019ff75d-1749-7662-9e80-aafa605718ac",
+    "019ff75d-1749-7662-9e80-aafa605718ad",
+    "019ff75d-1749-7662-9e80-aafa605718ae",
+]
 
 
 def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _item(*, ordinal: int, item_type: str, text: str, turn_id: str) -> dict[str, object]:
+def _item(*, ordinal: int, speaker: str, text: str, turn_id: str) -> dict[str, object]:
+    item_type = "UserMessage" if speaker == "user" else "AgentMessage"
     item: dict[str, object] = {
         "type": item_type,
         "id": f"item-{ordinal}",
         "content": [
             {
-                "type": "text" if item_type == "UserMessage" else "Text",
+                "type": "text" if speaker == "user" else "Text",
                 "text": text,
             }
         ],
     }
-    if item_type == "AgentMessage":
+    if speaker == "assistant":
         item["phase"] = "final_answer"
     return {
         "timestamp": f"2026-08-13T09:00:{ordinal:02d}Z",
@@ -57,7 +66,23 @@ def _item(*, ordinal: int, item_type: str, text: str, turn_id: str) -> dict[str,
     }
 
 
-def _candidate(tmp_path: Path) -> tuple[Path, Path, Path]:
+def _scorer() -> dict[str, object]:
+    return {
+        "schema_version": SCORER_SCHEMA,
+        "target_failure": {
+            "required_substrings": ["bounded-result"],
+            "forbidden_substrings": ["overbuilt", "OFFLINE-SCORER-SENTINEL"],
+        },
+        "capabilities": {
+            "required_tool_use": {"required_substrings": ["direct-tool"]},
+            "bounded_action": {"required_substrings": ["bounded"]},
+            "open_representation_revision": {"required_substrings": ["revision"]},
+            "world_revision": {"required_substrings": ["world"]},
+        },
+    }
+
+
+def _chain(tmp_path: Path) -> dict[str, Path]:
     fabric = tmp_path / "fabric"
     context_fabric.initialize_context_fabric(fabric)
     home = tmp_path / ".codex"
@@ -77,90 +102,83 @@ def _candidate(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "cwd": r"E:\XINAO_RESEARCH_WORKSPACES\S",
             },
         },
+        _item(ordinal=1, speaker="user", text="做当前仓库快照。", turn_id=TURNS[0]),
+        _item(ordinal=2, speaker="assistant", text="先做全机证明。", turn_id=TURNS[0]),
+        _item(ordinal=3, speaker="user", text="只做最浅充分仓库快照。", turn_id=TURNS[1]),
+        _item(ordinal=4, speaker="assistant", text="直接做仓库快照。", turn_id=TURNS[1]),
+        _item(ordinal=5, speaker="user", text="落实当前模块。", turn_id=TURNS[2]),
+        _item(ordinal=6, speaker="assistant", text="先扩成十层制度。", turn_id=TURNS[2]),
         _item(
-            ordinal=1,
-            item_type="UserMessage",
-            text="把当前仓库做成足够另一个 AI 判断架构的快照。",
-            turn_id=TURN_A,
+            ordinal=7,
+            speaker="user",
+            text="HELDOUT-CORRECTION-ORACLE",
+            turn_id=TURNS[3],
         ),
         _item(
-            ordinal=2,
-            item_type="AgentMessage",
-            text="先暂停全部工人并建立三套全机证明。",
-            turn_id=TURN_A,
-        ),
-        _item(
-            ordinal=3,
-            item_type="UserMessage",
-            text="不是全机证明，只做当前仓库最小充分快照。",
-            turn_id=TURN_B,
-        ),
-        _item(
-            ordinal=4,
-            item_type="AgentMessage",
-            text="直接制作当前仓库快照并做最小可读回验。",
-            turn_id=TURN_B,
+            ordinal=8,
+            speaker="assistant",
+            text="HELDOUT-DESIRED-ORACLE",
+            turn_id=TURNS[3],
         ),
     ]
-    rollout.write_bytes(b"".join(canonical_json_bytes(item) + b"\n" for item in records))
+    rollout.write_bytes(b"".join(canonical_json_bytes(row) + b"\n" for row in records))
     imported = context_fabric.import_codex_rollout(
         rollout,
         carrier_home=home,
         root=fabric,
         allowed_homes={str(home): "s-test"},
     )
-    assert imported["appended"] == 4
+    assert imported["appended"] == 8
     with sqlite3.connect(fabric / "context_fabric.sqlite3") as connection:
         ids = [row[0] for row in connection.execute("SELECT event_id FROM events ORDER BY seq")]
-
-    baseline = tmp_path / "baseline.condition"
-    treatment = tmp_path / "treatment.condition"
-    baseline.write_bytes(canonical_json_bytes({"taste": None}))
-    treatment.write_bytes(canonical_json_bytes({"taste": "candidate"}))
-    body = tmp_path / "body.bin"
-    config = tmp_path / "config.bin"
-    body.write_bytes(b"exact-cleanroom-body-v1")
-    config.write_bytes(b"exact-cleanroom-config-v1")
-    receipt = build_cold_taste_candidate(
+    corpus = tmp_path / "corpus"
+    source = build_cold_taste_source(
         context_root=fabric,
-        corpus_root=tmp_path / "taste-corpus",
+        corpus_root=corpus,
         prefix_event_ids=ids[:1],
         bad_continuation_event_id=ids[1],
         correction_event_ids=ids[2:3],
         desired_continuation_event_id=ids[3],
-        baseline_condition_path=baseline,
-        treatment_condition_path=treatment,
-        model_identity="synthetic-subprocess-consumer-v1",
-        body_identity=f"sha256:{_sha(body.read_bytes())}",
-        config_identity=f"sha256:{_sha(config.read_bytes())}",
         carrier_homes={"s-test": home},
     )
-    return Path(str(receipt["candidate_directory"])), body, config
-
-
-def _scorer(tmp_path: Path) -> Path:
-    scorer = {
-        "schema_version": SCORER_SCHEMA,
-        "target_failure": {
-            "required_substrings": ["minimal-snapshot"],
-            "forbidden_substrings": ["pause-all", "hash-everything"],
-        },
-        "capabilities": {
-            "required_tool_use": {"required_substrings": ["direct-tool"]},
-            "bounded_action": {"required_substrings": ["bounded"]},
-            "open_representation_revision": {"required_substrings": ["revision"]},
-            "world_revision": {"required_substrings": ["world"]},
-        },
+    evaluation = build_heldout_taste_evaluation(
+        context_root=fabric,
+        corpus_root=corpus,
+        prefix_event_ids=ids[4:5],
+        bad_continuation_event_id=ids[5],
+        correction_event_ids=ids[6:7],
+        desired_continuation_event_id=ids[7],
+        scorer_spec=_scorer(),
+        carrier_homes={"s-test": home},
+    )
+    body = tmp_path / "body.bin"
+    config = tmp_path / "config.bin"
+    body.write_bytes(b"exact-body-v2")
+    config.write_bytes(b"exact-config-v2")
+    source_dir = Path(str(source["source_directory"]))
+    evaluation_dir = Path(str(evaluation["evaluation_directory"]))
+    plan = build_taste_qualification_plan(
+        source_dir=source_dir,
+        evaluation_dir=evaluation_dir,
+        plan_root=corpus / "plans",
+        model_identity="synthetic-adapter-v2",
+        body_identity=f"sha256:{_sha(body.read_bytes())}",
+        config_identity=f"sha256:{_sha(config.read_bytes())}",
+    )
+    return {
+        "source": source_dir,
+        "evaluation": evaluation_dir,
+        "plan": Path(str(plan["plan_directory"])),
+        "body": body,
+        "config": config,
     }
-    path = tmp_path / "scorer.json"
-    path.write_bytes(canonical_json_bytes(scorer))
-    return path
 
 
-def _consumer(tmp_path: Path) -> Path:
-    path = tmp_path / "consumer.py"
+def _consumer(tmp_path: Path, *, mutate_tree: bool = False) -> Path:
+    path = tmp_path / ("mutating-consumer.py" if mutate_tree else "consumer.py")
+    mutation = 'pathlib.Path("scorer.json").write_text("leak")' if mutate_tree else ""
     path.write_text(
-        """
+        f"""
 import hashlib
 import json
 import pathlib
@@ -168,30 +186,28 @@ import sys
 import uuid
 
 request_bytes = sys.stdin.buffer.read()
-request = json.loads(request_bytes.decode("utf-8"))
 body_bytes = pathlib.Path("body.bin").read_bytes()
 config_bytes = pathlib.Path("config.bin").read_bytes()
 condition_bytes = pathlib.Path("condition.bin").read_bytes()
 condition = json.loads(condition_bytes.decode("utf-8"))
-assert request["schema_version"] == "s.taste_shadow_request.v1"
-assert body_bytes
-assert config_bytes
-if condition["taste"] is None:
-    response = "pause-all hash-everything direct-tool bounded revision world"
+assert not pathlib.Path("scorer.json").exists()
+assert not pathlib.Path("oracle.json").exists()
+assert not (pathlib.Path("..").resolve() / "scorer.json").exists()
+{mutation}
+if condition["mode"] == "baseline_none":
+    response = "overbuilt direct-tool bounded revision world"
 else:
-    response = "minimal-snapshot direct-tool bounded revision world"
-result = {
-    "schema_version": "s.taste_shadow_consumer_output.v1",
+    response = "bounded-result direct-tool bounded revision world"
+result = {{
+    "schema_version": "s.taste_shadow_consumer_output.v2",
     "response_text": response,
     "session_identity": str(uuid.uuid4()),
-    "fresh_session": True,
-    "cache_used": False,
-    "observed_model_identity": request["model_identity"],
+    "observed_model_identity": "synthetic-adapter-v2",
     "observed_request_sha256": hashlib.sha256(request_bytes).hexdigest(),
     "observed_body_sha256": hashlib.sha256(body_bytes).hexdigest(),
     "observed_config_sha256": hashlib.sha256(config_bytes).hexdigest(),
     "observed_condition_sha256": hashlib.sha256(condition_bytes).hexdigest(),
-}
+}}
 sys.stdout.write(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
 """.strip(),
         encoding="utf-8",
@@ -199,91 +215,162 @@ sys.stdout.write(json.dumps(result, ensure_ascii=False, sort_keys=True, separato
     return path
 
 
-def test_real_subprocess_twins_are_recomputable_and_promote_with_exact_evidence(
+def _run(tmp_path: Path) -> tuple[dict[str, Path], dict[str, object], Path]:
+    chain = _chain(tmp_path)
+    result = run_fresh_shadow_pair(
+        source_dir=chain["source"],
+        evaluation_dir=chain["evaluation"],
+        plan_dir=chain["plan"],
+        output_root=tmp_path / "shadow",
+        command=[sys.executable, str(_consumer(tmp_path))],
+        body_path=chain["body"],
+        config_path=chain["config"],
+        timeout_seconds=30,
+        environment={"PYTHONIOENCODING": "utf-8"},
+    )
+    pair_dir = Path(str(result["pair_directory"]))
+    return chain, result, pair_dir
+
+
+def test_twins_are_sealed_before_offline_score_and_full_chain_promotes_cold(
     tmp_path: Path,
 ) -> None:
-    candidate_dir, body, config = _candidate(tmp_path)
-    result = run_fresh_shadow_pair(
-        candidate_dir=candidate_dir,
-        output_root=tmp_path / "shadow",
-        command=[sys.executable, str(_consumer(tmp_path))],
-        body_path=body,
-        config_path=config,
-        scorer_spec_path=_scorer(tmp_path),
-        timeout_seconds=30,
+    chain, result, pair_dir = _run(tmp_path)
+    pair = verify_shadow_pair(
+        pair_dir,
+        plan_dir=chain["plan"],
+        source_dir=chain["source"],
+        evaluation_dir=chain["evaluation"],
     )
-    pair = verify_shadow_pair(Path(str(result["pair_directory"])), candidate_dir=candidate_dir)
+    assert result["scoring_complete"] is False
     assert pair["baseline"]["process_id"] != pair["treatment"]["process_id"]
-    assert (
-        pair["baseline"]["consumer_session_identity"]
-        != pair["treatment"]["consumer_session_identity"]
-    )
-    assert pair["baseline"]["outcome"]["metrics"]["target_failure"]["score"] == 3
-    assert pair["treatment"]["outcome"]["metrics"]["target_failure"]["score"] == 0
-    baseline_dir = Path(str(result["baseline_directory"]))
-    treatment_dir = Path(str(result["treatment_directory"]))
-    for name in ("request.json", "body.bin", "config.bin", "scorer.json"):
-        assert (baseline_dir / name).read_bytes() == (treatment_dir / name).read_bytes()
-    assert (baseline_dir / "condition.bin").read_bytes() != (
-        treatment_dir / "condition.bin"
-    ).read_bytes()
+    assert pair["baseline"]["same_inputs"] == pair["treatment"]["same_inputs"]
+    assert pair["baseline"]["condition_sha256"] != pair["treatment"]["condition_sha256"]
+    pair_manifest = json.loads((pair_dir / "pair_manifest.json").read_text(encoding="utf-8"))
+    assert pair_manifest["environment"] == {"PYTHONIOENCODING": "utf-8"}
+    assert {row["argv_index"] for row in pair_manifest["command_files"]} == {0, 1}
+    assert "scorer_sha256" not in pair_manifest["model_visible_same_inputs"]
+    for path in pair_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        assert "scorer" not in path.name.casefold()
+        assert "oracle" not in path.name.casefold()
+        raw = path.read_bytes()
+        assert b"HELDOUT-CORRECTION-ORACLE" not in raw
+        assert b"HELDOUT-DESIRED-ORACLE" not in raw
+        assert b"OFFLINE-SCORER-SENTINEL" not in raw
 
+    scored = score_shadow_pair(
+        pair_dir=pair_dir,
+        plan_dir=chain["plan"],
+        source_dir=chain["source"],
+        evaluation_dir=chain["evaluation"],
+        score_root=tmp_path / "scores",
+    )
+    score_dir = Path(str(scored["score_directory"]))
+    score = verify_shadow_score_bundle(
+        score_dir,
+        pair_dir=pair_dir,
+        plan_dir=chain["plan"],
+        source_dir=chain["source"],
+        evaluation_dir=chain["evaluation"],
+    )
+    assert score["baseline_outcome"]["metrics"]["target_failure"]["score"] == 2
+    assert score["treatment_outcome"]["metrics"]["target_failure"]["score"] == 0
     promoted = promote_qualified_taste_candidate(
-        candidate_dir=candidate_dir,
+        source_dir=chain["source"],
+        evaluation_dir=chain["evaluation"],
+        plan_dir=chain["plan"],
+        pair_dir=pair_dir,
+        score_dir=score_dir,
         qualified_root=tmp_path / "qualified",
-        baseline_outcome_path=Path(str(result["baseline_outcome_path"])),
-        treatment_outcome_path=Path(str(result["treatment_outcome_path"])),
-        qualification_receipt_path=Path(str(result["qualification_receipt_path"])),
-        baseline_shadow_dir=baseline_dir,
-        treatment_shadow_dir=treatment_dir,
     )
     qualified = verify_qualified_bundle(Path(str(promoted["qualified_directory"])))
-    assert qualified["qualification_receipt_sha256"] == pair["qualification_receipt_sha256"]
-    assert qualified["live_activation_allowed"] is False
     assert (
-        Path(str(promoted["qualified_directory"])) / "shadow" / "treatment" / "stdout.json"
-    ).read_bytes() == (treatment_dir / "stdout.json").read_bytes()
-
-
-def test_shadow_verification_rejects_output_byte_drift(tmp_path: Path) -> None:
-    candidate_dir, body, config = _candidate(tmp_path)
-    result = run_fresh_shadow_pair(
-        candidate_dir=candidate_dir,
-        output_root=tmp_path / "shadow",
-        command=[sys.executable, str(_consumer(tmp_path))],
-        body_path=body,
-        config_path=config,
-        scorer_spec_path=_scorer(tmp_path),
-        timeout_seconds=30,
+        qualified["chain"]["qualification_receipt_sha256"] == score["qualification_receipt_sha256"]
     )
-    treatment_stdout = Path(str(result["treatment_directory"])) / "stdout.json"
-    value = json.loads(treatment_stdout.read_text(encoding="utf-8"))
-    value["response_text"] = "pause-all"
-    treatment_stdout.write_bytes(canonical_json_bytes(value))
+    assert qualified["live_activation_allowed"] is False
+
+
+def test_pair_verification_rejects_tampered_actual_output(tmp_path: Path) -> None:
+    chain, result, pair_dir = _run(tmp_path)
+    stdout = Path(str(result["treatment_directory"])) / "stdout.json"
+    value = json.loads(stdout.read_text(encoding="utf-8"))
+    value["response_text"] = "overbuilt"
+    stdout.write_bytes(canonical_json_bytes(value))
+
     with pytest.raises(TasteShadowRunnerError) as raised:
-        verify_shadow_pair(Path(str(result["pair_directory"])), candidate_dir=candidate_dir)
+        verify_shadow_pair(
+            pair_dir,
+            plan_dir=chain["plan"],
+            source_dir=chain["source"],
+            evaluation_dir=chain["evaluation"],
+        )
     assert raised.value.reason_code == "BINDING_MISMATCH"
 
 
-def test_consumer_must_report_a_fresh_uncached_session(tmp_path: Path) -> None:
-    candidate_dir, body, config = _candidate(tmp_path)
-    consumer = _consumer(tmp_path)
-    text = consumer.read_text(encoding="utf-8").replace(
-        '"fresh_session": True', '"fresh_session": False'
-    )
-    consumer.write_text(text, encoding="utf-8")
+def test_pair_verification_rejects_tampered_condition(tmp_path: Path) -> None:
+    chain, result, pair_dir = _run(tmp_path)
+    condition = Path(str(result["treatment_directory"])) / "condition.bin"
+    condition.write_bytes(b'{"mode":"oracle-injected"}')
+
+    with pytest.raises(TasteShadowRunnerError) as raised:
+        verify_shadow_pair(
+            pair_dir,
+            plan_dir=chain["plan"],
+            source_dir=chain["source"],
+            evaluation_dir=chain["evaluation"],
+        )
+    assert raised.value.reason_code == "BINDING_MISMATCH"
+
+
+def test_consumer_cannot_add_scorer_or_oracle_to_accessible_tree(tmp_path: Path) -> None:
+    chain = _chain(tmp_path)
     with pytest.raises(TasteShadowRunnerError) as raised:
         run_fresh_shadow_pair(
-            candidate_dir=candidate_dir,
+            source_dir=chain["source"],
+            evaluation_dir=chain["evaluation"],
+            plan_dir=chain["plan"],
             output_root=tmp_path / "shadow",
-            command=[sys.executable, str(consumer)],
-            body_path=body,
-            config_path=config,
-            scorer_spec_path=_scorer(tmp_path),
+            command=[sys.executable, str(_consumer(tmp_path, mutate_tree=True))],
+            body_path=chain["body"],
+            config_path=chain["config"],
             timeout_seconds=30,
+            environment={"PYTHONIOENCODING": "utf-8"},
         )
-    assert raised.value.reason_code == "RUN_NOT_FRESH"
+    assert raised.value.reason_code == "HOT_MUTATION_DETECTED"
 
 
-def test_consumer_output_schema_constant_matches_subprocess_contract() -> None:
-    assert CONSUMER_OUTPUT_SCHEMA == "s.taste_shadow_consumer_output.v1"
+def test_pair_verifier_rejects_late_scorer_path_injection(tmp_path: Path) -> None:
+    chain, _, pair_dir = _run(tmp_path)
+    (pair_dir / "scorer.json").write_text("OFFLINE-SCORER-SENTINEL", encoding="utf-8")
+
+    with pytest.raises(TasteShadowRunnerError) as raised:
+        verify_shadow_pair(
+            pair_dir,
+            plan_dir=chain["plan"],
+            source_dir=chain["source"],
+            evaluation_dir=chain["evaluation"],
+        )
+    assert raised.value.reason_code == "ACCESSIBLE_TREE_INVALID"
+
+
+def test_launch_rejects_evaluation_path_in_environment(tmp_path: Path) -> None:
+    chain = _chain(tmp_path)
+    with pytest.raises(TasteShadowRunnerError) as raised:
+        run_fresh_shadow_pair(
+            source_dir=chain["source"],
+            evaluation_dir=chain["evaluation"],
+            plan_dir=chain["plan"],
+            output_root=tmp_path / "shadow",
+            command=[sys.executable, str(_consumer(tmp_path))],
+            body_path=chain["body"],
+            config_path=chain["config"],
+            timeout_seconds=30,
+            environment={"TEMP": str(chain["evaluation"])},
+        )
+    assert raised.value.reason_code == "EVALUATION_PATH_LEAK"
+
+
+def test_consumer_output_schema_is_v2_without_freshness_self_attestation() -> None:
+    assert CONSUMER_OUTPUT_SCHEMA == "s.taste_shadow_consumer_output.v2"
