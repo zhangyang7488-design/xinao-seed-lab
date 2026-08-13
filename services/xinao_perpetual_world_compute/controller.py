@@ -4550,15 +4550,17 @@ def _validate_prior_quarantined_attempt(
         "lifecycle_state": lifecycle,
         "source_identity": source_identity,
         "body_incidents": body_incidents,
-        "evidence_required": _turn_requires_deep_evidence(
-            config, lineage_id=lineage_id, turn_number=turn_number
-        ),
-        "runtime_binding_required": _turn_requires_runtime_binding(
-            config, lineage_id=lineage_id, turn_number=turn_number
-        ),
     }
     if any(disposition.get(key) != value for key, value in expected.items()):
         raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_SOURCE_DRIFT: {disposition_path}")
+    # These booleans describe the contract in force when the disposition was
+    # written.  A later explicit release adoption may raise the thresholds for
+    # the same turn number; it must not retroactively rewrite a sealed earlier
+    # attempt into a different evidence regime.
+    if not isinstance(disposition.get("evidence_required"), bool) or not isinstance(
+        disposition.get("runtime_binding_required"), bool
+    ):
+        raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_CONTRACT_INVALID: {disposition_path}")
     terminal_events = expected["observed_terminal_events"]
     mechanically_complete = terminal_events == ["turn.completed"] and lifecycle is not None
     reason = disposition.get("reason")

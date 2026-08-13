@@ -1851,8 +1851,15 @@ def test_reconcile_commits_later_receipt_after_prior_attempt_was_quarantined(
         error_class="EVIDENCE_INCIDENT",
         attempt_number=2,
     )
+    adopted_config = {
+        **config,
+        "deep_evidence_required": True,
+        "deep_evidence_required_from_turn": {"world-01": 1, "root-main": 1},
+        "runtime_binding_required": True,
+        "runtime_binding_required_from_turn": {"world-01": 1, "root-main": 1},
+    }
     result = reconcile_incomplete_attempts(
-        config,
+        adopted_config,
         recovery_dir=controller.run_dir / "recovery" / "second",
     )
 
