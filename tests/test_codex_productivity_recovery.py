@@ -120,20 +120,35 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         "repository/services/agent_runtime/runtime_observation.py": "situation_runtime_source",
         "repository/services/agent_runtime/current_situation.py": "situation_runtime_source",
         "repository/services/agent_runtime/context_fabric.py": "context_fabric_runtime_source",
+        "repository/services/agent_runtime/context_runtime_completion.py": (
+            "context_runtime_completion_source"
+        ),
         "repository/services/agent_runtime/codex_situation_hook.py": "situation_hook_adapter",
         "repository/scripts/codex_situation_context_hook.py": "situation_hook_adapter",
         "repository/scripts/manage_current_situation.py": "explicit_situation_manager",
         "repository/scripts/manage_context_fabric.py": "explicit_context_fabric_manager",
         "repository/scripts/Protect-SContextFabricState.ps1": "context_fabric_acl_installer",
+        "repository/scripts/context_rollout_consumer.py": (
+            "context_rollout_incremental_consumer"
+        ),
+        "repository/scripts/Install-SContextRolloutConsumer.ps1": (
+            "context_rollout_consumer_installer"
+        ),
         "contracts/CODEX_SITUATION_CONTEXT_PRODUCTION.md": "situation_context_contract",
         "contracts/S_CONTEXT_FABRIC_CURRENT.md": "context_fabric_contract",
+        "repository/evals/context_runtime_trajectory/run_context_runtime_trajectory.py": (
+            "context_runtime_trajectory_harness"
+        ),
+        "repository/evals/context_runtime_trajectory/receipt.schema.json": (
+            "context_runtime_trajectory_receipt_schema"
+        ),
     }
     assert situation_runtime_roles.keys() <= names
     assert (
         "runtime/Codex_Situation_Island/scripts/"
         "manage_explicit_continuation_locator_v1.ps1" in names
     )
-    assert "human-entries/00_先读我_主线入口与读取顺序.txt" in names
+    assert "human-entries/持续上下文运行时.txt" in names
     roles = {entry["archive_path"]: entry["role"] for entry in manifest["entries"]}
     assert roles["runtime/Codex_Situation_Island/README.md"] == "situation_island_contract"
     assert (
@@ -150,7 +165,7 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         roles["runtime/Codex_Situation_Island/scripts/manage_explicit_continuation_locator_v1.ps1"]
         == "on_demand_explicit_continuation_consumer"
     )
-    assert roles["human-entries/00_先读我_主线入口与读取顺序.txt"] == "stable_human_reentry_entry"
+    assert roles["human-entries/持续上下文运行时.txt"] == "context_runtime_source_brief"
     for cold_script in (
         "bind_active_task_continuation_v1.ps1",
         "restore_parent_task_continuation_v1.ps1",

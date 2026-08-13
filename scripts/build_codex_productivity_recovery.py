@@ -20,7 +20,7 @@ MAIN_HOME = Path(r"C:\Users\xx363\.codex")
 ACCOUNT_B_HOME = Path(r"C:\Users\xx363\.codex-s-hardmode-account-b")
 LAUNCHER_ROOT = Path(r"C:\Users\xx363\CodexLaunchers")
 SITUATION_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island")
-STABLE_MAIN_ENTRY = Path(r"C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt")
+CONTEXT_RUNTIME_SOURCE_BRIEF = Path(r"C:\Users\xx363\Desktop\持续上下文运行时.txt")
 GROK_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool")
 GROK_RUNTIME_MANIFEST = GROK_RUNTIME_ROOT / "runtime-manifest.v1.json"
 GROK_BRIDGE_ROOT = GROK_RUNTIME_ROOT / "bridge"
@@ -156,6 +156,16 @@ SITUATION_RUNTIME_SOURCES = (
         REPO_ROOT / "scripts" / "Protect-SContextFabricState.ps1",
         "repository/scripts/Protect-SContextFabricState.ps1",
         "context_fabric_acl_installer",
+    ),
+    (
+        REPO_ROOT / "scripts" / "context_rollout_consumer.py",
+        "repository/scripts/context_rollout_consumer.py",
+        "context_rollout_incremental_consumer",
+    ),
+    (
+        REPO_ROOT / "scripts" / "Install-SContextRolloutConsumer.ps1",
+        "repository/scripts/Install-SContextRolloutConsumer.ps1",
+        "context_rollout_consumer_installer",
     ),
     (
         REPO_ROOT / "docs" / "tool_glue" / "CODEX_SITUATION_CONTEXT_PRODUCTION.md",
@@ -365,9 +375,9 @@ def _collect_sources() -> list[SourceEntry]:
 
     entries.append(
         SourceEntry(
-            source=STABLE_MAIN_ENTRY,
-            archive_path="human-entries/00_先读我_主线入口与读取顺序.txt",
-            role="stable_human_reentry_entry",
+            source=CONTEXT_RUNTIME_SOURCE_BRIEF,
+            archive_path="human-entries/持续上下文运行时.txt",
+            role="context_runtime_source_brief",
         )
     )
 

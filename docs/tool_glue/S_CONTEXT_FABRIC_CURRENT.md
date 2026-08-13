@@ -1,6 +1,6 @@
 # S Continuous Context Runtime — Current Production Contract
 
-Status: completion implementation present; hot-consumer adoption remains a separately verified claim, 2026-08-13
+Status: completion implementation and S/B hot hooks adopted; automatic rollout consumer pending protected-bundle adoption, 2026-08-13
 Source brief: `C:\Users\xx363\Desktop\持续上下文运行时.txt`
 Source SHA256: `D5D42CCECE491CD3937ACA940733B92A72F3F54C08BC3F73138A6E8F006BFC62`
 
@@ -36,7 +36,7 @@ uv run python scripts/manage_context_fabric.py restore-preimage `
   --expected-manifest-sha256 <manifest-sha256>
 ```
 
-This is a schema/evidence transition, not evidence that a fresh carrier has been correctly rehydrated in the installed product.
+This is a schema/evidence transition, not by itself evidence that a fresh carrier has been correctly rehydrated in the installed product. The separate live trajectory evidence below supplies one bounded behavioral observation.
 
 ## Admission and safety
 
@@ -72,7 +72,15 @@ Every rendered view carries `authority=false`, `instruction_source=false`, `comp
 
 `snapshot` creates a new/empty, non-link directory containing a SQLite backup, only the exact blobs named by that database, and `snapshot.v2.json`. The manifest pins feature level, database SHA256, canonical event count/tip, and artifact inventory. It is a consistent prefix: later source appends do not change it.
 
-`restore` first rejects occupied/live targets, then checks source-root and manifest-member containment, database/blob hashes, and the full source database. It copies into a same-parent hidden staging directory, verifies the staged store and canonical count/tip, writes `restore.complete.v1.json` last, and only then atomically renames the staging directory to the absent/empty target. It never overwrites a live target. A successful restore proves only its current local readbacks, not hook re-enablement, task selection, or consumer recovery.
+`restore` first rejects occupied/live targets, then checks source-root and manifest-member containment, database/blob hashes, and the full source database. It copies into a same-parent hidden staging directory, verifies the staged store and canonical count/tip, writes `restore.complete.v1.json` last, and only then atomically renames the staging directory to the absent/empty target. It never overwrites a live target. When the caller supplied an already-existing protected empty target, success and failure both preserve and read back that target's owner/protected DACL instead of replacing it with inherited permissions. A successful restore proves only its current local readbacks, not hook re-enablement, task selection, or consumer recovery.
+
+## Bounded live behavior evidence
+
+The native Codex 0.147 app-server trajectory has now passed one real Account-B operation using installed hooks and two operation-scoped Fabric stores. The main thread observed startup, an explicit correction, native compact, a post-compact short referent, new-process resume, and a post-resume short referent. It retained the corrected value and rejected the obsolete value with zero tool items.
+
+The same operation then ran an ordered fresh contrast. Two distinct new app-server processes and thread IDs received the same anchor-only prompt, which contained neither the current nor obsolete referent. The empty-store control recovered neither. The enabled-store thread recovered the current referent and not the obsolete one. Both reached their selected installed-hook/Fabric store and exposed zero tool items. Exactly three named test rollouts (main, empty, enabled) were created; Account B's non-secret `AGENTS.md`, `config.toml`, and `hooks.json` fingerprints remained unchanged, and credential content was not read, copied, linked, or hashed.
+
+The typed receipt is `D:\XINAO_RESEARCH_RUNTIME\state\human-capabilities\evals\context-runtime-live\20260813-1510-fresh-contrast\receipt.json`, SHA256 `F9AF98D73DAEF4DA3E46613D3EB2ECE49E1903A2E1F30C80154A8B6A713CEC09`, with `claim_class=context_live_observed`. This proves a bounded response difference for this ordered enabled-versus-empty pair plus the observed compact/resume path. It does not prove that Context Fabric is the only cause, that every future model/version will adopt every correction, that user burden is already lower longitudinally, or that a persistent subject exists.
 
 ## CLI
 
@@ -103,4 +111,4 @@ uv run python scripts/manage_context_fabric.py restore `
 
 `CurrentSituation` remains a separate, exact-session, provisional checkpoint with its own explicit `initialize`/CAS `apply`/`retire` lifecycle. It is not canonical Context Fabric evidence and is not automatically written from events or projections. During migration/availability fallback, `SessionStart(source=resume|compact)` may use its bounded checkpoint only when Fabric produced no materialization; the hook does not inject two competing current views. Neither surface creates a task or authority.
 
-The completion implementation and local tests establish explicit migration, full current-schema verification, bounded materialization, lineage classification, contained staged restore, and negative-security predicates including extended-path clean-room denial, DB-busy fail-open, cursor corruption, concurrent deduplication, trigger/meta/derived tamper, snapshot-root links, and manifest path escape. This still does **not** establish cryptographic immutability, detection of a separately valid older snapshot without an external tip anchor, installed live S/B-hook acceptance across actual fresh/compact/resume windows, automatic CurrentSituation revision, autonomous world revision, a persistent subject, or measured long-term reduction in user repetition/correction burden. Those require live consumer and longitudinal behavioral evidence.
+The completion implementation and local tests establish explicit migration, full current-schema verification, bounded materialization, lineage classification, contained staged restore, and negative-security predicates including extended-path clean-room denial, DB-busy fail-open, cursor corruption, concurrent deduplication, trigger/meta/derived tamper, snapshot-root links, and manifest path escape. Installed S/B hooks plus the bounded native trajectory now establish one actual fresh/compact/resume observation. They still do **not** establish cryptographic immutability, detection of a separately valid older snapshot without an external tip anchor, automatic CurrentSituation revision, autonomous semantic world revision, a persistent subject, or measured long-term reduction in user repetition/correction burden. Those require repeated longitudinal behavioral evidence.
