@@ -126,6 +126,9 @@ def make_test_controller(
             "role": "late_fusion_root",
             "workspace": str(root_workspace),
         },
+        # Tests must never fall through to the production account-wide quota
+        # surface, even when the case exercises a full branch loop.
+        "world_turn_quota_root": str(tmp_path / "quota"),
         "continuation_delay_seconds": 0,
         "park_poll_seconds": 0,
     }
@@ -763,7 +766,7 @@ def test_live_cleanroom_launcher_freezes_to_valid_world_isolated_powershell(
 
 
 def test_live_cleanroom_launcher_freezes_mandatory_runtime_binding_surface(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = Path(r"E:\CODEX_CLEANROOM\Open-Codex-Cleanroom.ps1")
     powershell = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
@@ -779,6 +782,38 @@ def test_live_cleanroom_launcher_freezes_mandatory_runtime_binding_surface(
     assert receipt["runtime_binding_required"] is True
     assert b"$worldRuntimeBindingMandatory = $true" in raw
     assert b"WORLD_RUNTIME_BINDING_ENVIRONMENT_PROJECTION_MISMATCH" in raw
+    assert b"--dangerously-bypass-approvals-and-sandbox" in raw
+    assert raw.count(b"--sandbox workspace-write") == 1
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["validate_body_boundary_config"],
+    )
+    monkeypatch.setattr(controller_module, "_validated_controller_python", lambda _config: None)
+    monkeypatch.setattr(controller_module, "_load_runtime_binding_module", lambda _config: None)
+    config = {
+        "run_dir": str(tmp_path),
+        "launcher_path": str(destination),
+        "launcher_source_path": str(source),
+        "launcher_source_sha256": receipt["source_sha256"],
+        "runtime_binding_required": True,
+        "runtime_binding_required_from_turn": {"root-main": 1, "world-01": 1},
+        "runtime_binding_views": {"root-main": {}, "world-01": {}},
+        "branch_lineages": [{"lineage_id": "world-01"}],
+        "root_lineage": {"lineage_id": "root-main"},
+        "body_boundary": {
+            "schema": "xinao.cleanroom.world-isolated-launcher.v1",
+            "sandbox_mode": "workspace-write",
+            "approval_policy": "never",
+            "network_access": True,
+            "writable_scope": "current_lineage_workspace_only",
+            "additional_writable_roots": [],
+            "s_repo_writable": False,
+            "cleanroom_shared_body_writable": False,
+            "account_config_writable": False,
+            "body_incident_schema": "xinao.cleanroom.world-compute-body-incident.v1",
+        },
+    }
+    assert controller_module.validate_body_boundary_config(config) == config["body_boundary"]
     quoted_destination = str(destination).replace("'", "''")
     parser_command = (
         "$t=$null;$e=$null;"
@@ -1929,6 +1964,39 @@ def test_world_turn_quota_remains_bound_when_controller_dies_but_child_lives(
 
     assert second.try_reserve_world_turn_quota(second_branches[0]) is None
     live_pids.clear()
+    replacement = second.try_reserve_world_turn_quota(second_branches[0])
+    assert replacement is not None
+    assert replacement["lease_id"] != lease["lease_id"]
+
+
+def test_world_turn_quota_is_not_recycled_while_owner_is_releasing_dead_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "first").mkdir()
+    (tmp_path / "second").mkdir()
+    first, first_branches, _ = make_test_controller(
+        tmp_path / "first", run_id="run-first", branch_count=1
+    )
+    second, second_branches, _ = make_test_controller(
+        tmp_path / "second", run_id="run-second", branch_count=1
+    )
+    quota_root = tmp_path / "shared-quota"
+    for controller in (first, second):
+        controller.config["world_turn_concurrency_limit"] = 1
+        controller.config["world_turn_quota_root"] = str(quota_root)
+
+    lease = first.try_reserve_world_turn_quota(first_branches[0])
+    assert lease is not None
+    first.bind_world_turn_quota_child(first_branches[0], child_pid=4242)
+    monkeypatch.setattr(
+        "services.xinao_perpetual_world_compute.controller.is_process_alive",
+        lambda pid: pid == lease["controller_pid"],
+    )
+
+    # The child has exited, but the owner is still alive and has not run its
+    # context-manager finalizer.  A peer must not overwrite the live lease.
+    assert second.try_reserve_world_turn_quota(second_branches[0]) is None
+    assert first.release_world_turn_quota(first_branches[0]) is True
     replacement = second.try_reserve_world_turn_quota(second_branches[0])
     assert replacement is not None
     assert replacement["lease_id"] != lease["lease_id"]

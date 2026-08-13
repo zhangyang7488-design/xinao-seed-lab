@@ -800,7 +800,7 @@ def validate_body_boundary_config(config: Mapping[str, Any]) -> dict[str, Any] |
         raise PerpetualRuntimeError("WORLD_BODY_LAUNCHER_OUTSIDE_RUN_DIR")
     raw = launcher.read_bytes()
     if (
-        b"--dangerously-bypass-approvals-and-sandbox" in raw
+        raw.count(_UNSANDBOXED_LAUNCH_LINE) != 0
         or raw.count(b"--sandbox workspace-write") != 1
         or raw.count(b"sandbox_workspace_write.network_access=true") != 1
     ):
@@ -2297,6 +2297,18 @@ class PerpetualController:
                                 f"WORLD_TURN_QUOTA_BOUND_CHILD_INVALID: {record_path}"
                             )
                         if is_process_alive(child_pid):
+                            continue
+                        controller_pid = record.get("controller_pid")
+                        if not isinstance(controller_pid, int) or controller_pid <= 0:
+                            raise PerpetualRuntimeError(
+                                f"WORLD_TURN_QUOTA_BOUND_CONTROLLER_INVALID: {record_path}"
+                            )
+                        # The child can exit just before its owning controller enters
+                        # the context-manager finalizer.  Do not let another controller
+                        # recycle that slot during this release window: doing so replaces
+                        # the lease record and makes the legitimate owner fail identity
+                        # validation while releasing it.
+                        if is_process_alive(controller_pid):
                             continue
                     elif status != "RELEASED":
                         raise PerpetualRuntimeError(
