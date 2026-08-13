@@ -15,7 +15,16 @@ import pytest
 import services.agent_runtime.codex_situation_hook as hook_module
 import services.agent_runtime.context_fabric as context_runtime
 import services.agent_runtime.context_runtime_completion as completion_module
-from services.agent_runtime.codex_situation_hook import L0_CONTEXT, handle_hook_event
+from services.agent_runtime.codex_situation_hook import (
+    ACTION_BINDING_CONTEXT,
+    DIACHRONIC_COGNITION_CONTEXT,
+    L0_CONTEXT,
+    handle_hook_event,
+)
+
+S_HOT_FAIL_OPEN_CONTEXT = "\n".join(
+    (L0_CONTEXT, DIACHRONIC_COGNITION_CONTEXT, ACTION_BINDING_CONTEXT)
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = REPO_ROOT / "scripts" / "codex_situation_context_hook.py"
@@ -716,7 +725,7 @@ def test_outer_hook_fails_open_at_l0_without_mutating_unsupported_schema(
         context_fabric_allowed_homes=allowed_homes,
     )
     assert result["continue"] is True
-    assert result["hookSpecificOutput"]["additionalContext"] == L0_CONTEXT
+    assert result["hookSpecificOutput"]["additionalContext"] == S_HOT_FAIL_OPEN_CONTEXT
     with sqlite3.connect(_database(root)) as connection:
         after = int(connection.execute("SELECT COUNT(*) FROM events").fetchone()[0])
     assert after == before
@@ -1096,7 +1105,7 @@ def test_busy_database_keeps_outer_hook_bounded_and_l0_fail_open(
         lock.rollback()
         lock.close()
     assert result["continue"] is True
-    assert result["hookSpecificOutput"]["additionalContext"] == L0_CONTEXT
+    assert result["hookSpecificOutput"]["additionalContext"] == S_HOT_FAIL_OPEN_CONTEXT
     assert elapsed < 4.0
     assert context_runtime.store_inventory(root)["events"] == 0
 

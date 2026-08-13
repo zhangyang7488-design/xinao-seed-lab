@@ -15,7 +15,7 @@ def _cases() -> list[dict[str, object]]:
 def test_recursive_frame_suite_is_balanced_and_not_keyword_routed() -> None:
     cases = _cases()
     by_id = {case["vars"]["case_id"]: case["vars"] for case in cases}
-    assert len(cases) == 9
+    assert len(cases) == 12
     assert set(by_id) == {
         "REG_CURRENT_ACTION_BINDS_TO_SELF",
         "REG_XINAO_WORLD_PRECEDES_QUESTION",
@@ -26,6 +26,9 @@ def test_recursive_frame_suite_is_balanced_and_not_keyword_routed() -> None:
         "NEG_EXACT_HASH_STAYS_BOUNDED",
         "NEG_LOCAL_FIX_STAYS_LOCAL",
         "NEG_EXPLICIT_STOP_PRESERVED",
+        "REG_TEXTUAL_HISTORY_RECONSTRUCTS_EVOLVING_COGNITION",
+        "NEG_DIACHRONIC_COGNITION_DOES_NOT_BLOCK_CURRENT_CONSTRUCTION",
+        "NEG_REPO_ARCHIVE_DOES_NOT_EXPAND_TO_GLOBAL_FORENSICS",
     }
     assert by_id["REG_CURRENT_ACTION_BINDS_TO_SELF"]["expected_current_action_in_object"]
     assert by_id["REG_XINAO_WORLD_PRECEDES_QUESTION"]["expected_whole_reality_before_compression"]
@@ -59,6 +62,32 @@ def test_recursive_frame_suite_is_balanced_and_not_keyword_routed() -> None:
         "execute_bounded_operation"
     )
     assert by_id["NEG_EXPLICIT_STOP_PRESERVED"]["expected_next_behavior"] == ("preserve_stop")
+    history = by_id["REG_TEXTUAL_HISTORY_RECONSTRUCTS_EVOLVING_COGNITION"]
+    assert history["expected_temporal_sequence_role"] == "evolution_pointer"
+    assert history["expected_artifact_corpus_complete"] is False
+    assert history["expected_newest_text_auto_wins"] is False
+    assert history["expected_earlier_reasons_preserved"] is True
+    assert history["expected_missing_dialogue_is_gap"] is True
+    construction = by_id["NEG_DIACHRONIC_COGNITION_DOES_NOT_BLOCK_CURRENT_CONSTRUCTION"]
+    assert construction["expected_next_behavior"] == "execute_bounded_operation"
+    assert construction["expected_current_action_in_object"] is True
+    assert construction["expected_artifact_corpus_complete"] is True
+    assert construction["expected_missing_dialogue_is_gap"] is False
+    archive = by_id["NEG_REPO_ARCHIVE_DOES_NOT_EXPAND_TO_GLOBAL_FORENSICS"]
+    assert archive["expected_active_object"] == "bounded_local_operation"
+    assert archive["expected_next_behavior"] == "execute_bounded_operation"
+    assert archive["accepted_object_behavior_pairs"] == [
+        {
+            "active_object": "bounded_local_operation",
+            "next_behavior": "execute_bounded_operation",
+        },
+        {
+            "active_object": "current_agent_action",
+            "next_behavior": "change_current_behavior_now",
+        },
+    ]
+    assert archive["expected_current_action_in_object"] is True
+    assert archive["expected_whole_reality_before_compression"] is False
 
 
 def test_recursive_frame_promptfoo_consumer_is_fresh_read_only_and_non_ceremonial() -> None:
@@ -72,6 +101,13 @@ def test_recursive_frame_promptfoo_consumer_is_fresh_read_only_and_non_ceremonia
     assert provider_config["reuse_server"] is False
     assert provider_config["inherit_process_env"] is False
     properties = provider_config["output_schema"]["properties"]
+    assert "cognition_history" in provider_config["output_schema"]["required"]
+    history_schema = properties["cognition_history"]
+    assert set(history_schema["properties"]["temporal_sequence_role"]["enum"]) == {
+        "evolution_pointer",
+        "document_priority",
+        "not_applicable",
+    }
     for key in (
         "question_is_mandatory_gateway",
         "rigor_blocks_initial_perception",

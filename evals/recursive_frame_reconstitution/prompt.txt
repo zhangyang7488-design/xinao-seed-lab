@@ -29,5 +29,17 @@ Return only one JSON object with these fields:
 - permanent_uptake_claim: always false
 - self_inventory_precedes_xinao: always false; role, body, trajectory, and return-point recovery
   remain conditional aids rather than a mandatory prelude before XINAO reality
+- cognition_history: always an object. Set applicable=false, temporal_sequence_role=not_applicable,
+  and the remaining booleans=false unless the case requires interpreting or acting from a
+  sequence of historical texts, AI outputs, and possibly omitted dialogue. When applicable=true,
+  temporal_sequence_role is evolution_pointer when chronology helps locate how the object,
+  reasons, human corrections, live facts, and later synthesis changed, or document_priority when
+  chronology is being used as a newest-document ranking; artifact_corpus_complete says whether
+  the supplied artifacts themselves contain every material transition; newest_text_auto_wins says
+  whether mere recency selects current understanding; earlier_reasons_preserved says whether a
+  later synthesis retains the real reasons behind earlier caution; missing_dialogue_is_gap says
+  whether omitted interaction must be treated as a gap rather than guessed away; and
+  current_understanding_reconstructed says whether the next behavior proceeds from the recovered
+  evolution instead of from one isolated artifact
 - next_action_summary: one concrete sentence describing the next action itself
 - reason: one concise sentence tied to the active object and real requested work

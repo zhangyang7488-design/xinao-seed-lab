@@ -16,6 +16,7 @@ import re
 import shutil
 import sqlite3
 import time
+import uuid
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,19 @@ _RUNTIME_MIGRATION_ID = "s.context_runtime.complete.v1"
 _TOOL_ARTIFACT_KINDS = frozenset({"completed_tool_result", "codex_rollout_tool_surface"})
 _REJECTED_ARTIFACT_KINDS = frozenset(
     {"tool_call", "reasoning", "developer_wrapper", "incomplete_tool_result"}
+)
+
+PRESENTATION_RUNTIME_TRANSITION_EVENT_KIND = "presentation_runtime_transition"
+PRESENTATION_STATUS_QUERY_EVENT_KIND = "presentation_status_query"
+PRESENTATION_DELIVERY_ACK_EVENT_KIND = "presentation_delivery_ack"
+PRESENTATION_STATUS_QUERY_EVENT_SCHEMA = "s.presentation_status_query.v1"
+PRESENTATION_DELIVERY_ACK_EVENT_SCHEMA = "s.presentation_delivery_ack.v1"
+PRESENTATION_RESERVED_EVENT_KINDS = frozenset(
+    {
+        PRESENTATION_RUNTIME_TRANSITION_EVENT_KIND,
+        PRESENTATION_STATUS_QUERY_EVENT_KIND,
+        PRESENTATION_DELIVERY_ACK_EVENT_KIND,
+    }
 )
 
 
@@ -942,11 +956,12 @@ def admit_artifact(
     }
 
 
-def append_context_event(
+def _append_context_event_impl(
     spec: Mapping[str, object],
     *,
     root: Path = fabric.DEFAULT_CONTEXT_FABRIC_ROOT,
     environ: Mapping[str, str] | None = None,
+    allow_presentation_reserved_kind: bool,
 ) -> fabric.CaptureResult:
     metadata = spec.get("metadata", {})
     if not isinstance(metadata, Mapping):
@@ -959,6 +974,11 @@ def append_context_event(
         raise fabric.ContextFabricError("event source locator resembles a secret")
     source_key = str(spec.get("source_key") or "")
     source_record_sha256 = str(spec.get("source_record_sha256") or "")
+    event_kind = str(spec.get("event_kind") or "")
+    if event_kind in PRESENTATION_RESERVED_EVENT_KINDS and not allow_presentation_reserved_kind:
+        raise fabric.ContextFabricError(
+            "presentation event kinds require the narrow typed producer API"
+        )
     if fabric._secret_like(source_key, environ=environ):
         raise fabric.ContextFabricError("event source_key resembles a secret")
     if source_record_sha256 and not re.fullmatch(r"[0-9a-f]{64}", source_record_sha256):
@@ -968,7 +988,7 @@ def append_context_event(
         carrier_id=str(spec.get("carrier_id") or ""),
         session_id=str(spec.get("session_id") or ""),
         turn_id=str(spec.get("turn_id") or ""),
-        event_kind=str(spec.get("event_kind") or ""),
+        event_kind=event_kind,
         speaker=str(spec.get("speaker") or "mechanical"),
         raw_text=str(spec.get("raw_text") or ""),
         occurred_at=str(spec.get("occurred_at") or fabric._utc_now()),
@@ -981,6 +1001,243 @@ def append_context_event(
         parent_event_ids=spec.get("parent_event_ids", ()),
         artifact_ids=spec.get("artifact_ids", ()),
         environ=environ,
+    )
+
+
+def append_context_event(
+    spec: Mapping[str, object],
+    *,
+    root: Path = fabric.DEFAULT_CONTEXT_FABRIC_ROOT,
+    environ: Mapping[str, str] | None = None,
+) -> fabric.CaptureResult:
+    """Append a generic Context event, excluding presentation-reserved kinds."""
+
+    return _append_context_event_impl(
+        spec,
+        root=root,
+        environ=environ,
+        allow_presentation_reserved_kind=False,
+    )
+
+
+def _presentation_sha256(value: object) -> str:
+    return fabric._sha256_bytes(fabric._canonical_bytes(value))
+
+
+def _presentation_session_id(activity_id: str, audience: str, *, namespace: str) -> str:
+    prefix = "s-presentation" if namespace == "runtime" else "s-presentation-delivery"
+    return str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{prefix}:{activity_id}:{audience}",
+        )
+    )
+
+
+def append_presentation_runtime_transition(
+    transition: object,
+    *,
+    root: Path,
+    carrier_id: str,
+    environ: Mapping[str, str] | None = None,
+) -> fabric.CaptureResult:
+    """Append one observer-built transition with centrally derived identity."""
+
+    from services.agent_runtime.presentation_observer import OBSERVER_CURSOR_SCHEMA_VERSION
+    from services.agent_runtime.presentation_reducer import (
+        PROJECTION_KIND,
+        PROJECTION_SCHEMA_VERSION,
+        RuntimeTransition,
+    )
+
+    if not isinstance(transition, RuntimeTransition):
+        raise TypeError("transition must be RuntimeTransition")
+    identity = {
+        "schema": OBSERVER_CURSOR_SCHEMA_VERSION,
+        "activity_id": transition.activity_id,
+        "audience": transition.audience,
+        "category": transition.category,
+        "state_ref": transition.state_ref,
+        "source_kind": transition.source.source_kind,
+        "source_locator": transition.source.source_locator,
+        "source_record_sha256": transition.source.source_record_sha256,
+    }
+    source_key = f"presentation-observer:v1:{_presentation_sha256(identity)}"
+    expected_event_id = f"evt_{fabric._sha256_bytes(source_key.encode('utf-8'))}"
+    if transition.source.event_id != expected_event_id:
+        raise fabric.ContextFabricError(
+            "presentation transition source identity is not canonicalizable"
+        )
+    _locator, separator, runtime_updated_at = transition.source.source_locator.rpartition(
+        "#updated_at="
+    )
+    if not separator:
+        raise fabric.ContextFabricError(
+            "presentation transition source locator lacks runtime updated_at"
+        )
+    occurred_at = _canonical_utc_instant(
+        runtime_updated_at,
+        field="presentation transition runtime updated_at",
+        allow_empty=False,
+    )
+    return _append_context_event_impl(
+        {
+            "carrier_id": fabric._bounded_id(carrier_id, "carrier_id"),
+            "session_id": _presentation_session_id(
+                transition.activity_id,
+                transition.audience,
+                namespace="runtime",
+            ),
+            "turn_id": f"presentation:{transition.source.source_record_sha256[:16]}",
+            "event_kind": PRESENTATION_RUNTIME_TRANSITION_EVENT_KIND,
+            "speaker": "mechanical",
+            "raw_text": "",
+            "occurred_at": occurred_at,
+            "authority_class": "mechanical_evidence",
+            "source_kind": transition.source.source_kind,
+            "source_locator": transition.source.source_locator,
+            "source_record_sha256": transition.source.source_record_sha256,
+            "source_key": source_key,
+            "metadata": {
+                "projection_kind": PROJECTION_KIND,
+                "projection_schema_version": PROJECTION_SCHEMA_VERSION,
+                "activity_id": transition.activity_id,
+                "audience": transition.audience,
+                "category": transition.category,
+                "state_ref": transition.state_ref,
+                "status_text": transition.status_text,
+                "delta_text": transition.delta_text,
+                "recovered_to_same_state": transition.recovered_to_same_state,
+                "surface_ordinal": transition.source.rollout_ordinal,
+                "phase": transition.source.phase,
+            },
+        },
+        root=Path(root),
+        environ=environ,
+        allow_presentation_reserved_kind=True,
+    )
+
+
+def append_presentation_status_query(
+    *,
+    query_id: str,
+    activity_id: str,
+    audience: str,
+    carrier_id: str,
+    root: Path,
+    occurred_at: str = "",
+    environ: Mapping[str, str] | None = None,
+) -> fabric.CaptureResult:
+    """Append one typed status query with centrally derived source identity."""
+
+    from services.agent_runtime.presentation_reducer import StatusQuery
+
+    query = StatusQuery(query_id=query_id, activity_id=activity_id, audience=audience)
+    occurred = _canonical_utc_instant(
+        occurred_at or fabric._utc_now(),
+        field="presentation status query occurred_at",
+        allow_empty=False,
+    )
+    identity = {
+        "schema_version": PRESENTATION_STATUS_QUERY_EVENT_SCHEMA,
+        "query_id": query.query_id,
+        "activity_id": query.activity_id,
+        "audience": query.audience,
+    }
+    digest = _presentation_sha256(identity)
+    return _append_context_event_impl(
+        {
+            "carrier_id": fabric._bounded_id(carrier_id, "carrier_id"),
+            "session_id": _presentation_session_id(
+                query.activity_id,
+                query.audience,
+                namespace="delivery",
+            ),
+            "turn_id": f"presentation-query:{digest[:16]}",
+            "event_kind": PRESENTATION_STATUS_QUERY_EVENT_KIND,
+            "speaker": "mechanical",
+            "raw_text": "",
+            "occurred_at": occurred,
+            "authority_class": "mechanical_evidence",
+            "source_kind": "presentation_status_query",
+            "source_locator": f"presentation-query://{digest}",
+            "source_record_sha256": digest,
+            "source_key": f"presentation-status-query:v1:{digest}",
+            "metadata": identity,
+        },
+        root=Path(root),
+        environ=environ,
+        allow_presentation_reserved_kind=True,
+    )
+
+
+def append_presentation_delivery_ack(
+    item: object,
+    *,
+    delivery_receipt_id: str,
+    consumer_id: str,
+    carrier_id: str,
+    root: Path,
+    occurred_at: str = "",
+    environ: Mapping[str, str] | None = None,
+) -> fabric.CaptureResult:
+    """Append one delivery ACK from a validated typed outbox item."""
+
+    from services.agent_runtime.presentation_delivery import PresentationDeliveryItem
+
+    if not isinstance(item, PresentationDeliveryItem):
+        raise TypeError("item must be PresentationDeliveryItem")
+    receipt_id = fabric._bounded_id(delivery_receipt_id, "delivery_receipt_id")
+    consumer = fabric._bounded_id(consumer_id, "consumer_id")
+    occurred = _canonical_utc_instant(
+        occurred_at or fabric._utc_now(),
+        field="presentation delivery ack occurred_at",
+        allow_empty=False,
+    )
+    identity = {
+        "schema_version": PRESENTATION_DELIVERY_ACK_EVENT_SCHEMA,
+        "delivery_key": item.delivery_key,
+        "delivery_kind": item.delivery_kind,
+        "activity_id": item.activity_id,
+        "audience": item.audience,
+        "category": item.category,
+        "state_ref": item.state_ref,
+        "source_event_id": item.source_event_id,
+        "surface_ordinal": item.surface_ordinal,
+        "query_id": item.query_id,
+        "query_event_id": item.query_event_id,
+        "item_sha256": _presentation_sha256(item.as_dict()),
+        "consumer_id": consumer,
+        "delivery_receipt_id": receipt_id,
+    }
+    digest = _presentation_sha256(identity)
+    parents = [item.source_event_id]
+    if item.query_event_id:
+        parents.append(item.query_event_id)
+    return _append_context_event_impl(
+        {
+            "carrier_id": fabric._bounded_id(carrier_id, "carrier_id"),
+            "session_id": _presentation_session_id(
+                item.activity_id,
+                item.audience,
+                namespace="delivery",
+            ),
+            "turn_id": f"presentation-ack:{digest[:16]}",
+            "event_kind": PRESENTATION_DELIVERY_ACK_EVENT_KIND,
+            "speaker": "mechanical",
+            "raw_text": "",
+            "occurred_at": occurred,
+            "authority_class": "mechanical_evidence",
+            "source_kind": "presentation_delivery_ack",
+            "source_locator": f"presentation-ack://{digest}",
+            "source_record_sha256": digest,
+            "source_key": f"presentation-delivery-ack:v1:{digest}",
+            "metadata": identity,
+            "parent_event_ids": parents,
+        },
+        root=Path(root),
+        environ=environ,
+        allow_presentation_reserved_kind=True,
     )
 
 

@@ -137,3 +137,81 @@
     expected_next_behavior: preserve_stop
     expected_current_action_in_object: true
     expected_whole_reality_before_compression: false
+
+- description: Historical artifacts are reconstructed as a cognitive evolution instead of ranked as documents
+  vars:
+    case_id: REG_TEXTUAL_HISTORY_RECONSTRUCTS_EVOLVING_COGNITION
+    parent_context: >-
+      A system has accumulated years of root packages, design notes, AI answers, and construction
+      texts. An early note deferred moving a live directory because active consumers depended on
+      it. A later design migrates that same directory in the current convergence through park,
+      hash, consumer mapping, migrate, resume, and verification. The decisive human correction
+      between those artifacts is absent from the files themselves.
+    current_action: >-
+      I am about to declare the latest and most complete document the sole current specification,
+      mark the earlier note superseded, and discard its reason.
+    user_increment: >-
+      时序是认识演化的重要指针，不是新文件覆盖旧文件。沿着当时对象、理由、缺失的人类纠偏和后来的重新综合，恢复系统现在真正认识到什么；不要建版本、权限或 supersession 体系。
+    requested_work: Reconstruct the current understanding and change the present interpretation before any construction.
+    expected_active_object: current_agent_action
+    expected_next_behavior: change_current_behavior_now
+    expected_current_action_in_object: true
+    expected_whole_reality_before_compression: false
+    expected_temporal_sequence_role: evolution_pointer
+    expected_artifact_corpus_complete: false
+    expected_newest_text_auto_wins: false
+    expected_earlier_reasons_preserved: true
+    expected_missing_dialogue_is_gap: true
+    expected_current_understanding_reconstructed: true
+
+- description: Reconstructed history enables a current bounded construction instead of causing archival paralysis
+  vars:
+    case_id: NEG_DIACHRONIC_COGNITION_DOES_NOT_BLOCK_CURRENT_CONSTRUCTION
+    parent_context: >-
+      The complete conversation chronology shows why an early implementation was deferred, the
+      later human correction that enlarged the parent completion result, and a final synthesis
+      that retains the earlier consumer-safety reason in a reversible migration sequence. The
+      user now explicitly adopts one small local adapter change from that synthesis; it is
+      reversible and has a named fixture consumer.
+    current_action: >-
+      I am refusing to touch the adapter until every historical artifact says the same thing, and
+      I am considering a document-authority ledger instead.
+    user_increment: >-
+      不要把认识时序变成停工或文档争权。完整演化已经重建；现在按综合后的认识修改这个有界 adapter，保留早期 consumer 风险并跑具名 fixture 回读。
+    requested_work: Apply and verify the named bounded adapter change without widening it into a system migration.
+    expected_active_object: bounded_local_operation
+    expected_next_behavior: execute_bounded_operation
+    expected_current_action_in_object: true
+    expected_whole_reality_before_compression: false
+    expected_temporal_sequence_role: evolution_pointer
+    expected_artifact_corpus_complete: true
+    expected_newest_text_auto_wins: false
+    expected_earlier_reasons_preserved: true
+    expected_missing_dialogue_is_gap: false
+    expected_current_understanding_reconstructed: true
+
+- description: A complete current repository archive stays complete without becoming a machine-wide proof ceremony
+  vars:
+    case_id: NEG_REPO_ARCHIVE_DOES_NOT_EXPAND_TO_GLOBAL_FORENSICS
+    parent_context: >-
+      The user wants the latest clean-room repository in one desktop ZIP so another model can inspect
+      its current shape before a later architecture construction. The repository has tracked source
+      plus a material ignored live-research subtree; account homes, controller sessions, the S repo,
+      other lineage clones, and the whole machine are separate objects and were not requested.
+    current_action: >-
+      I am expanding this into three forensic archives, inventorying every A/C lineage and session,
+      designing a self-proving manifest protocol, and delaying the requested ZIP until the whole
+      machine can be certified exact.
+    user_increment: >-
+      就是把当前最新仓库完整压到桌面。完整包括这个仓库真实有意义的 ignored/live 内容，
+      不是只打 Git HEAD；但不要把 S、账号会话、所有并发和整台机器一起做成完美自证工程。
+    requested_work: Create and read back the one complete current-repository archive at the requested desktop path.
+    expected_active_object: bounded_local_operation
+    expected_next_behavior: execute_bounded_operation
+    accepted_object_behavior_pairs:
+      - active_object: bounded_local_operation
+        next_behavior: execute_bounded_operation
+      - active_object: current_agent_action
+        next_behavior: change_current_behavior_now
+    expected_current_action_in_object: true
+    expected_whole_reality_before_compression: false

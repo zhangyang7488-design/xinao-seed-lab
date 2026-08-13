@@ -10,11 +10,15 @@ from pathlib import Path
 import pytest
 import services.agent_runtime.codex_situation_hook as hook_module
 from services.agent_runtime.codex_situation_hook import (
+    ACTION_BINDING_CONTEXT,
+    DIACHRONIC_COGNITION_CONTEXT,
     L0_CONTEXT,
     SituationHookError,
     compact_checkpoint,
     handle_hook_event,
+    render_action_binding_context,
     render_checkpoint_context,
+    render_diachronic_cognition_context,
     session_store_path,
 )
 from services.agent_runtime.current_situation import build_snapshot, initialize_store, retire_store
@@ -143,6 +147,8 @@ def test_user_prompt_keeps_l0_first_and_adds_labeled_runtime_without_prompt_echo
 
     assert output["continue"] is True
     assert context.startswith(L0_CONTEXT)
+    assert DIACHRONIC_COGNITION_CONTEXT in context
+    assert ACTION_BINDING_CONTEXT in context
     assert "SECRET MATERIAL" not in context
     assert "hook_child_process_not_parent_codex" in context
     assert "caller_supplied_unverified" not in context
@@ -163,9 +169,27 @@ def test_runtime_failure_preserves_l0_and_never_blocks(
         "continue": True,
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": L0_CONTEXT,
+            "additionalContext": (
+                f"{L0_CONTEXT}\n{DIACHRONIC_COGNITION_CONTEXT}\n"
+                f"{ACTION_BINDING_CONTEXT}"
+            ),
         },
     }
+
+
+def test_action_binding_projection_is_limited_to_the_s_body(tmp_path: Path) -> None:
+    assert render_action_binding_context(cwd=REPO_ROOT) == ACTION_BINDING_CONTEXT
+    assert render_action_binding_context(cwd=REPO_ROOT / "tests") == ACTION_BINDING_CONTEXT
+    assert render_action_binding_context(cwd=tmp_path) == ""
+
+
+def test_diachronic_cognition_projection_is_limited_to_the_s_body(tmp_path: Path) -> None:
+    assert render_diachronic_cognition_context(cwd=REPO_ROOT) == DIACHRONIC_COGNITION_CONTEXT
+    assert (
+        render_diachronic_cognition_context(cwd=REPO_ROOT / "tests")
+        == DIACHRONIC_COGNITION_CONTEXT
+    )
+    assert render_diachronic_cognition_context(cwd=tmp_path) == ""
 
 
 def test_resume_and_compact_consume_only_the_exact_session_checkpoint(
@@ -185,6 +209,9 @@ def test_resume_and_compact_consume_only_the_exact_session_checkpoint(
         store_root=tmp_path,
     )
     context = output["hookSpecificOutput"]["additionalContext"]
+    assert context.startswith(L0_CONTEXT)
+    assert DIACHRONIC_COGNITION_CONTEXT in context
+    assert ACTION_BINDING_CONTEXT in context
     assert "CURRENT SITUATION CHECKPOINT" in context
     assert "continue the whole discussion" in context
     assert '"autonomous_revision_observed":false' in context
@@ -276,6 +303,7 @@ def test_json_stdio_adapter_returns_utf8_json_and_never_echoes_prompt() -> None:
     output = json.loads(completed.stdout.decode("utf-8"))
     context = output["hookSpecificOutput"]["additionalContext"]
     assert context.startswith("SENTINEL:HUMAN_WORDS_BEFORE_ARTIFACTS_V2")
+    assert "SENTINEL:CURRENT_RESULT_CONTROLS_ACTION_V1" in context
     assert "DO-NOT-ECHO" not in context
     assert "RUNTIME OBSERVATION" in context
 
@@ -411,4 +439,6 @@ def test_combined_context_overflow_falls_back_to_l0(
 ) -> None:
     monkeypatch.setattr(hook_module, "render_runtime_context", lambda _event: "x" * 20_000)
     output = handle_hook_event({"hook_event_name": "UserPromptSubmit", "prompt": "discussion"})
-    assert output["hookSpecificOutput"]["additionalContext"] == L0_CONTEXT
+    assert output["hookSpecificOutput"]["additionalContext"] == (
+        f"{L0_CONTEXT}\n{DIACHRONIC_COGNITION_CONTEXT}\n{ACTION_BINDING_CONTEXT}"
+    )

@@ -24,6 +24,39 @@ module.exports = (output, context) => {
     immediate_self_test: false,
     permanent_uptake_claim: false,
     self_inventory_precedes_xinao: false,
+    cognition_history: Object.prototype.hasOwnProperty.call(
+      context.vars,
+      "expected_temporal_sequence_role",
+    )
+      ? {
+          applicable: true,
+          temporal_sequence_role:
+            context.vars.expected_temporal_sequence_role,
+          artifact_corpus_complete: asBool(
+            context.vars.expected_artifact_corpus_complete,
+          ),
+          newest_text_auto_wins: asBool(
+            context.vars.expected_newest_text_auto_wins,
+          ),
+          earlier_reasons_preserved: asBool(
+            context.vars.expected_earlier_reasons_preserved,
+          ),
+          missing_dialogue_is_gap: asBool(
+            context.vars.expected_missing_dialogue_is_gap,
+          ),
+          current_understanding_reconstructed: asBool(
+            context.vars.expected_current_understanding_reconstructed,
+          ),
+        }
+      : {
+          applicable: false,
+          temporal_sequence_role: "not_applicable",
+          artifact_corpus_complete: false,
+          newest_text_auto_wins: false,
+          earlier_reasons_preserved: false,
+          missing_dialogue_is_gap: false,
+          current_understanding_reconstructed: false,
+        },
   };
   const acceptedPairs = Array.isArray(context.vars.accepted_object_behavior_pairs)
     ? context.vars.accepted_object_behavior_pairs
@@ -41,7 +74,7 @@ module.exports = (output, context) => {
   const tokenCompletion = Number(usage.completion || usage.completion_tokens || 0);
   const tokenTotal = Number(usage.total || usage.total_tokens || 0);
   const behaviorMatches = Object.entries(expected).every(
-    ([key, value]) => parsed[key] === value,
+    ([key, value]) => JSON.stringify(parsed[key]) === JSON.stringify(value),
   );
   const objectBehaviorPairMatches = acceptedPairs.some(
     (pair) =>

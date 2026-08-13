@@ -17,22 +17,35 @@ $sourceRepositoryRoot = 'E:\XINAO_RESEARCH_WORKSPACES\S'
 $sourceConsumerScript = 'E:\XINAO_RESEARCH_WORKSPACES\S\scripts\context_rollout_consumer.py'
 $bundleLockPath = 'E:\XINAO_RESEARCH_WORKSPACES\S\scripts\context_rollout_consumer.bundle.lock.json'
 $consumerReceiptPath = 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\last_receipt.json'
+$presentationReceiptPath = 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\presentation_last_receipt.json'
+$expectedPresentationRuntimeRootHashes = @(
+    'adb880fbd3d9c491c6ce49d56397e1e25242348b43d5611ac2c49d326622f855',
+    '49f6dd97d62d05a2bb2c80025b0bb9ce9e27800d0ccff5ebcc2e71f7023fe680',
+    '9a2efb050d003f98c1d34def251707680406dbe33df3423273d9c6b6fcea1e0c'
+)
 $officialPythonSha256 = 'ef8f51028ac5329641985112f8efb1c2d4c47c86b8011ddf7e6fae21e2b4e5a1'
-$expectedBundleLockSha256 = '6a95d1ae9d66969522c4ba0e46b27f37dde9039f891a2420318927f102c32846'
-$expectedBundleContentId = '882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823'
-$expectedBundleFileCount = 1332
+$officialPythonwSha256 = '95225ed035643523e8c586c11981e276541dce4949eb35cf8cf5741c824249d4'
+$expectedBundleLockSha256 = '1441a54b9b379dee88a837d82530d3c003d1799119437ed8210f81a68fb75d8a'
+$expectedBundleContentId = 'd11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e'
+$expectedBundleFileCount = 1336
 $bundleLockSchema = 's.context_rollout_consumer.bundle_lock.v1'
 $requiredLockedFilePaths = @(
     'python/python.exe',
+    'python/pythonw.exe',
     'app/scripts/context_rollout_consumer.py',
     'app/services/__init__.py',
     'app/services/agent_runtime/__init__.py',
     'app/services/agent_runtime/context_fabric.py',
     'app/services/agent_runtime/context_runtime_completion.py'
+    'app/services/agent_runtime/presentation_reducer.py'
+    'app/services/agent_runtime/presentation_observer.py'
+    'app/services/agent_runtime/presentation_delivery.py'
+    'app/services/agent_runtime/presentation_lock.py'
 )
 $directLockedFileHashes = [ordered]@{
     'python/python.exe' = $officialPythonSha256
-    'app/scripts/context_rollout_consumer.py' = 'fd352a4f3f47c040f11ea2ceedd63fb41a0c80ef37123424da33aa8e42dc8764'
+    'python/pythonw.exe' = $officialPythonwSha256
+    'app/scripts/context_rollout_consumer.py' = 'eb2b20721cd94c6a6ea3a6d0380e644f2fd1987d98358bd7e19b74d85b60b1d7'
 }
 $bundleBoundary = [Environment]::ExpandEnvironmentVariables('%LOCALAPPDATA%')
 if ([string]::IsNullOrWhiteSpace($bundleBoundary) -or -not [System.IO.Path]::IsPathRooted($bundleBoundary)) {
@@ -614,6 +627,10 @@ function Get-SourceBundlePlan {
         'app/services/agent_runtime/__init__.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\__init__.py'
         'app/services/agent_runtime/context_fabric.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\context_fabric.py'
         'app/services/agent_runtime/context_runtime_completion.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\context_runtime_completion.py'
+        'app/services/agent_runtime/presentation_reducer.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\presentation_reducer.py'
+        'app/services/agent_runtime/presentation_observer.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\presentation_observer.py'
+        'app/services/agent_runtime/presentation_delivery.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\presentation_delivery.py'
+        'app/services/agent_runtime/presentation_lock.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\presentation_lock.py'
     }
     foreach ($entry in $appSourceMap.GetEnumerator()) {
         if (-not (Test-Path -LiteralPath $entry.Value -PathType Leaf)) {
@@ -696,6 +713,7 @@ function Test-BundlePayload {
         content_id = $ExpectedContentId
         manifest_sha256 = ''
         python_path = ''
+        action_python_path = ''
         consumer_script = ''
         working_directory = ''
         arguments = ''
@@ -765,11 +783,16 @@ function Test-BundlePayload {
         $result.validation = 'manifest_records_valid'
         $requiredPaths = @(
             'python/python.exe',
+            'python/pythonw.exe',
             'app/scripts/context_rollout_consumer.py',
             'app/services/__init__.py',
             'app/services/agent_runtime/__init__.py',
             'app/services/agent_runtime/context_fabric.py',
-            'app/services/agent_runtime/context_runtime_completion.py'
+            'app/services/agent_runtime/context_runtime_completion.py',
+            'app/services/agent_runtime/presentation_reducer.py',
+            'app/services/agent_runtime/presentation_observer.py',
+            'app/services/agent_runtime/presentation_delivery.py',
+            'app/services/agent_runtime/presentation_lock.py'
         )
         if (@($requiredPaths | Where-Object { -not $manifestPaths.Contains($_) }).Count -ne 0 -or
             -not [string]::Equals(
@@ -827,9 +850,17 @@ function Test-BundlePayload {
         }
         $result.validation = 'file_hashes_valid'
         $bundlePythonPath = Resolve-BundleChildPath $BundleRoot 'python/python.exe'
+        $bundleActionPythonPath = Resolve-BundleChildPath $BundleRoot 'python/pythonw.exe'
         if (-not [string]::Equals(
                 (Get-LowerSha256 $bundlePythonPath),
                 $officialPythonSha256,
+                [System.StringComparison]::Ordinal
+            )) {
+            return $result
+        }
+        if (-not [string]::Equals(
+                (Get-LowerSha256 $bundleActionPythonPath),
+                $officialPythonwSha256,
                 [System.StringComparison]::Ordinal
             )) {
             return $result
@@ -839,6 +870,7 @@ function Test-BundlePayload {
         $result.payload_hash_valid = $true
         $result.payload_acl_valid = Test-ProtectedBundleTreeAcl $BundleRoot
         $result.python_path = $bundlePythonPath
+        $result.action_python_path = $bundleActionPythonPath
         $result.consumer_script = Resolve-BundleChildPath $BundleRoot 'app/scripts/context_rollout_consumer.py'
         $result.working_directory = Resolve-BundleChildPath $BundleRoot 'app'
         $result.arguments = '-I -B "' + $result.consumer_script + '"'
@@ -1036,6 +1068,7 @@ function Get-ConsumerTaskAudit {
             payload_hash_valid = $false
             payload_acl_valid = $false
             python_path = ''
+            action_python_path = ''
             consumer_script = ''
             working_directory = ''
             arguments = ''
@@ -1360,6 +1393,166 @@ function Get-ConsumerTaskAudit {
             $consumerReceiptFresh = $false
         }
     }
+    $presentationReceiptStatus = 'absent'
+    $presentationReceiptSchemaValid = $false
+    $presentationReceiptFresh = $false
+    $presentationReceiptValidation = 'presentation_receipt_absent'
+    if (Test-Path -LiteralPath $presentationReceiptPath -PathType Leaf) {
+        try {
+            $presentationItem = Get-Item -LiteralPath $presentationReceiptPath -Force -ErrorAction Stop
+            if (($presentationItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                $presentationItem.Length -lt 1 -or $presentationItem.Length -gt 1MB) {
+                throw 'Presentation receipt carrier is unsafe.'
+            }
+            $presentationJson = Get-Content -LiteralPath $presentationReceiptPath -Raw -Encoding UTF8
+            if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) {
+                $presentationReceipt = $presentationJson | ConvertFrom-Json -DateKind String -ErrorAction Stop
+            } else {
+                $presentationReceipt = $presentationJson | ConvertFrom-Json -ErrorAction Stop
+            }
+            $presentationFields = @(
+                'schema_version', 'status', 'started_at', 'finished_at', 'runtime_roots',
+                'counts', 'visible_emitter', 'ui_interception_claimed', 'authority'
+            )
+            if (-not (Test-ExactPropertySet $presentationReceipt $presentationFields) -or
+                -not [string]::Equals(
+                    [string]$presentationReceipt.schema_version,
+                    's.context_rollout_presentation.receipt.v1',
+                    [System.StringComparison]::Ordinal
+                ) -or
+                [string]$presentationReceipt.status -notin @('completed', 'completed_with_errors') -or
+                $presentationReceipt.runtime_roots -isnot [System.Array] -or
+                @($presentationReceipt.runtime_roots).Count -ne 3 -or
+                $presentationReceipt.counts -isnot [System.Management.Automation.PSCustomObject] -or
+                -not [string]::Equals(
+                    [string]$presentationReceipt.visible_emitter,
+                    'not_configured',
+                    [System.StringComparison]::Ordinal
+                ) -or $presentationReceipt.ui_interception_claimed -isnot [bool] -or
+                $presentationReceipt.ui_interception_claimed -ne $false -or
+                $presentationReceipt.authority -isnot [bool] -or
+                $presentationReceipt.authority -ne $false) {
+                throw 'Presentation receipt shape is invalid.'
+            }
+            $allowedPresentationCountFields = @(
+                'absent', 'error', 'observed', 'pending_delivery', 'transitions'
+            )
+            foreach ($property in @($presentationReceipt.counts.PSObject.Properties)) {
+                if ([string]$property.Name -notin $allowedPresentationCountFields -or
+                    -not (Test-JsonInteger $property.Value)) {
+                    throw 'Presentation receipt count is invalid.'
+                }
+            }
+            $presentationRootFields = @(
+                'runtime_root_sha256', 'observer_status', 'transition_count',
+                'pending_delivery_count', 'routine_pending_count', 'visible_pending_count',
+                'authority'
+            )
+            $presentationObservedExtraFields = @(
+                'activity_id', 'account_slot', 'run_id', 'pointer_sha256',
+                'run_config_sha256', 'binding_readback', 'projection_count',
+                'controller_record_sha256', 'presentation_event_id'
+            )
+            $observedRuntimeRootHashes = [System.Collections.Generic.HashSet[string]]::new(
+                [System.StringComparer]::Ordinal
+            )
+            [long]$rootStatusCount = 0
+            [long]$rootTransitionCount = 0
+            [long]$rootPendingDeliveryCount = 0
+            foreach ($runtimeReceipt in @($presentationReceipt.runtime_roots)) {
+                if ($runtimeReceipt -isnot [System.Management.Automation.PSCustomObject]) {
+                    throw 'Presentation runtime receipt is invalid.'
+                }
+                $status = [string]$runtimeReceipt.observer_status
+                $allowedFields = @($presentationRootFields)
+                if ($status -in @('observed', 'unchanged')) {
+                    $allowedFields += $presentationObservedExtraFields
+                } elseif ($status -eq 'error') {
+                    $allowedFields += 'error_type'
+                } elseif ($status -ne 'absent') {
+                    throw 'Presentation runtime status is invalid.'
+                }
+                if (-not (Test-ExactPropertySet $runtimeReceipt $allowedFields) -or
+                    [string]$runtimeReceipt.runtime_root_sha256 -notmatch '^[0-9a-f]{64}$' -or
+                    -not $observedRuntimeRootHashes.Add([string]$runtimeReceipt.runtime_root_sha256) -or
+                    $runtimeReceipt.authority -isnot [bool] -or $runtimeReceipt.authority -ne $false) {
+                    throw 'Presentation runtime receipt shape is invalid.'
+                }
+                foreach ($integerField in @(
+                        'transition_count', 'pending_delivery_count',
+                        'routine_pending_count', 'visible_pending_count'
+                    )) {
+                    if (-not (Test-JsonInteger $runtimeReceipt.$integerField)) {
+                        throw 'Presentation runtime receipt count is invalid.'
+                    }
+                }
+                $rootStatusCount += 1
+                $rootTransitionCount += [long]$runtimeReceipt.transition_count
+                $rootPendingDeliveryCount += [long]$runtimeReceipt.pending_delivery_count
+                if ($status -in @('observed', 'unchanged')) {
+                    foreach ($digestField in @(
+                            'pointer_sha256', 'run_config_sha256',
+                            'controller_record_sha256'
+                        )) {
+                        if ([string]$runtimeReceipt.$digestField -notmatch '^[0-9a-f]{64}$') {
+                            throw 'Presentation runtime receipt digest is invalid.'
+                        }
+                    }
+                    if ([string]$runtimeReceipt.account_slot -notin @('A', 'C') -or
+                        [string]$runtimeReceipt.binding_readback -notin @(
+                            'stable', 'changed_after_observe'
+                        ) -or -not (Test-JsonInteger $runtimeReceipt.projection_count)) {
+                        throw 'Presentation runtime observed identity is invalid.'
+                    }
+                }
+            }
+            foreach ($expectedRuntimeRootHash in $expectedPresentationRuntimeRootHashes) {
+                if (-not $observedRuntimeRootHashes.Contains($expectedRuntimeRootHash)) {
+                    throw 'Presentation runtime receipt root set is invalid.'
+                }
+            }
+            [long]$countedRootStatuses = 0
+            foreach ($countName in @('absent', 'error', 'observed')) {
+                if ($presentationReceipt.counts.PSObject.Properties.Name -contains $countName) {
+                    $countedRootStatuses += [long]$presentationReceipt.counts.$countName
+                }
+            }
+            [long]$countedTransitions = if (
+                $presentationReceipt.counts.PSObject.Properties.Name -contains 'transitions'
+            ) { [long]$presentationReceipt.counts.transitions } else { 0 }
+            [long]$countedPendingDelivery = if (
+                $presentationReceipt.counts.PSObject.Properties.Name -contains 'pending_delivery'
+            ) { [long]$presentationReceipt.counts.pending_delivery } else { 0 }
+            if ($countedRootStatuses -ne $rootStatusCount -or
+                $countedTransitions -ne $rootTransitionCount -or
+                $countedPendingDelivery -ne $rootPendingDeliveryCount) {
+                throw 'Presentation receipt aggregate counts are inconsistent.'
+            }
+            $presentationStartedAt = ConvertTo-StrictReceiptTimestamp $presentationReceipt.started_at
+            $presentationFinishedAt = ConvertTo-StrictReceiptTimestamp $presentationReceipt.finished_at
+            if ($null -eq $presentationStartedAt -or $null -eq $presentationFinishedAt -or
+                $presentationStartedAt -gt $presentationFinishedAt) {
+                throw 'Presentation receipt timestamps are invalid.'
+            }
+            $presentationReceiptStatus = [string]$presentationReceipt.status
+            $presentationReceiptSchemaValid = $true
+            $presentationReceiptValidation = 'presentation_receipt_schema_valid'
+            if ($healthIntervalMinutes -gt 0) {
+                $presentationBudget = New-TimeSpan -Minutes (5 + (2 * $healthIntervalMinutes))
+                $presentationReceiptFresh = $presentationFinishedAt -ge [DateTimeOffset]::Now.Subtract($presentationBudget) -and
+                    $presentationFinishedAt -le [DateTimeOffset]::Now.AddMinutes(2) -and
+                    $taskHasRun -and
+                    $presentationFinishedAt -ge $lastRunAt.Subtract((New-TimeSpan -Minutes 1)) -and
+                    $presentationFinishedAt -le $lastRunAt.AddMinutes(7)
+            }
+        }
+        catch {
+            $presentationReceiptStatus = 'invalid'
+            $presentationReceiptSchemaValid = $false
+            $presentationReceiptFresh = $false
+            $presentationReceiptValidation = 'presentation_receipt_invalid'
+        }
+    }
     $descriptionValid = $descriptionMatch.Success -and
         $payloadHashValid -and
         ([string]::IsNullOrWhiteSpace($ExpectedRegistrationToken) -or
@@ -1369,7 +1562,7 @@ function Get-ConsumerTaskAudit {
                 [System.StringComparison]::Ordinal
             ))
     $actionValid = $action.Count -eq 1 -and
-        (Test-OrdinalPathEqual $action[0].Execute ([string]$bundleValidation.python_path)) -and
+        (Test-OrdinalPathEqual $action[0].Execute ([string]$bundleValidation.action_python_path)) -and
         [string]::Equals(
             [string]$action[0].Arguments,
             [string]$bundleValidation.arguments,
@@ -1449,6 +1642,16 @@ function Get-ConsumerTaskAudit {
         if ($consumerReceiptStatus -eq 'absent') { 'receipt_absent' } else { 'receipt_invalid' }
     } elseif (-not $consumerReceiptFresh) {
         'receipt_stale'
+    } elseif (-not $presentationReceiptSchemaValid) {
+        if ($presentationReceiptStatus -eq 'absent') {
+            'presentation_receipt_absent'
+        } else {
+            'presentation_receipt_invalid'
+        }
+    } elseif (-not $presentationReceiptFresh) {
+        'presentation_receipt_stale'
+    } elseif ($presentationReceiptStatus -eq 'completed_with_errors') {
+        'presentation_degraded'
     } elseif ($consumerReceiptStatus -eq 'completed_with_errors') {
         'degraded'
     } elseif ($consumerReceiptStatus -eq 'failed') {
@@ -1497,6 +1700,10 @@ function Get-ConsumerTaskAudit {
         consumer_receipt_schema_valid = $consumerReceiptSchemaValid
         consumer_receipt_fresh = $consumerReceiptFresh
         consumer_receipt_validation = $consumerReceiptValidation
+        presentation_receipt_status = $presentationReceiptStatus
+        presentation_receipt_schema_valid = $presentationReceiptSchemaValid
+        presentation_receipt_fresh = $presentationReceiptFresh
+        presentation_receipt_validation = $presentationReceiptValidation
         consumer_health = $consumerHealth
         trigger_enabled = $triggerEnabled
         start_boundary = $startBoundaryText
@@ -1512,7 +1719,7 @@ function Get-ConsumerTaskAudit {
         execute = if ($action.Count -eq 1) { [string]$action[0].Execute } else { '' }
         arguments = if ($action.Count -eq 1) { [string]$action[0].Arguments } else { '' }
         working_directory = if ($action.Count -eq 1) { [string]$action[0].WorkingDirectory } else { '' }
-        pinned_execute = [string]$bundleValidation.python_path
+        pinned_execute = [string]$bundleValidation.action_python_path
         pinned_arguments = [string]$bundleValidation.arguments
         pinned_working_directory = [string]$bundleValidation.working_directory
         interval = $intervalText
@@ -1555,7 +1762,7 @@ if ($Apply) {
     $bundle = New-ProtectedConsumerBundle $sourcePlan $registrationToken
     $createdDescription = "$descriptionPrefix$registrationToken;content_id=$($bundle.content_id);manifest_sha256=$($bundle.manifest_sha256)"
     $action = New-ScheduledTaskAction `
-        -Execute $bundle.validation.python_path `
+        -Execute $bundle.validation.action_python_path `
         -Argument $bundle.validation.arguments `
         -WorkingDirectory $bundle.validation.working_directory
     $trigger = New-ScheduledTaskTrigger `

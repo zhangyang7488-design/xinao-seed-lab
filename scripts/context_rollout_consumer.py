@@ -18,7 +18,7 @@ import sqlite3
 import sys
 import threading
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -33,6 +33,16 @@ from services.agent_runtime.context_fabric import (  # noqa: E402
     DEFAULT_ALLOWED_CODEX_HOMES,
     import_codex_rollout,
 )
+from services.agent_runtime.presentation_delivery import (  # noqa: E402
+    read_presentation_outbox,
+    read_presentation_state,
+)
+from services.agent_runtime.presentation_observer import (  # noqa: E402
+    STATE_KIND_CONTROLLER,
+    RuntimeStateSource,
+    make_context_event_sink,
+    observe_runtime_states,
+)
 
 CONSUMER_SCHEMA_VERSION = "s.context_rollout_consumer.v1"
 RECEIPT_SCHEMA_VERSION = "s.context_rollout_consumer.receipt.v1"
@@ -41,6 +51,9 @@ STATE_FILE_NAME = "state.json"
 STATE_QUARANTINE_FILE_NAME = "state_quarantine.json"
 LOCK_FILE_NAME = "consumer.lock"
 LAST_RECEIPT_FILE_NAME = "last_receipt.json"
+PRESENTATION_CURSOR_FILE_NAME = "presentation_observer.cursor.json"
+PRESENTATION_LAST_RECEIPT_FILE_NAME = "presentation_last_receipt.json"
+PRESENTATION_RECEIPT_SCHEMA_VERSION = "s.context_rollout_presentation.receipt.v1"
 STATE_QUARANTINE_SCHEMA_VERSION = "s.context_rollout_consumer.state_quarantine.v1"
 MAX_SESSION_META_BYTES = 8 * 1024 * 1024
 MAX_STATE_BYTES = 16 * 1024 * 1024
@@ -57,6 +70,32 @@ ROLLOUT_LOCAL_TIMEZONE = timezone(timedelta(hours=8))
 LOCATOR_PAYLOAD_TOLERANCE = timedelta(seconds=5)
 FUTURE_CLOCK_TOLERANCE = timedelta(seconds=5)
 PRODUCTION_CONTEXT_FABRIC_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric")
+PRODUCTION_PRESENTATION_RUNTIME_ROOTS = (
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a"),
+)
+_POINTER_TO_CONTROLLER_SCHEMA = {
+    "xinao.cleanroom.perpetual-world-compute-run.v2": (
+        "xinao.cleanroom.perpetual-world-compute-controller-state.v2"
+    ),
+    "xinao.cleanroom-c.perpetual-run.v1": ("xinao.cleanroom-c.perpetual-controller-state.v1"),
+}
+_PRODUCTION_PRESENTATION_ROOT_CONTRACTS = {
+    os.path.normcase(str(PRODUCTION_PRESENTATION_RUNTIME_ROOTS[0])): {
+        "pointer_schema": "xinao.cleanroom.perpetual-world-compute-run.v2",
+        "account_slot": "",
+    },
+    os.path.normcase(str(PRODUCTION_PRESENTATION_RUNTIME_ROOTS[1])): {
+        "pointer_schema": "xinao.cleanroom-c.perpetual-run.v1",
+        "account_slot": "C",
+    },
+    os.path.normcase(str(PRODUCTION_PRESENTATION_RUNTIME_ROOTS[2])): {
+        "pointer_schema": "xinao.cleanroom.perpetual-world-compute-run.v2",
+        "account_slot": "A",
+    },
+}
+_MAX_PRESENTATION_POINTER_BYTES = 1024 * 1024
 
 _ROLLOUT_NAME_RE = re.compile(
     r"^rollout-(?P<stamp>\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-"
@@ -196,6 +235,259 @@ def _atomic_json(path: Path, value: Mapping[str, object]) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def _stable_bounded_json_object(
+    path: Path,
+    *,
+    max_bytes: int,
+    object_name: str,
+) -> tuple[dict[str, object], str]:
+    if not path.is_file() or _is_reparse_point(path):
+        raise ConsumerError(f"{object_name} must be a regular file")
+    try:
+        first_stat = path.stat()
+        first = path.read_bytes()
+        second = path.read_bytes()
+        second_stat = path.stat()
+    except OSError as exc:
+        raise ConsumerError(f"{object_name} is unreadable") from exc
+
+    def fingerprint(value: os.stat_result) -> tuple[int, int, int, int]:
+        return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+
+    if fingerprint(first_stat) != fingerprint(second_stat) or first != second:
+        raise ConsumerError(f"{object_name} changed during stable read")
+    if not first or len(first) > max_bytes:
+        raise ConsumerError(f"{object_name} has an invalid bounded size")
+    try:
+        value = json.loads(first.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ConsumerError(f"{object_name} is not a UTF-8 JSON object") from exc
+    if not isinstance(value, dict):
+        raise ConsumerError(f"{object_name} must be a JSON object")
+    canonical = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if json.loads(canonical.decode("utf-8")) != value:
+        raise ConsumerError(f"{object_name} canonical readback changed")
+    return value, hashlib.sha256(first).hexdigest()
+
+
+def _presentation_source_from_pointer(
+    runtime_root: Path,
+) -> tuple[RuntimeStateSource, dict[str, str]] | None:
+    if runtime_root.exists() and (_is_reparse_point(runtime_root) or not runtime_root.is_dir()):
+        raise ConsumerError("presentation runtime root is unsafe")
+    pointer_path = runtime_root / "current.json"
+    if not pointer_path.exists():
+        return None
+    pointer, pointer_sha256 = _stable_bounded_json_object(
+        pointer_path,
+        max_bytes=_MAX_PRESENTATION_POINTER_BYTES,
+        object_name="presentation current pointer",
+    )
+    pointer_schema = str(pointer.get("schema") or "")
+    controller_schema = _POINTER_TO_CONTROLLER_SCHEMA.get(pointer_schema)
+    run_id = str(pointer.get("run_id") or "")
+    run_dir_text = str(pointer.get("run_dir") or "")
+    account_slot = str(pointer.get("account_slot") or "").upper()
+    if controller_schema is None or not run_id or account_slot not in {"A", "C"}:
+        raise ConsumerError("presentation current pointer identity is unsupported")
+    runtime_resolved = runtime_root.resolve(strict=True)
+    production_contract = _PRODUCTION_PRESENTATION_ROOT_CONTRACTS.get(
+        os.path.normcase(str(runtime_resolved))
+    )
+    if production_contract is not None and (
+        pointer_schema != production_contract["pointer_schema"]
+        or (
+            production_contract["account_slot"]
+            and account_slot != production_contract["account_slot"]
+        )
+    ):
+        raise ConsumerError("presentation current pointer violates its runtime-root contract")
+    try:
+        run_dir = Path(run_dir_text).resolve(strict=True)
+        run_dir.relative_to(runtime_resolved)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise ConsumerError("presentation run_dir escapes its named runtime root") from exc
+    expected_run_dir = runtime_resolved / "runs" / run_id
+    if os.path.normcase(str(run_dir)) != os.path.normcase(str(expected_run_dir)):
+        raise ConsumerError("presentation run_dir does not match the named run")
+    controller_path = run_dir / "controller_state.json"
+    if not controller_path.is_file() or _is_reparse_point(controller_path):
+        raise ConsumerError("presentation controller state is unavailable")
+    config_path = run_dir / "run_config.json"
+    config, config_sha256 = _stable_bounded_json_object(
+        config_path,
+        max_bytes=_MAX_PRESENTATION_POINTER_BYTES,
+        object_name="presentation run config",
+    )
+    config_run_dir = Path(str(config.get("run_dir") or "")).resolve(strict=True)
+    if (
+        config.get("schema") != pointer_schema
+        or config.get("run_id") != run_id
+        or str(config.get("account_slot") or "").upper() != account_slot
+        or os.path.normcase(str(config_run_dir)) != os.path.normcase(str(run_dir))
+    ):
+        raise ConsumerError("presentation pointer and run config identities differ")
+    runtime_identity = _locator_sha256(str(runtime_resolved))[:16]
+    source = RuntimeStateSource(
+        path=controller_path,
+        state_kind=STATE_KIND_CONTROLLER,
+        expected_run_id=run_id,
+        expected_schema=controller_schema,
+        activity_id=f"xinao-world-compute:{runtime_identity}",
+        audience="user",
+    )
+    return source, {
+        "pointer_path": str(pointer_path.resolve(strict=True)),
+        "pointer_sha256": pointer_sha256,
+        "config_path": str(config_path.resolve(strict=True)),
+        "config_sha256": config_sha256,
+        "run_id": run_id,
+        "account_slot": account_slot,
+    }
+
+
+def _validate_presentation_binding(binding: Mapping[str, str]) -> None:
+    for prefix, object_name in (
+        ("pointer", "presentation current pointer"),
+        ("config", "presentation run config"),
+    ):
+        path = Path(binding[f"{prefix}_path"])
+        _value, observed_sha256 = _stable_bounded_json_object(
+            path,
+            max_bytes=_MAX_PRESENTATION_POINTER_BYTES,
+            object_name=object_name,
+        )
+        if observed_sha256 != binding[f"{prefix}_sha256"]:
+            raise ConsumerError(f"{object_name} changed before transition append")
+
+
+def run_presentation_step(
+    *,
+    root: Path = PRODUCTION_CONTEXT_FABRIC_ROOT,
+    runtime_roots: Sequence[Path] = PRODUCTION_PRESENTATION_RUNTIME_ROOTS,
+    carrier_id: str = "s-primary",
+) -> dict[str, object]:
+    """Observe controller-only state into Context and read the delivery surface.
+
+    This is a one-shot sidecar phase.  It never opens lineage files and never
+    invokes a visible emitter; pending items remain in the canonical outbox.
+    """
+
+    started = _utc_now()
+    consumer_dir = _consumer_directory(Path(root))
+    runs_dir = consumer_dir / "presentation"
+    if runs_dir.exists():
+        if not runs_dir.is_dir() or _is_reparse_point(runs_dir):
+            raise ConsumerError("presentation consumer directory is unsafe")
+    else:
+        runs_dir.mkdir()
+    results: list[dict[str, object]] = []
+    totals: Counter[str] = Counter()
+
+    for runtime_root in runtime_roots:
+        locator_sha256 = _locator_sha256(str(runtime_root))
+        item: dict[str, object] = {
+            "runtime_root_sha256": locator_sha256,
+            "observer_status": "absent",
+            "transition_count": 0,
+            "pending_delivery_count": 0,
+            "routine_pending_count": 0,
+            "visible_pending_count": 0,
+            "authority": False,
+        }
+        try:
+            source_binding = _presentation_source_from_pointer(Path(runtime_root))
+            if source_binding is None:
+                totals["absent"] += 1
+                results.append(item)
+                continue
+            source, binding = source_binding
+            cursor_dir = runs_dir / locator_sha256
+            cursor_dir.mkdir(exist_ok=True)
+            _validate_presentation_binding(binding)
+            context_sink = make_context_event_sink(
+                root=Path(root),
+                carrier_id=carrier_id,
+                environ=os.environ,
+            )
+            observation = observe_runtime_states(
+                [source],
+                cursor_path=cursor_dir / PRESENTATION_CURSOR_FILE_NAME,
+                sink=context_sink,
+            )
+            try:
+                _validate_presentation_binding(binding)
+                binding_readback = "stable"
+            except ConsumerError:
+                # A current-pointer rollover after observation does not erase
+                # the exact historical controller bytes already admitted.
+                # The stable per-runtime-root scope lets the next run replace
+                # this state without wedging the observer pending outbox.
+                binding_readback = "changed_after_observe"
+            states = read_presentation_state(
+                root=Path(root),
+                activity_id=source.activity_id,
+                audience=source.audience,
+            )
+            pending = read_presentation_outbox(
+                root=Path(root),
+                activity_id=source.activity_id,
+                audience=source.audience,
+            )
+            routine_pending = sum(item.category == "routine" for item in pending)
+            item.update(
+                {
+                    "activity_id": source.activity_id,
+                    "account_slot": binding["account_slot"],
+                    "run_id": binding["run_id"],
+                    "pointer_sha256": binding["pointer_sha256"],
+                    "run_config_sha256": binding["config_sha256"],
+                    "binding_readback": binding_readback,
+                    "observer_status": observation.status,
+                    "transition_count": len(observation.transitions),
+                    "projection_count": len(states),
+                    "pending_delivery_count": len(pending),
+                    "routine_pending_count": routine_pending,
+                    "visible_pending_count": len(pending) - routine_pending,
+                }
+            )
+            if states:
+                input_tip = states[0]["projection"]["input_tip"]
+                item["controller_record_sha256"] = input_tip["source_record_sha256"]
+                item["presentation_event_id"] = input_tip["event_id"]
+            totals["observed"] += 1
+            totals["transitions"] += len(observation.transitions)
+            totals["pending_delivery"] += len(pending)
+        except Exception as exc:
+            item.update(
+                {
+                    "observer_status": "error",
+                    "error_type": _typed_error(exc),
+                }
+            )
+            totals["error"] += 1
+        results.append(item)
+
+    receipt = {
+        "schema_version": PRESENTATION_RECEIPT_SCHEMA_VERSION,
+        "status": "completed_with_errors" if totals["error"] else "completed",
+        "started_at": _utc_text(started),
+        "finished_at": _utc_text(_utc_now()),
+        "runtime_roots": results,
+        "counts": dict(sorted(totals.items())),
+        "visible_emitter": "not_configured",
+        "ui_interception_claimed": False,
+        "authority": False,
+    }
+    _atomic_json(consumer_dir / PRESENTATION_LAST_RECEIPT_FILE_NAME, receipt)
+    return receipt
 
 
 class ConsumerFileLock:
@@ -1493,6 +1785,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     try:
         receipt = run_consumer()
+        presentation_status = "not_run"
+        if receipt.get("status") in {"completed", "completed_with_errors"}:
+            presentation_receipt = run_presentation_step()
+            presentation_status = str(presentation_receipt.get("status") or "failed")
     except Exception as exc:
         receipt = {
             "schema_version": RECEIPT_SCHEMA_VERSION,
@@ -1503,7 +1799,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
         return 2
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
-    return 2 if receipt.get("status") == "failed" else 0
+    return (
+        2
+        if receipt.get("status") == "failed" or presentation_status == "completed_with_errors"
+        else 0
+    )
 
 
 if __name__ == "__main__":

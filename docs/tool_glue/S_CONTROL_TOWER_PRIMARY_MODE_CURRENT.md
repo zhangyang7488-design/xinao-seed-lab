@@ -166,6 +166,19 @@ late fusion 的目标不是裁判哪个 branch 最像 S，也不是压成共识�
 
 S 只保证输入身份、盲法、完整性、输出保存和后续 effect 边界，不预写 Main 的认识结果。
 
+当前仓库 controller 的新一代 packet transport 不再把 `CANDIDATE_XX.txt` 当成 lineage 的全部认识。每个成功 turn 在模型进程退出、下一 turn 尚未开始的边界生成两类 durable evidence：
+
+- `trajectory_index.jsonl` 只保存逐事件 byte offset、length、类型与 line hash；raw `exec_stdout.jsonl` 保留在原 attempt 内，不批量灌入 Main；
+- `artifact_manifest.json` 对 source HEAD 之后的 tracked change、untracked 与有意义 ignored state 建清单，把允许的稳定文件写入 run 内 content-addressed blob store；缓存、凭证/账户表面与 reparse object 只留具名排除，不读取成融合材料。
+
+fusion packet 增加小型 `DEEP_EVIDENCE_XX.json`，把 completed turn、trajectory index、artifact manifest 与同 run 的 `inspect-evidence` 查询入口绑定起来。fresh Main 先面对薄 candidate/index，只有某个分歧、推导、工具结果、撤回或现实产物会改变重综合时才按事件号或 artifact hash 下钻。这个机制只证明 Main **能够**穿透；是否真的形成了 branches 没有的新关系，仍须从 Main 的真实 trajectory 和现实回读判断，不能用 deep-open 次数、EWC 分数或文件数量冒充认识增益。
+
+该变化进入仓库 source 与回归后，也不会热替换已经冻结在现役 run 目录里的 `controller_release.py`。现役 run 继续按其 frozen release 与 temporary cap 合同运行；只有新的 run，或在 completed-turn/恢复边界显式采用并封印当前 release 后，才会消费这条 transport。
+
+同一个新 release 还把 world/root-main 的 Codex 子进程从共享 launcher 的 full-access 入口移到每个 run 冻结的 `Open-Codex-World-Isolated.ps1`。该 launcher 仍保留 A/C 账号载体、clean HOME、network 与完整工具，但 Codex 命令用原生 `workspace-write + approval_policy=never`；唯一 writable root 是当前 lineage clone，不增加 S、canonical workspace、shared launcher/config 或其他 lineage。官方 Codex sandbox 的边界会向其派生的 Git、PowerShell、Python 与测试进程传播，所以“candidate-only”不再只是一句 prompt/effect contract。
+
+若工具事件在这个机械边界上失败，controller 生成 hash-bound `body_incident.json`，只保留 incident id、tool/failure class、event sequence/hash 与受影响 evidence refs，不复制 command/output 正文；该 turn 不增加 `turns_completed`、不得进入 fusion，并把同一 session/lineage 停在 `BODY_INCIDENT`。S 在外层修复并 readback 后，通过既有 wake/recovery 边界恢复原 lineage。普通科学失败、测试失败或模型选择不冒充 body incident。与 deep evidence 一样，这只进入新/安全采用的 frozen release；现役 controller 不热换。
+
 ### 8. Close, continue, or expand
 
 branch terminal、一次 fusion、漂亮报告或局部 null 都不自动关闭父对象；同样，父对象开放也不授权 S 无限扩张。当前合同决定本 episode 是 one-shot、固定代数、terminal-driven refill、持续研究还是到点停止。Pause/Stop 立即压过任何续跑规则。

@@ -6,12 +6,12 @@
     "release": "2026-08-13",
     "python_distribution": "cpython-3.13.14-official"
   },
-  "content_id": "882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823",
+  "content_id": "d11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e",
   "files": [
     {
       "relative_path": "app/scripts/context_rollout_consumer.py",
-      "size": 62777,
-      "sha256": "fd352a4f3f47c040f11ea2ceedd63fb41a0c80ef37123424da33aa8e42dc8764"
+      "size": 75594,
+      "sha256": "eb2b20721cd94c6a6ea3a6d0380e644f2fd1987d98358bd7e19b74d85b60b1d7"
     },
     {
       "relative_path": "app/services/__init__.py",
@@ -30,8 +30,28 @@
     },
     {
       "relative_path": "app/services/agent_runtime/context_runtime_completion.py",
-      "size": 161260,
-      "sha256": "1d61bb13e345172650d50636d87915e8dd956c1257089075a6c59ea27f045b2f"
+      "size": 170960,
+      "sha256": "101eb0518a1a110974151567f9ab7028a259f0f5af50aad82483893c9d20c562"
+    },
+    {
+      "relative_path": "app/services/agent_runtime/presentation_delivery.py",
+      "size": 41990,
+      "sha256": "c95b5b875e81f2ca0554955250681a8ce633d0b4bb145cef403b281f5032cbbe"
+    },
+    {
+      "relative_path": "app/services/agent_runtime/presentation_lock.py",
+      "size": 1887,
+      "sha256": "be30125ee2a2bd5fce47b201995dc4b694ecd26b33aef1385b4342d0a36afa25"
+    },
+    {
+      "relative_path": "app/services/agent_runtime/presentation_observer.py",
+      "size": 43161,
+      "sha256": "0256edf663e051fc90c8acbebc80c8db34a2dfabad3d570a973784d3c820d0ef"
+    },
+    {
+      "relative_path": "app/services/agent_runtime/presentation_reducer.py",
+      "size": 17007,
+      "sha256": "c30fa2ee6d26d74f738ea0343111daa3c9bff1323691541e6b4c17f2172c4094"
     },
     {
       "relative_path": "python/DLLs/_asyncio.pyd",

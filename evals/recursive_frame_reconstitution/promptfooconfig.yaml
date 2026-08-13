@@ -37,6 +37,7 @@ providers:
           - immediate_self_test
           - permanent_uptake_claim
           - self_inventory_precedes_xinao
+          - cognition_history
           - next_action_summary
           - reason
         properties:
@@ -53,6 +54,26 @@ providers:
           immediate_self_test: { type: boolean, const: false }
           permanent_uptake_claim: { type: boolean, const: false }
           self_inventory_precedes_xinao: { type: boolean, const: false }
+          cognition_history:
+            type: object
+            additionalProperties: false
+            required:
+              - applicable
+              - temporal_sequence_role
+              - artifact_corpus_complete
+              - newest_text_auto_wins
+              - earlier_reasons_preserved
+              - missing_dialogue_is_gap
+              - current_understanding_reconstructed
+            properties:
+              applicable: { type: boolean }
+              temporal_sequence_role:
+                enum: [evolution_pointer, document_priority, not_applicable]
+              artifact_corpus_complete: { type: boolean }
+              newest_text_auto_wins: { type: boolean }
+              earlier_reasons_preserved: { type: boolean }
+              missing_dialogue_is_gap: { type: boolean }
+              current_understanding_reconstructed: { type: boolean }
           next_action_summary: { type: string, minLength: 1 }
           reason: { type: string, minLength: 1 }
 

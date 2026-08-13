@@ -18,6 +18,10 @@ services/__init__.py text eol=lf
 services/agent_runtime/__init__.py text eol=lf
 services/agent_runtime/context_fabric.py text eol=lf
 services/agent_runtime/context_runtime_completion.py text eol=lf
+services/agent_runtime/presentation_reducer.py text eol=lf
+services/agent_runtime/presentation_observer.py text eol=lf
+services/agent_runtime/presentation_delivery.py text eol=lf
+services/agent_runtime/presentation_lock.py text eol=lf
 
 # The projected Codex skill is byte-compared with its live LF consumer.
 infra/pi_upstream_dual_entry/v1/codex-skills/steward-pis-evolution/** text eol=lf

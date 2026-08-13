@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 import services.agent_runtime.codex_situation_hook as hook_module
-from services.agent_runtime.codex_situation_hook import L0_CONTEXT, handle_hook_event
+from services.agent_runtime.codex_situation_hook import (
+    ACTION_BINDING_CONTEXT,
+    DIACHRONIC_COGNITION_CONTEXT,
+    L0_CONTEXT,
+    handle_hook_event,
+)
 from services.agent_runtime.context_fabric import (
     append_projection,
     append_relation,
@@ -372,7 +377,10 @@ def test_hook_integration_is_bounded_fail_open_and_does_not_echo_current_prompt(
         context_fabric_environ=environ,
         context_fabric_allowed_homes=allowed,
     )
-    assert first["hookSpecificOutput"]["additionalContext"] == L0_CONTEXT + "\nRUNTIME"
+    expected_hot = "\n".join(
+        (L0_CONTEXT, DIACHRONIC_COGNITION_CONTEXT, ACTION_BINDING_CONTEXT)
+    )
+    assert first["hookSpecificOutput"]["additionalContext"] == expected_hot + "\nRUNTIME"
 
     stopped = handle_hook_event(
         _hook(name="Stop", assistant="第一条回答"),

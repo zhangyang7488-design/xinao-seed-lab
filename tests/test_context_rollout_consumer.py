@@ -13,6 +13,10 @@ from pathlib import Path
 import pytest
 from scripts import context_rollout_consumer as consumer
 from services.agent_runtime import context_fabric
+from services.agent_runtime.presentation_delivery import (
+    append_status_query,
+    consume_presentation_outbox,
+)
 
 SESSION_A = "019ff84f-eb50-79e2-b2f8-9f808700ba56"
 SESSION_B = "019ff848-3a2e-7493-baf1-c778de8399e1"
@@ -112,6 +116,69 @@ def _runtime(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
     return root, home, {str(home): "s-primary"}
 
 
+def _presentation_runtime(
+    tmp_path: Path,
+    *,
+    status: str,
+    updated_at: str,
+    thread_errors: dict[str, str] | None = None,
+    runtime_root: Path | None = None,
+    run_id: str = "world-compute-presentation-test",
+) -> Path:
+    runtime_root = runtime_root or (tmp_path / "world-runtime")
+    run_dir = runtime_root / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    (runtime_root / "current.json").write_text(
+        json.dumps(
+            {
+                "schema": "xinao.cleanroom.perpetual-world-compute-run.v2",
+                "run_id": run_id,
+                "run_dir": str(run_dir),
+                "account_slot": "C",
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "run_config.json").write_text(
+        json.dumps(
+            {
+                "schema": "xinao.cleanroom.perpetual-world-compute-run.v2",
+                "run_id": run_id,
+                "run_dir": str(run_dir),
+                "account_slot": "C",
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "controller_state.json").write_text(
+        json.dumps(
+            {
+                "schema": "xinao.cleanroom.perpetual-world-compute-controller-state.v2",
+                "run_id": run_id,
+                "status": status,
+                "updated_at": updated_at,
+                "stop_requested": False,
+                "thread_errors": thread_errors or {},
+                "lineages": {},
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return runtime_root
+
+
 def _append_user_record(
     path: Path,
     *,
@@ -160,8 +227,12 @@ def _mock_installer_audit(
     trusted_acl: bool = True,
     task_has_run: bool = True,
     receipt_status: str = "completed",
+    presentation_receipt_status: str = "completed",
+    presentation_receipt_age_minutes: int = 0,
+    extra_presentation_receipt_field: str = "",
     tamper_bundle: bool = False,
     action_drift: bool = False,
+    action_console_python: bool = False,
     extra_bundle_file: bool = False,
 ) -> tuple[int, dict[str, object], str]:
     powershell = shutil.which("pwsh") or shutil.which("powershell")
@@ -171,7 +242,13 @@ def _mock_installer_audit(
     extra_json = f',"{extra_receipt_field}":"TOP-SECRET-RAW-BODY"' if extra_receipt_field else ""
     extra_file_json = f',"{extra_file_field}":"TOP-SECRET-NESTED-BODY"' if extra_file_field else ""
     extra_count_json = f',"{extra_count_field}":1' if extra_count_field else ""
+    extra_presentation_json = (
+        f',"{extra_presentation_receipt_field}":"TOP-SECRET-PRESENTATION-BODY"'
+        if extra_presentation_receipt_field
+        else ""
+    )
     official_python_hash = "ef8f51028ac5329641985112f8efb1c2d4c47c86b8011ddf7e6fae21e2b4e5a1"
+    official_pythonw_hash = "95225ed035643523e8c586c11981e276541dce4949eb35cf8cf5741c824249d4"
     import tempfile
 
     temporary_root = Path(tempfile.mkdtemp(prefix="xinao-installer-audit-")).resolve()
@@ -180,19 +257,23 @@ def _mock_installer_audit(
         bundle_base = local_app_data / "XINAO" / "SContextRolloutConsumer"
         payloads: dict[str, bytes] = {
             "python/python.exe": b"mock-official-python-distribution",
+            "python/pythonw.exe": b"mock-official-windowless-python-distribution",
             "app/scripts/context_rollout_consumer.py": b"# mock consumer\n",
             "app/services/__init__.py": b"# mock package\n",
             "app/services/agent_runtime/__init__.py": b"# mock package\n",
             "app/services/agent_runtime/context_fabric.py": b"# mock fabric\n",
             "app/services/agent_runtime/context_runtime_completion.py": b"# mock completion\n",
+            "app/services/agent_runtime/presentation_reducer.py": b"# mock reducer\n",
+            "app/services/agent_runtime/presentation_observer.py": b"# mock observer\n",
+            "app/services/agent_runtime/presentation_delivery.py": b"# mock delivery\n",
+            "app/services/agent_runtime/presentation_lock.py": b"# mock lock\n",
         }
         records: list[dict[str, object]] = []
         for relative_path, body in payloads.items():
-            sha256 = (
-                official_python_hash
-                if relative_path == "python/python.exe"
-                else hashlib.sha256(body).hexdigest()
-            )
+            sha256 = {
+                "python/python.exe": official_python_hash,
+                "python/pythonw.exe": official_pythonw_hash,
+            }.get(relative_path, hashlib.sha256(body).hexdigest())
             records.append(
                 {
                     "relative_path": relative_path,
@@ -230,9 +311,14 @@ def _mock_installer_audit(
                 "TOP-SECRET-BUNDLE-BODY", encoding="utf-8"
             )
         bundle_python = bundle_root / "python" / "python.exe"
+        bundle_action_python = bundle_root / "python" / "pythonw.exe"
         bundle_consumer = bundle_root / "app" / "scripts" / "context_rollout_consumer.py"
         bundle_working = bundle_root / "app"
-        action_execute = Path(r"C:\drift\python.exe") if action_drift else bundle_python
+        action_execute = (
+            Path(r"C:\drift\pythonw.exe")
+            if action_drift
+            else (bundle_python if action_console_python else bundle_action_python)
+        )
         rule_sid = "$mockSid" if trusted_acl else "'S-1-5-11'"
         command = rf"""
 $ErrorActionPreference = 'Stop'
@@ -246,6 +332,9 @@ $mockTaskHasRun = ${str(task_has_run).lower()}
 $mockDescription = 'XINAO S context rollout consumer v1; registration=' + $mockToken + ';content_id={content_id};manifest_sha256={manifest_hash}'
 $mockReceipt = @'
 {{"schema_version":"s.context_rollout_consumer.receipt.v1","status":"{receipt_status}","started_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).ToString('o'))","bootstrap":false,"state_recovered":false,"scan_start":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","scan_end":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-1).ToString('o'))","counts":{{"appended":1,"inventoried":1{extra_count_json}}},"files":[{{"carrier_id":"s-primary","locator_sha256":"$($mockLocatorHash)","status":"imported","appended":1,"duplicate":0,"ignored":0,"incomplete_tail":false{extra_file_json}}}],"file_receipts_total":1,"file_receipts_omitted":0,"authority":false{extra_json}}}
+'@
+$mockPresentationReceipt = @'
+{{"schema_version":"s.context_rollout_presentation.receipt.v1","status":"{presentation_receipt_status}","started_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).AddSeconds(-10).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).ToString('o'))","runtime_roots":[{{"runtime_root_sha256":"adb880fbd3d9c491c6ce49d56397e1e25242348b43d5611ac2c49d326622f855","observer_status":"absent","transition_count":0,"pending_delivery_count":0,"routine_pending_count":0,"visible_pending_count":0,"authority":false}},{{"runtime_root_sha256":"49f6dd97d62d05a2bb2c80025b0bb9ce9e27800d0ccff5ebcc2e71f7023fe680","observer_status":"absent","transition_count":0,"pending_delivery_count":0,"routine_pending_count":0,"visible_pending_count":0,"authority":false}},{{"runtime_root_sha256":"9a2efb050d003f98c1d34def251707680406dbe33df3423273d9c6b6fcea1e0c","observer_status":"absent","transition_count":0,"pending_delivery_count":0,"routine_pending_count":0,"visible_pending_count":0,"authority":false}}],"counts":{{"absent":3}},"visible_emitter":"not_configured","ui_interception_claimed":false,"authority":false{extra_presentation_json}}}
 '@
 function Get-ScheduledTask {{
     [CmdletBinding()] param([string]$TaskName, [string]$TaskPath)
@@ -287,6 +376,7 @@ function Get-ScheduledTaskInfo {{
 function Test-Path {{
     [CmdletBinding()] param([string]$LiteralPath, [string]$PathType)
     if ($LiteralPath -eq 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\last_receipt.json') {{ return $true }}
+    if ($LiteralPath -eq 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\presentation_last_receipt.json') {{ return $true }}
     if ([string]::Equals($PathType, 'Leaf', [System.StringComparison]::OrdinalIgnoreCase)) {{ return [System.IO.File]::Exists($LiteralPath) }}
     if ([string]::Equals($PathType, 'Container', [System.StringComparison]::OrdinalIgnoreCase)) {{ return [System.IO.Directory]::Exists($LiteralPath) }}
     return [System.IO.File]::Exists($LiteralPath) -or [System.IO.Directory]::Exists($LiteralPath)
@@ -295,6 +385,9 @@ function Get-Item {{
     [CmdletBinding()] param([string]$LiteralPath, [switch]$Force)
     if ($LiteralPath -eq 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\last_receipt.json') {{
         return [pscustomobject]@{{ FullName = $LiteralPath; PSIsContainer = $false; Length = 1024; Attributes = [System.IO.FileAttributes]::Normal }}
+    }}
+    if ($LiteralPath -eq 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\presentation_last_receipt.json') {{
+        return [pscustomobject]@{{ FullName = $LiteralPath; PSIsContainer = $false; Length = 2048; Attributes = [System.IO.FileAttributes]::Normal }}
     }}
     return Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath -Force
 }}
@@ -327,12 +420,19 @@ function Get-FileHash {{
         $LiteralPath.Contains('\SContextRolloutConsumer\')) {{
         return [pscustomobject]@{{ Hash = '{official_python_hash}' }}
     }}
+    if ($LiteralPath.EndsWith('\python\pythonw.exe', [System.StringComparison]::OrdinalIgnoreCase) -and
+        $LiteralPath.Contains('\SContextRolloutConsumer\')) {{
+        return [pscustomobject]@{{ Hash = '{official_pythonw_hash}' }}
+    }}
     return Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256
 }}
 function Get-Content {{
     [CmdletBinding()] param([string]$LiteralPath, [switch]$Raw, [string]$Encoding)
     if ($LiteralPath -eq 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\last_receipt.json') {{
         return $ExecutionContext.InvokeCommand.ExpandString($mockReceipt)
+    }}
+    if ($LiteralPath -eq 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\presentation_last_receipt.json') {{
+        return $ExecutionContext.InvokeCommand.ExpandString($mockPresentationReceipt)
     }}
     return Microsoft.PowerShell.Management\Get-Content -LiteralPath $LiteralPath -Raw -Encoding UTF8
 }}
@@ -381,14 +481,15 @@ def _copy_adopted_bundle_sources(tmp_path: Path) -> tuple[Path, Path, Path]:
         Path("services/agent_runtime/__init__.py"),
         Path("services/agent_runtime/context_fabric.py"),
         Path("services/agent_runtime/context_runtime_completion.py"),
+        Path("services/agent_runtime/presentation_reducer.py"),
+        Path("services/agent_runtime/presentation_observer.py"),
+        Path("services/agent_runtime/presentation_delivery.py"),
+        Path("services/agent_runtime/presentation_lock.py"),
     )
     for relative_path in app_paths:
         destination = app_root / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
-        canonical_bytes = subprocess.check_output(
-            ["git", "cat-file", "blob", f"HEAD:{relative_path.as_posix()}"],
-            cwd=consumer.REPO_ROOT,
-        )
+        canonical_bytes = (consumer.REPO_ROOT / relative_path).read_bytes()
         destination.write_bytes(canonical_bytes)
     lock_path = app_root / "scripts" / "context_rollout_consumer.bundle.lock.json"
     shutil.copy2(
@@ -1822,6 +1923,9 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
     assert "-AllowStartIfOnBatteries" in script
     assert "-DontStopIfGoingOnBatteries" in script
     assert "-I -B" in script
+    assert "python/pythonw.exe" in script
+    assert "-Execute $bundle.validation.action_python_path" in script
+    assert "-Execute $bundle.validation.python_path" not in script
     assert "-RunLevel Limited" in script
     assert "WindowsIdentity]::GetCurrent().Name" in script
     assert "WindowsIdentity]::GetCurrent().User.Value" in script
@@ -1887,24 +1991,24 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
         "python_distribution": "cpython-3.13.14-official",
     }
     assert release_lock["content_id"] == (
-        "882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823"
+        "d11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e"
     )
-    assert len(release_lock["files"]) == 1332
+    assert len(release_lock["files"]) == 1336
     locked_paths = [item["relative_path"] for item in release_lock["files"]]
     assert locked_paths == sorted(locked_paths)
     assert len({path.casefold() for path in locked_paths}) == len(locked_paths)
     locked_by_path = {item["relative_path"]: item for item in release_lock["files"]}
     assert locked_by_path["app/scripts/context_rollout_consumer.py"] == {
         "relative_path": "app/scripts/context_rollout_consumer.py",
-        "size": 62777,
-        "sha256": "fd352a4f3f47c040f11ea2ceedd63fb41a0c80ef37123424da33aa8e42dc8764",
+        "size": 75594,
+        "sha256": "eb2b20721cd94c6a6ea3a6d0380e644f2fd1987d98358bd7e19b74d85b60b1d7",
     }
     assert locked_by_path["app/services/agent_runtime/context_fabric.py"]["sha256"] == (
         "5d6b8cd173d85ad866d3593a68072e308faa9d636121f3d25e2a346f80a622fd"
     )
     assert (
         locked_by_path["app/services/agent_runtime/context_runtime_completion.py"]["sha256"]
-        == "1d61bb13e345172650d50636d87915e8dd956c1257089075a6c59ea27f045b2f"
+        == "101eb0518a1a110974151567f9ab7028a259f0f5af50aad82483893c9d20c562"
     )
     apply_source_plan_index = script.index("$sourcePlan = @(Get-SourceBundlePlan)")
     assert apply_source_plan_index < script.index(
@@ -1947,14 +2051,14 @@ def test_installer_source_release_lock_accepts_only_the_adopted_source_plan(
     assert exit_code == 0, raw_output
     assert result == {
         "status": "valid",
-        "file_count": 1332,
-        "total_bytes": 40_796_469,
-        "content_id": "882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823",
+        "file_count": 1336,
+        "total_bytes": 40_923_031,
+        "content_id": "d11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e",
     }
     assert not (tmp_path / "LocalAppData" / "XINAO").exists()
 
 
-def test_bundle_release_lock_matches_fresh_head_lf_application_bytes() -> None:
+def test_bundle_release_lock_matches_adopted_lf_application_bytes() -> None:
     lock = json.loads(
         (consumer.REPO_ROOT / "scripts/context_rollout_consumer.bundle.lock.json").read_bytes()
     )
@@ -1965,13 +2069,14 @@ def test_bundle_release_lock_matches_fresh_head_lf_application_bytes() -> None:
         Path("services/agent_runtime/__init__.py"),
         Path("services/agent_runtime/context_fabric.py"),
         Path("services/agent_runtime/context_runtime_completion.py"),
+        Path("services/agent_runtime/presentation_reducer.py"),
+        Path("services/agent_runtime/presentation_observer.py"),
+        Path("services/agent_runtime/presentation_delivery.py"),
+        Path("services/agent_runtime/presentation_lock.py"),
     )
 
     for source_path in source_paths:
-        canonical_bytes = subprocess.check_output(
-            ["git", "cat-file", "blob", f"HEAD:{source_path.as_posix()}"],
-            cwd=consumer.REPO_ROOT,
-        )
+        canonical_bytes = (consumer.REPO_ROOT / source_path).read_bytes()
         assert b"\r\n" not in canonical_bytes
         locked_path = (
             f"app/{source_path.as_posix()}"
@@ -1995,6 +2100,43 @@ def test_bundle_release_lock_matches_fresh_head_lf_application_bytes() -> None:
         f"{item['relative_path']}\0{item['size']}\0{item['sha256']}\n" for item in lock["files"]
     ).encode()
     assert hashlib.sha256(canonical_manifest).hexdigest() == lock["content_id"]
+
+
+def test_official_windowless_python_acquires_stdlib_presentation_lock(tmp_path: Path) -> None:
+    python_path = Path(
+        r"D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official\pythonw.exe"
+    )
+    assert python_path.is_file()
+    marker_path = tmp_path / "presentation-lock.marker"
+    probe = (
+        "import pathlib,sys;"
+        "sys.path.insert(0,sys.argv[1]);"
+        "from services.agent_runtime.presentation_lock import exclusive_presentation_lock;"
+        "p=pathlib.Path(sys.argv[2]);"
+        "ctx=exclusive_presentation_lock(p,timeout_seconds=0.2);"
+        "ctx.__enter__();ctx.__exit__(None,None,None);"
+        "pathlib.Path(sys.argv[3]).write_text('LOCK_OK',encoding='utf-8')"
+    )
+    completed = subprocess.run(
+        [
+            str(python_path),
+            "-I",
+            "-B",
+            "-c",
+            probe,
+            str(consumer.REPO_ROOT),
+            str(tmp_path / "presentation.lock"),
+            str(marker_path),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert marker_path.read_text(encoding="utf-8") == "LOCK_OK"
 
 
 def test_installer_apply_preflight_rejects_source_and_lock_tamper_without_residue(
@@ -2186,17 +2328,25 @@ def test_installer_audit_accepts_only_fresh_completed_receipt_and_zero_task_resu
 
 
 @pytest.mark.parametrize(
-    ("tamper_bundle", "extra_bundle_file", "action_drift", "expected_field"),
+    (
+        "tamper_bundle",
+        "extra_bundle_file",
+        "action_drift",
+        "action_console_python",
+        "expected_field",
+    ),
     [
-        (True, False, False, "payload_hash_valid"),
-        (False, True, False, "payload_hash_valid"),
-        (False, False, True, "action_valid"),
+        (True, False, False, False, "payload_hash_valid"),
+        (False, True, False, False, "payload_hash_valid"),
+        (False, False, True, False, "action_valid"),
+        (False, False, False, True, "action_valid"),
     ],
 )
 def test_installer_audit_rejects_bundle_tamper_extra_files_and_action_drift(
     tamper_bundle: bool,
     extra_bundle_file: bool,
     action_drift: bool,
+    action_console_python: bool,
     expected_field: str,
 ) -> None:
     exit_code, audit, raw_output = _mock_installer_audit(
@@ -2205,6 +2355,7 @@ def test_installer_audit_rejects_bundle_tamper_extra_files_and_action_drift(
         tamper_bundle=tamper_bundle,
         extra_bundle_file=extra_bundle_file,
         action_drift=action_drift,
+        action_console_python=action_console_python,
     )
 
     assert exit_code != 0
@@ -2270,3 +2421,215 @@ def test_installer_completed_with_errors_is_degraded_not_valid() -> None:
     assert audit["installation_valid"] is True
     assert audit["valid"] is False
     assert audit["consumer_health"] == "degraded"
+
+
+@pytest.mark.parametrize(
+    ("presentation_status", "age_minutes", "extra_field", "health"),
+    [
+        ("completed_with_errors", 0, "", "presentation_degraded"),
+        ("completed", 30, "", "presentation_receipt_stale"),
+        ("completed", 0, "raw_locator", "presentation_receipt_invalid"),
+    ],
+)
+def test_installer_audit_fails_closed_for_presentation_receipt_health(
+    presentation_status: str,
+    age_minutes: int,
+    extra_field: str,
+    health: str,
+) -> None:
+    exit_code, audit, raw_output = _mock_installer_audit(
+        last_task_result=0,
+        presentation_receipt_status=presentation_status,
+        presentation_receipt_age_minutes=age_minutes,
+        extra_presentation_receipt_field=extra_field,
+        trusted_acl=True,
+    )
+
+    assert exit_code != 0
+    assert audit["installation_valid"] is True
+    assert audit["valid"] is False
+    assert audit["consumer_health"] == health
+    assert "TOP-SECRET-PRESENTATION-BODY" not in raw_output
+    assert "raw_locator" not in raw_output
+
+
+def test_presentation_step_controller_only_routine_is_zero_and_replay_is_zero(
+    tmp_path: Path,
+) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    runtime_root = _presentation_runtime(
+        tmp_path,
+        status="RUNNING",
+        updated_at="2026-08-13T10:00:00Z",
+    )
+
+    first = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+    replay = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+
+    assert first["status"] == "completed"
+    assert first["runtime_roots"][0]["observer_status"] == "observed"
+    assert first["runtime_roots"][0]["transition_count"] == 1
+    assert first["runtime_roots"][0]["pending_delivery_count"] == 0
+    assert first["runtime_roots"][0]["routine_pending_count"] == 0
+    assert replay["runtime_roots"][0]["observer_status"] == "unchanged"
+    assert replay["runtime_roots"][0]["transition_count"] == 0
+    assert replay["runtime_roots"][0]["pending_delivery_count"] == 0
+    assert replay["visible_emitter"] == "not_configured"
+    assert replay["ui_interception_claimed"] is False
+
+
+def test_presentation_step_controller_only_incident_is_one_and_replay_stays_one(
+    tmp_path: Path,
+) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    runtime_root = _presentation_runtime(
+        tmp_path,
+        status="FAILED",
+        updated_at="2026-08-13T10:01:00Z",
+        thread_errors={"controller": "typed incident presence"},
+    )
+
+    first = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+    replay = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+
+    assert first["runtime_roots"][0]["transition_count"] == 1
+    assert first["runtime_roots"][0]["pending_delivery_count"] == 1
+    assert first["runtime_roots"][0]["visible_pending_count"] == 1
+    assert replay["runtime_roots"][0]["transition_count"] == 0
+    assert replay["runtime_roots"][0]["pending_delivery_count"] == 1
+    with sqlite3.connect(root / "context_fabric.sqlite3") as connection:
+        rows = connection.execute(
+            "SELECT event_kind,COUNT(*) FROM events GROUP BY event_kind"
+        ).fetchall()
+    assert rows == [("presentation_runtime_transition", 1)]
+
+
+def test_presentation_step_same_root_run_rollover_routine_supersedes_incident(
+    tmp_path: Path,
+) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    runtime_root = _presentation_runtime(
+        tmp_path,
+        status="FAILED",
+        updated_at="2026-08-13T10:01:00Z",
+        thread_errors={"controller": "typed incident presence"},
+    )
+    incident = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+    activity_id = incident["runtime_roots"][0]["activity_id"]
+    assert incident["runtime_roots"][0]["visible_pending_count"] == 1
+
+    _presentation_runtime(
+        tmp_path,
+        runtime_root=runtime_root,
+        run_id="world-compute-presentation-rollover",
+        status="RUNNING",
+        updated_at="2026-08-13T10:02:00Z",
+    )
+    recovered = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+
+    assert recovered["runtime_roots"][0]["activity_id"] == activity_id
+    assert recovered["runtime_roots"][0]["run_id"] == "world-compute-presentation-rollover"
+    assert recovered["runtime_roots"][0]["transition_count"] == 1
+    assert recovered["runtime_roots"][0]["pending_delivery_count"] == 0
+    assert recovered["runtime_roots"][0]["visible_pending_count"] == 0
+
+
+def test_presentation_step_post_observe_pointer_change_does_not_wedge_cursor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    runtime_root = _presentation_runtime(
+        tmp_path,
+        status="FAILED",
+        updated_at="2026-08-13T10:03:00Z",
+        thread_errors={"controller": "typed incident presence"},
+    )
+    real_validate = consumer._validate_presentation_binding
+    calls = 0
+
+    def pointer_changes_after_observe(binding: dict[str, str]) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise consumer.ConsumerError("simulated current pointer rollover")
+        real_validate(binding)
+
+    monkeypatch.setattr(
+        consumer,
+        "_validate_presentation_binding",
+        pointer_changes_after_observe,
+    )
+    changed = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+    replay = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+
+    assert changed["runtime_roots"][0]["binding_readback"] == "changed_after_observe"
+    assert changed["runtime_roots"][0]["transition_count"] == 1
+    assert replay["runtime_roots"][0]["observer_status"] == "unchanged"
+    assert replay["runtime_roots"][0]["transition_count"] == 0
+
+
+def test_presentation_step_isolates_absent_and_bad_pointer_roots(tmp_path: Path) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    absent = tmp_path / "absent-runtime"
+    bad = tmp_path / "bad-runtime"
+    bad.mkdir()
+    (bad / "current.json").write_text("{}\n", encoding="utf-8")
+
+    receipt = consumer.run_presentation_step(root=root, runtime_roots=[absent, bad])
+
+    assert receipt["status"] == "completed_with_errors"
+    assert receipt["runtime_roots"][0]["observer_status"] == "absent"
+    assert receipt["runtime_roots"][1]["observer_status"] == "error"
+    assert receipt["runtime_roots"][1]["error_type"] == "consumer_contract_error"
+
+
+def test_presentation_step_fresh_status_query_delivers_once_and_replay_is_zero(
+    tmp_path: Path,
+) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    runtime_root = _presentation_runtime(
+        tmp_path,
+        status="RUNNING",
+        updated_at="2026-08-13T10:02:00Z",
+    )
+    observed = consumer.run_presentation_step(root=root, runtime_roots=[runtime_root])
+    activity_id = observed["runtime_roots"][0]["activity_id"]
+    append_status_query(
+        query_id="fresh-production-status-query",
+        activity_id=activity_id,
+        audience="user",
+        carrier_id="s-primary",
+        root=root,
+        environ={},
+    )
+    delivered = []
+
+    def visible_probe(item):
+        delivered.append(item)
+        return f"fresh-receipt-{len(delivered)}"
+
+    first = consume_presentation_outbox(
+        visible_probe,
+        consumer_id="fresh-visible-probe",
+        carrier_id="s-primary",
+        root=root,
+        activity_id=activity_id,
+        audience="user",
+        environ={},
+    )
+    replay = consume_presentation_outbox(
+        visible_probe,
+        consumer_id="fresh-visible-probe",
+        carrier_id="s-primary",
+        root=root,
+        activity_id=activity_id,
+        audience="user",
+        environ={},
+    )
+
+    assert first["delivered_count"] == 1
+    assert delivered[0].delivery_kind == "status"
+    assert replay["delivered_count"] == 0
+    assert len(delivered) == 1
+    assert first["ui_interception_claimed"] is False
