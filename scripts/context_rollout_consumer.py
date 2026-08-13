@@ -1,16 +1,19 @@
 """Shallow, single-writer consumer for S/B Codex root CLI rollouts.
 
 The one-shot consumer is intended to be invoked by a current-user Scheduled
-Task.  It discovers only date-bounded rollout files, classifies their first
-``session_meta`` record, and delegates all canonical admission and cursor
-validation to the public context-fabric importer.
+Task. It keeps a stat-only inventory of the sessions tree, opens only newly
+admitted or changed candidates for first-record classification, and delegates
+all canonical admission and cursor validation to the public context-fabric
+importer.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import threading
@@ -35,16 +38,32 @@ CONSUMER_SCHEMA_VERSION = "s.context_rollout_consumer.v1"
 RECEIPT_SCHEMA_VERSION = "s.context_rollout_consumer.receipt.v1"
 CONSUMER_DIR_NAME = "_consumer"
 STATE_FILE_NAME = "state.json"
+STATE_QUARANTINE_FILE_NAME = "state_quarantine.json"
 LOCK_FILE_NAME = "consumer.lock"
 LAST_RECEIPT_FILE_NAME = "last_receipt.json"
+STATE_QUARANTINE_SCHEMA_VERSION = "s.context_rollout_consumer.state_quarantine.v1"
 MAX_SESSION_META_BYTES = 8 * 1024 * 1024
+MAX_STATE_BYTES = 16 * 1024 * 1024
 MAX_RECEIPT_FILES = 64
-MAX_ERROR_CHARS = 512
 MAX_IMPORTS_PER_RUN = 64
+MAX_INTEGRITY_RECHECKS_PER_RUN = 1
 BOOTSTRAP_LOOKBACK_DAYS = 2
 DISCOVERY_OVERLAP = timedelta(minutes=5)
-TRACKED_RETENTION = timedelta(days=2)
+INTEGRITY_RECHECK_INTERVAL = timedelta(hours=6)
+TRACKED_STABLE_PRUNE_AFTER = timedelta(days=2)
+IMPORT_RETRY_BASE = timedelta(minutes=5)
+IMPORT_RETRY_MAX = timedelta(hours=6)
+ROLLOUT_LOCAL_TIMEZONE = timezone(timedelta(hours=8))
+LOCATOR_PAYLOAD_TOLERANCE = timedelta(seconds=5)
+FUTURE_CLOCK_TOLERANCE = timedelta(seconds=5)
 PRODUCTION_CONTEXT_FABRIC_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric")
+
+_ROLLOUT_NAME_RE = re.compile(
+    r"^rollout-(?P<stamp>\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-"
+    r"(?P<session>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$"
+)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_ALLOWED_CARRIERS = frozenset({"s-primary", "s-account-b"})
 
 _SUBAGENT_ONLY_KEYS = (
     "parent_thread_id",
@@ -69,6 +88,7 @@ class RolloutClassification:
     timestamp: str = ""
     session_id: str = ""
     reason: str = ""
+    locator_timestamp: str = ""
 
 
 def _utc_now() -> datetime:
@@ -90,6 +110,45 @@ def _parse_utc(value: object, *, field: str) -> datetime:
     if parsed.tzinfo is None:
         raise ConsumerError(f"{field} must include a timezone")
     return parsed.astimezone(timezone.utc)
+
+
+def _locator_sha256(locator: str) -> str:
+    normalized = locator.replace("\\", "/").casefold()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _locator_timestamp(path_or_locator: Path | str) -> datetime | None:
+    parts = Path(path_or_locator).parts
+    if len(parts) < 4:
+        return None
+    year_text, month_text, day_text, filename = parts[-4:]
+    match = _ROLLOUT_NAME_RE.fullmatch(filename)
+    if match is None:
+        return None
+    try:
+        directory_day = date(int(year_text), int(month_text), int(day_text))
+        local_naive = datetime.strptime(match.group("stamp"), "%Y-%m-%dT%H-%M-%S")
+    except ValueError:
+        return None
+    if local_naive.date() != directory_day:
+        return None
+    return local_naive.replace(tzinfo=ROLLOUT_LOCAL_TIMEZONE).astimezone(timezone.utc)
+
+
+def _typed_error(exc: BaseException) -> str:
+    if isinstance(exc, fabric.ContextFabricUnavailable):
+        return "context_fabric_unavailable"
+    if isinstance(exc, fabric.ContextFabricError):
+        return "context_fabric_rejected"
+    if isinstance(exc, sqlite3.Error):
+        return "sqlite_error"
+    if isinstance(exc, OSError):
+        return "filesystem_error"
+    if isinstance(exc, ConsumerError):
+        return "consumer_contract_error"
+    if isinstance(exc, (TypeError, ValueError)):
+        return "invalid_value"
+    return "unexpected_error"
 
 
 def _is_reparse_point(path: Path) -> bool:
@@ -121,9 +180,10 @@ def _consumer_directory(root: Path) -> Path:
 def _atomic_json(path: Path, value: Mapping[str, object]) -> None:
     if path.exists() and (_is_reparse_point(path) or not path.is_file()):
         raise ConsumerError(f"consumer JSON target is unsafe: {path.name}")
-    encoded = (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
+    serialized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    if fabric._secret_like(serialized, environ=os.environ):
+        raise ConsumerError("consumer JSON contains secret-like material")
+    encoded = (serialized + "\n").encode("utf-8")
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     if temporary.exists():
         raise ConsumerError("consumer atomic JSON temporary path already exists")
@@ -203,14 +263,25 @@ class ConsumerFileLock:
         self.release()
 
 
-def classify_rollout(path: Path) -> RolloutClassification:
+def classify_rollout(path: Path, *, now: datetime | None = None) -> RolloutClassification:
     """Classify a rollout using only its bounded first ``session_meta`` line."""
 
+    observed_at = (now or _utc_now()).astimezone(timezone.utc)
+    locator_timestamp = _locator_timestamp(path)
+    if locator_timestamp is None:
+        return RolloutClassification("quarantined", reason="locator_timestamp_invalid")
+    locator_text = _utc_text(locator_timestamp)
+    if locator_timestamp > observed_at + FUTURE_CLOCK_TOLERANCE:
+        return RolloutClassification(
+            "quarantined",
+            reason="locator_timestamp_future",
+            locator_timestamp=locator_text,
+        )
     try:
         with path.open("rb") as handle:
             line = handle.readline(MAX_SESSION_META_BYTES + 2)
-    except OSError as exc:
-        return RolloutClassification("read_error", reason=type(exc).__name__)
+    except OSError:
+        return RolloutClassification("read_error", reason="filesystem_error")
     if not line.endswith(b"\n"):
         return RolloutClassification("invalid", reason="incomplete_session_meta")
     if len(line) > MAX_SESSION_META_BYTES + 1:
@@ -228,9 +299,23 @@ def classify_rollout(path: Path) -> RolloutClassification:
         return RolloutClassification("invalid", reason="session_meta_payload")
     timestamp = str(payload.get("timestamp") or record.get("timestamp") or "").strip()
     try:
-        _parse_utc(timestamp, field="rollout session timestamp")
+        payload_timestamp = _parse_utc(timestamp, field="rollout session timestamp")
     except ConsumerError:
         return RolloutClassification("invalid", reason="session_meta_timestamp")
+    if payload_timestamp > observed_at + FUTURE_CLOCK_TOLERANCE:
+        return RolloutClassification(
+            "quarantined",
+            timestamp=timestamp,
+            reason="session_meta_timestamp_future",
+            locator_timestamp=locator_text,
+        )
+    if abs(payload_timestamp - locator_timestamp) > LOCATOR_PAYLOAD_TOLERANCE:
+        return RolloutClassification(
+            "quarantined",
+            timestamp=timestamp,
+            reason="session_meta_locator_timestamp_mismatch",
+            locator_timestamp=locator_text,
+        )
     session_id = str(payload.get("id") or "").strip()
     root_session_id = str(payload.get("session_id") or "").strip()
     if (
@@ -238,25 +323,53 @@ def classify_rollout(path: Path) -> RolloutClassification:
         or payload.get("thread_source") == "subagent"
     ):
         return RolloutClassification(
-            "excluded_subagent", timestamp=timestamp, session_id=session_id
+            "excluded_subagent",
+            timestamp=timestamp,
+            session_id=session_id,
+            locator_timestamp=locator_text,
         )
     if payload.get("source") != "cli" or payload.get("thread_source") != "user":
-        return RolloutClassification("excluded_non_cli", timestamp=timestamp, session_id=session_id)
+        return RolloutClassification(
+            "excluded_non_cli",
+            timestamp=timestamp,
+            session_id=session_id,
+            locator_timestamp=locator_text,
+        )
     if not session_id or session_id != root_session_id:
         return RolloutClassification(
-            "excluded_non_root", timestamp=timestamp, session_id=session_id
+            "excluded_non_root",
+            timestamp=timestamp,
+            session_id=session_id,
+            locator_timestamp=locator_text,
         )
-    return RolloutClassification("root_cli", timestamp=timestamp, session_id=session_id)
+    filename_match = _ROLLOUT_NAME_RE.fullmatch(path.name)
+    if filename_match is None or filename_match.group("session") != session_id:
+        return RolloutClassification(
+            "quarantined",
+            timestamp=timestamp,
+            session_id=session_id,
+            reason="session_id_locator_mismatch",
+            locator_timestamp=locator_text,
+        )
+    return RolloutClassification(
+        "root_cli",
+        timestamp=timestamp,
+        session_id=session_id,
+        locator_timestamp=locator_text,
+    )
 
 
-def _inventory_rollouts(carrier_home: Path) -> dict[str, dict[str, int]]:
+def _inventory_rollouts(
+    carrier_home: Path,
+) -> tuple[dict[str, dict[str, int]], dict[str, str]]:
     """Stat every rollout without opening historical file contents."""
 
     sessions = carrier_home / "sessions"
     if not sessions.is_dir() or _is_reparse_point(sessions):
-        return {}
+        return {}, {}
     sessions = sessions.resolve(strict=True)
     result: dict[str, dict[str, int]] = {}
+    locators: dict[str, str] = {}
     pending = [sessions]
     while pending:
         directory = pending.pop()
@@ -281,11 +394,15 @@ def _inventory_rollouts(carrier_home: Path) -> dict[str, dict[str, int]]:
             except (OSError, ValueError):
                 continue
             locator = str(Path("sessions") / relative)
-            result[locator] = {
+            locator_hash = _locator_sha256(locator)
+            if locator_hash in locators and locators[locator_hash] != locator:
+                raise ConsumerError("rollout locator hash collision")
+            locators[locator_hash] = locator
+            result[locator_hash] = {
                 "size": int(stat_result.st_size),
                 "mtime_ns": int(stat_result.st_mtime_ns),
             }
-    return dict(sorted(result.items(), key=lambda item: item[0].casefold()))
+    return dict(sorted(result.items())), locators
 
 
 def _fingerprint_changed(
@@ -297,22 +414,15 @@ def _fingerprint_changed(
     return any(int(previous.get(key, -1)) != int(current[key]) for key in ("size", "mtime_ns"))
 
 
-def _rollout_directory_date(locator: str) -> date | None:
-    parts = Path(locator).parts
-    if len(parts) < 5 or parts[0].casefold() != "sessions":
-        return None
-    try:
-        return date(int(parts[1]), int(parts[2]), int(parts[3]))
-    except ValueError:
-        return None
-
-
 def _bootstrap_candidate(locator: str, now: datetime) -> bool:
-    rollout_day = _rollout_directory_date(locator)
-    if rollout_day is None:
+    rollout_timestamp = _locator_timestamp(locator)
+    if rollout_timestamp is None or rollout_timestamp > now + FUTURE_CLOCK_TOLERANCE:
         return False
-    today = now.astimezone().date()
-    return today - timedelta(days=BOOTSTRAP_LOOKBACK_DAYS) <= rollout_day <= today
+    return (
+        now - timedelta(days=BOOTSTRAP_LOOKBACK_DAYS)
+        <= rollout_timestamp
+        <= now + FUTURE_CLOCK_TOLERANCE
+    )
 
 
 def _load_state(path: Path) -> dict[str, object] | None:
@@ -320,17 +430,97 @@ def _load_state(path: Path) -> dict[str, object] | None:
         return None
     if _is_reparse_point(path) or not path.is_file():
         raise ConsumerError("consumer state path is unsafe")
+    if path.stat().st_size > MAX_STATE_BYTES:
+        raise ConsumerError("consumer state exceeds its bounded size")
     try:
         value = json.loads(path.read_bytes().decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ConsumerError("consumer state is unreadable") from exc
     if not isinstance(value, dict) or value.get("schema_version") != CONSUMER_SCHEMA_VERSION:
         raise ConsumerError("consumer state schema is unsupported")
+    if not set(value) <= {
+        "schema_version",
+        "cutoff_at",
+        "last_scan_at",
+        "last_completed_at",
+        "carriers",
+        "authority",
+    }:
+        raise ConsumerError("consumer state contains unknown fields")
     if not isinstance(value.get("carriers"), dict):
         raise ConsumerError("consumer carrier state is invalid")
+    if value.get("authority") is not False:
+        raise ConsumerError("consumer state authority marker is invalid")
     _parse_utc(value.get("cutoff_at"), field="consumer cutoff_at")
     _parse_utc(value.get("last_scan_at"), field="consumer last_scan_at")
+    if "last_completed_at" in value:
+        _parse_utc(value["last_completed_at"], field="consumer last_completed_at")
     return value
+
+
+def _sha256_regular_file(path: Path) -> str:
+    if _is_reparse_point(path) or not path.is_file():
+        raise ConsumerError("consumer state quarantine source is unsafe")
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while block := handle.read(1024 * 1024):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _load_state_quarantine(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    if _is_reparse_point(path) or not path.is_file() or path.stat().st_size > 16_384:
+        raise ConsumerError("consumer state quarantine marker is unsafe")
+    try:
+        value = json.loads(path.read_bytes().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ConsumerError("consumer state quarantine marker is unreadable") from exc
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "schema_version",
+            "corrupt_state_sha256",
+            "status",
+            "first_seen_at",
+            "last_attempt_at",
+            "attempts",
+            "authority",
+        }
+        or value.get("schema_version") != STATE_QUARANTINE_SCHEMA_VERSION
+        or not _SHA256_RE.fullmatch(str(value.get("corrupt_state_sha256") or ""))
+        or value.get("status") not in {"pending_recovery", "recovered"}
+        or type(value.get("attempts")) is not int
+        or int(value["attempts"]) < 0
+        or value.get("authority") is not False
+    ):
+        raise ConsumerError("consumer state quarantine marker is invalid")
+    _parse_utc(value["first_seen_at"], field="state quarantine first_seen_at")
+    _parse_utc(value["last_attempt_at"], field="state quarantine last_attempt_at")
+    return value
+
+
+def _failed_state_receipt(
+    *,
+    started: datetime,
+    error_type: str,
+    recovery_status: str,
+    corrupt_state_sha256: str,
+) -> dict[str, object]:
+    receipt: dict[str, object] = {
+        "schema_version": RECEIPT_SCHEMA_VERSION,
+        "status": "failed",
+        "error_type": error_type,
+        "recovery_status": recovery_status,
+        "started_at": _utc_text(started),
+        "finished_at": _utc_text(_utc_now()),
+        "authority": False,
+    }
+    if corrupt_state_sha256:
+        receipt["corrupt_state_sha256"] = corrupt_state_sha256
+    return receipt
 
 
 def _new_state(now: datetime, allowed_homes: Mapping[str, str]) -> dict[str, object]:
@@ -340,15 +530,107 @@ def _new_state(now: datetime, allowed_homes: Mapping[str, str]) -> dict[str, obj
         "last_scan_at": _utc_text(now),
         "carriers": {
             carrier_id: {
-                "home": str(Path(home)),
-                "bootstrap_locator": "",
+                "bootstrap_locator_sha256": "",
                 "inventory": {},
                 "tracked_roots": {},
             }
-            for home, carrier_id in sorted(allowed_homes.items(), key=lambda item: item[1])
+            for _home, carrier_id in sorted(allowed_homes.items(), key=lambda item: item[1])
         },
         "authority": False,
     }
+
+
+def _cursor_time(updated_at_unix_ns: object, *, fallback: datetime) -> datetime:
+    try:
+        value = int(updated_at_unix_ns)
+        if value < 0:
+            raise ValueError
+        return datetime.fromtimestamp(value / 1_000_000_000, tz=timezone.utc)
+    except (OverflowError, TypeError, ValueError, OSError):
+        return fallback - INTEGRITY_RECHECK_INTERVAL
+
+
+def _cursor_count(root: Path) -> int:
+    database = Path(root).resolve(strict=True) / "context_fabric.sqlite3"
+    connection = sqlite3.connect(database, timeout=1.2)
+    try:
+        return int(connection.execute("SELECT COUNT(*) FROM rollout_cursors").fetchone()[0])
+    finally:
+        connection.close()
+
+
+def _rebuild_state_from_cursors(
+    *,
+    root: Path,
+    allowed_homes: Mapping[str, str],
+    now: datetime,
+) -> dict[str, object]:
+    """Rebuild discovery state from canonical cursors without bootstrapping history."""
+
+    rebuilt = _new_state(now, allowed_homes)
+    carriers = rebuilt["carriers"]
+    assert isinstance(carriers, dict)
+    locators_by_carrier: dict[str, dict[str, str]] = {}
+    for home_text, carrier_id in sorted(allowed_homes.items(), key=lambda item: item[1]):
+        inventory, locators = _inventory_rollouts(Path(home_text))
+        carrier = carriers[carrier_id]
+        assert isinstance(carrier, dict)
+        carrier["inventory"] = inventory
+        locators_by_carrier[carrier_id] = locators
+
+    database = Path(root).resolve(strict=True) / "context_fabric.sqlite3"
+    connection = sqlite3.connect(database, timeout=1.2)
+    connection.row_factory = sqlite3.Row
+    try:
+        cursor_rows = connection.execute(
+            "SELECT carrier_id,relative_locator,next_byte_offset,updated_at_unix_ns "
+            "FROM rollout_cursors ORDER BY carrier_id,relative_locator"
+        ).fetchall()
+    finally:
+        connection.close()
+    for row in cursor_rows:
+        carrier_id = str(row["carrier_id"])
+        if carrier_id not in carriers:
+            continue
+        locator = str(row["relative_locator"])
+        locator_hash = _locator_sha256(locator)
+        current_locator = locators_by_carrier[carrier_id].get(locator_hash)
+        if (
+            current_locator is None
+            or current_locator.replace("\\", "/").casefold()
+            != locator.replace("\\", "/").casefold()
+        ):
+            continue
+        carrier = carriers[carrier_id]
+        assert isinstance(carrier, dict)
+        inventory = carrier["inventory"]
+        tracked = carrier["tracked_roots"]
+        assert isinstance(inventory, dict) and isinstance(tracked, dict)
+        fingerprint = inventory[locator_hash]
+        assert isinstance(fingerprint, dict)
+        cursor_offset = int(row["next_byte_offset"])
+        current_size = int(fingerprint["size"])
+        metadata: dict[str, object] = {
+            "last_size": cursor_offset,
+            "last_mtime_ns": int(fingerprint["mtime_ns"]),
+            "incomplete_tail": current_size > cursor_offset,
+            "last_status": "recovered_from_cursor",
+            "last_integrity_check_at": _utc_text(
+                min(_cursor_time(row["updated_at_unix_ns"], fallback=now), now)
+            ),
+        }
+        if current_size != cursor_offset:
+            metadata.update(
+                {
+                    "pending_size": current_size,
+                    "pending_mtime_ns": int(fingerprint["mtime_ns"]),
+                    "pending_since_scan": _utc_text(now),
+                    "stable_observations": 0,
+                    "last_status": "awaiting_stable_observation",
+                }
+            )
+        tracked[locator_hash] = metadata
+    return rebuilt
 
 
 def _validate_carrier_state(
@@ -357,18 +639,238 @@ def _validate_carrier_state(
     raw_carriers = state["carriers"]
     assert isinstance(raw_carriers, dict)
     result: dict[str, dict[str, object]] = {}
-    for home, carrier_id in allowed_homes.items():
+    allowed_carrier_keys = {"bootstrap_locator_sha256", "inventory", "tracked_roots"}
+    allowed_metadata_keys = {
+        "pending_size",
+        "pending_mtime_ns",
+        "pending_since_scan",
+        "stable_observations",
+        "last_size",
+        "last_mtime_ns",
+        "incomplete_tail",
+        "last_status",
+        "last_integrity_check_at",
+        "quarantine_size",
+        "quarantine_mtime_ns",
+        "retry_count",
+        "next_retry_at",
+        "retry_size",
+        "retry_mtime_ns",
+    }
+    allowed_statuses = {
+        "awaiting_stable_observation",
+        "unchanged_cursor",
+        "unchanged_incomplete_tail",
+        "imported",
+        "integrity_verified",
+        "recovered_from_cursor",
+        "error",
+    }
+    for _home, carrier_id in allowed_homes.items():
         raw = raw_carriers.get(carrier_id)
-        if not isinstance(raw, dict) or str(raw.get("home")) != str(Path(home)):
-            raise ConsumerError(f"consumer state carrier identity changed: {carrier_id}")
+        if not isinstance(raw, dict) or set(raw) != allowed_carrier_keys:
+            raise ConsumerError("consumer state carrier identity changed")
         tracked = raw.get("tracked_roots")
         inventory = raw.get("inventory")
         if not isinstance(tracked, dict) or not isinstance(inventory, dict):
-            raise ConsumerError(f"consumer carrier inventory is invalid: {carrier_id}")
+            raise ConsumerError("consumer carrier inventory is invalid")
+        bootstrap_hash = raw.get("bootstrap_locator_sha256")
+        if bootstrap_hash and not _SHA256_RE.fullmatch(str(bootstrap_hash)):
+            raise ConsumerError("consumer bootstrap locator hash is invalid")
+        for locator_hash, fingerprint in inventory.items():
+            if not _SHA256_RE.fullmatch(str(locator_hash)) or not isinstance(fingerprint, dict):
+                raise ConsumerError("consumer inventory entry is invalid")
+            if set(fingerprint) != {"size", "mtime_ns"} or any(
+                type(fingerprint[key]) is not int or int(fingerprint[key]) < 0
+                for key in ("size", "mtime_ns")
+            ):
+                raise ConsumerError("consumer inventory fingerprint is invalid")
+        for locator_hash, metadata in tracked.items():
+            if not _SHA256_RE.fullmatch(str(locator_hash)) or not isinstance(metadata, dict):
+                raise ConsumerError("consumer tracked entry is invalid")
+            if not set(metadata) <= allowed_metadata_keys:
+                raise ConsumerError("consumer tracked metadata contains unknown fields")
+            status = metadata.get("last_status")
+            if status is not None and status not in allowed_statuses:
+                raise ConsumerError("consumer tracked status is invalid")
+            for key in ("pending_since_scan", "last_integrity_check_at"):
+                if key in metadata:
+                    _parse_utc(metadata[key], field=f"consumer {key}")
+            if "next_retry_at" in metadata:
+                _parse_utc(metadata["next_retry_at"], field="consumer next_retry_at")
+            for key in (
+                "pending_size",
+                "pending_mtime_ns",
+                "stable_observations",
+                "last_size",
+                "last_mtime_ns",
+                "quarantine_size",
+                "quarantine_mtime_ns",
+                "retry_count",
+                "retry_size",
+                "retry_mtime_ns",
+            ):
+                if key in metadata and (type(metadata[key]) is not int or int(metadata[key]) < 0):
+                    raise ConsumerError("consumer tracked numeric metadata is invalid")
+            if "incomplete_tail" in metadata and type(metadata["incomplete_tail"]) is not bool:
+                raise ConsumerError("consumer incomplete tail marker is invalid")
         result[carrier_id] = raw
     if set(raw_carriers) != set(result):
         raise ConsumerError("consumer state contains an unexpected carrier")
     return result
+
+
+def _stage_or_recover_invalid_state(
+    *,
+    state_path: Path,
+    consumer_dir: Path,
+    root: Path,
+    allowed_homes: Mapping[str, str],
+    started: datetime,
+) -> tuple[dict[str, object] | None, dict[str, object] | None, bool]:
+    receipt_path = consumer_dir / LAST_RECEIPT_FILE_NAME
+    quarantine_path = consumer_dir / STATE_QUARANTINE_FILE_NAME
+    state_exists = state_path.exists()
+    corrupt_hash = ""
+    if state_exists:
+        try:
+            corrupt_hash = _sha256_regular_file(state_path)
+        except (ConsumerError, OSError):
+            receipt = _failed_state_receipt(
+                started=started,
+                error_type="consumer_state_invalid",
+                recovery_status="unavailable_unsafe_state_source",
+                corrupt_state_sha256="",
+            )
+            _atomic_json(receipt_path, receipt)
+            return None, receipt, False
+    try:
+        marker = _load_state_quarantine(quarantine_path)
+    except ConsumerError:
+        receipt = _failed_state_receipt(
+            started=started,
+            error_type="state_quarantine_invalid",
+            recovery_status="manual_intervention_required",
+            corrupt_state_sha256=corrupt_hash,
+        )
+        _atomic_json(receipt_path, receipt)
+        return None, receipt, False
+
+    if not state_exists and marker is not None:
+        corrupt_hash = str(marker["corrupt_state_sha256"])
+    elif not state_exists:
+        receipt = _failed_state_receipt(
+            started=started,
+            error_type="consumer_state_invalid",
+            recovery_status="unavailable_missing_state_and_marker",
+            corrupt_state_sha256="",
+        )
+        _atomic_json(receipt_path, receipt)
+        return None, receipt, False
+
+    if state_exists and (
+        marker is None
+        or marker["corrupt_state_sha256"] != corrupt_hash
+        or marker["status"] != "pending_recovery"
+    ):
+        marker = {
+            "schema_version": STATE_QUARANTINE_SCHEMA_VERSION,
+            "corrupt_state_sha256": corrupt_hash,
+            "status": "pending_recovery",
+            "first_seen_at": _utc_text(started),
+            "last_attempt_at": _utc_text(started),
+            "attempts": 0,
+            "authority": False,
+        }
+        staging_receipt = _failed_state_receipt(
+            started=started,
+            error_type="consumer_state_invalid",
+            recovery_status="staging_hash_only_quarantine",
+            corrupt_state_sha256=corrupt_hash,
+        )
+        _atomic_json(receipt_path, staging_receipt)
+        try:
+            _atomic_json(quarantine_path, marker)
+            try:
+                state_path.unlink()
+                recovery_status = "pending_next_run"
+            except OSError:
+                recovery_status = "pending_next_run_state_retained"
+        except ConsumerError:
+            recovery_status = "unavailable_quarantine_marker"
+        receipt = _failed_state_receipt(
+            started=started,
+            error_type="consumer_state_invalid",
+            recovery_status=recovery_status,
+            corrupt_state_sha256=corrupt_hash,
+        )
+        _atomic_json(receipt_path, receipt)
+        return None, receipt, False
+
+    if marker is None:
+        raise ConsumerError("consumer state recovery marker unexpectedly disappeared")
+
+    marker["attempts"] = int(marker["attempts"]) + 1
+    marker["last_attempt_at"] = _utc_text(started)
+    try:
+        rebuilt = _rebuild_state_from_cursors(
+            root=Path(root),
+            allowed_homes=allowed_homes,
+            now=started,
+        )
+        _validate_carrier_state(rebuilt, allowed_homes)
+        _atomic_json(state_path, rebuilt)
+        marker["status"] = "recovered"
+        _atomic_json(quarantine_path, marker)
+        return rebuilt, None, True
+    except Exception:
+        marker["status"] = "pending_recovery"
+        try:
+            _atomic_json(quarantine_path, marker)
+        except ConsumerError:
+            pass
+        receipt = _failed_state_receipt(
+            started=started,
+            error_type="state_recovery_failed",
+            recovery_status="pending_next_run",
+            corrupt_state_sha256=corrupt_hash,
+        )
+        _atomic_json(receipt_path, receipt)
+        return None, receipt, False
+
+
+def _stage_missing_state_recovery(
+    *,
+    consumer_dir: Path,
+    started: datetime,
+) -> dict[str, object]:
+    quarantine_path = consumer_dir / STATE_QUARANTINE_FILE_NAME
+    receipt_path = consumer_dir / LAST_RECEIPT_FILE_NAME
+    marker = {
+        "schema_version": STATE_QUARANTINE_SCHEMA_VERSION,
+        "corrupt_state_sha256": hashlib.sha256(b"").hexdigest(),
+        "status": "pending_recovery",
+        "first_seen_at": _utc_text(started),
+        "last_attempt_at": _utc_text(started),
+        "attempts": 0,
+        "authority": False,
+    }
+    staging_receipt = _failed_state_receipt(
+        started=started,
+        error_type="consumer_state_invalid",
+        recovery_status="staging_missing_state_recovery",
+        corrupt_state_sha256="",
+    )
+    _atomic_json(receipt_path, staging_receipt)
+    _atomic_json(quarantine_path, marker)
+    receipt = _failed_state_receipt(
+        started=started,
+        error_type="consumer_state_invalid",
+        recovery_status="pending_next_run",
+        corrupt_state_sha256="",
+    )
+    _atomic_json(receipt_path, receipt)
+    return receipt
 
 
 def _cursor_offset(root: Path, carrier_id: str, relative_locator: str) -> int | None:
@@ -387,14 +889,14 @@ def _cursor_offset(root: Path, carrier_id: str, relative_locator: str) -> int | 
     return None if row is None else int(row[0])
 
 
-def _bounded_error(exc: BaseException) -> str:
-    text = " ".join(str(exc).split())
-    return text[:MAX_ERROR_CHARS]
-
-
 def _append_receipt_file(
     receipt_files: list[dict[str, object]], item: Mapping[str, object]
 ) -> None:
+    if "locator" in item or "error" in item:
+        raise ConsumerError("consumer receipt cannot contain raw locator or error text")
+    locator_hash = item.get("locator_sha256")
+    if locator_hash is not None and not _SHA256_RE.fullmatch(str(locator_hash)):
+        raise ConsumerError("consumer receipt locator hash is invalid")
     if len(receipt_files) < MAX_RECEIPT_FILES:
         receipt_files.append(dict(item))
 
@@ -422,6 +924,53 @@ def _tracked_path(home: Path, locator: str) -> Path:
     return resolved
 
 
+def _integrity_recheck_due(metadata: Mapping[str, object], now: datetime) -> bool:
+    value = metadata.get("last_integrity_check_at")
+    if value is None:
+        return True
+    return (
+        now - _parse_utc(value, field="consumer last_integrity_check_at")
+        >= INTEGRITY_RECHECK_INTERVAL
+    )
+
+
+def _retry_due(metadata: Mapping[str, object], now: datetime, *, size: int, mtime_ns: int) -> bool:
+    value = metadata.get("next_retry_at")
+    if value is None:
+        return True
+    if (
+        int(metadata.get("retry_size", -1)) != size
+        or int(metadata.get("retry_mtime_ns", -1)) != mtime_ns
+    ):
+        return True
+    return now >= _parse_utc(value, field="consumer next_retry_at")
+
+
+def _record_retry(metadata: dict[str, object], now: datetime, *, size: int, mtime_ns: int) -> None:
+    same_fingerprint = (
+        int(metadata.get("retry_size", -1)) == size
+        and int(metadata.get("retry_mtime_ns", -1)) == mtime_ns
+    )
+    retry_count = min((int(metadata.get("retry_count", 0)) if same_fingerprint else 0) + 1, 16)
+    delay_seconds = min(
+        IMPORT_RETRY_BASE.total_seconds() * (2 ** (retry_count - 1)),
+        IMPORT_RETRY_MAX.total_seconds(),
+    )
+    metadata.update(
+        {
+            "retry_count": retry_count,
+            "next_retry_at": _utc_text(now + timedelta(seconds=delay_seconds)),
+            "retry_size": size,
+            "retry_mtime_ns": mtime_ns,
+        }
+    )
+
+
+def _clear_retry(metadata: dict[str, object]) -> None:
+    for key in ("retry_count", "next_retry_at", "retry_size", "retry_mtime_ns"):
+        metadata.pop(key, None)
+
+
 def run_consumer(
     *,
     root: Path = PRODUCTION_CONTEXT_FABRIC_ROOT,
@@ -432,7 +981,11 @@ def run_consumer(
 
     started = (now or _utc_now()).astimezone(timezone.utc)
     homes = dict(DEFAULT_ALLOWED_CODEX_HOMES if allowed_homes is None else allowed_homes)
-    if not homes or len(set(homes.values())) != len(homes):
+    if (
+        not homes
+        or len(set(homes.values())) != len(homes)
+        or not set(homes.values()) <= _ALLOWED_CARRIERS
+    ):
         raise ConsumerError("consumer carrier homes must map one-to-one")
     consumer_dir = _consumer_directory(Path(root))
     lock = ConsumerFileLock(consumer_dir / LOCK_FILE_NAME)
@@ -446,11 +999,51 @@ def run_consumer(
         }
     try:
         state_path = consumer_dir / STATE_FILE_NAME
-        state = _load_state(state_path)
-        bootstrap = state is None
-        if state is None:
-            state = _new_state(started, homes)
-        carrier_states = _validate_carrier_state(state, homes)
+        receipt_path = consumer_dir / LAST_RECEIPT_FILE_NAME
+        quarantine_path = consumer_dir / STATE_QUARANTINE_FILE_NAME
+        state_recovered = False
+        try:
+            state = _load_state(state_path)
+            if state is None and quarantine_path.exists():
+                state, failed_receipt, state_recovered = _stage_or_recover_invalid_state(
+                    state_path=state_path,
+                    consumer_dir=consumer_dir,
+                    root=Path(root),
+                    allowed_homes=homes,
+                    started=started,
+                )
+                if failed_receipt is not None:
+                    return failed_receipt
+                if state is None:
+                    raise ConsumerError("consumer state recovery returned no state")
+                bootstrap = False
+            elif state is None and (receipt_path.exists() or _cursor_count(Path(root)) > 0):
+                return _stage_missing_state_recovery(
+                    consumer_dir=consumer_dir,
+                    started=started,
+                )
+            else:
+                bootstrap = state is None
+                if state is None:
+                    state = _new_state(started, homes)
+            carrier_states = _validate_carrier_state(state, homes)
+        except (ConsumerError, OSError):
+            if not state_path.exists():
+                raise
+            state, failed_receipt, state_recovered = _stage_or_recover_invalid_state(
+                state_path=state_path,
+                consumer_dir=consumer_dir,
+                root=Path(root),
+                allowed_homes=homes,
+                started=started,
+            )
+            if failed_receipt is not None:
+                return failed_receipt
+            if state is None:
+                raise ConsumerError("consumer state recovery returned no state")
+            bootstrap = False
+            carrier_states = _validate_carrier_state(state, homes)
+        cutoff = _parse_utc(state["cutoff_at"], field="consumer cutoff_at")
         previous_scan = _parse_utc(state["last_scan_at"], field="consumer last_scan_at")
         if started + DISCOVERY_OVERLAP < previous_scan:
             raise ConsumerError("consumer clock moved behind the committed scan watermark")
@@ -460,29 +1053,94 @@ def run_consumer(
         scan_end = started
 
         counts: Counter[str] = Counter()
+        if state_recovered:
+            counts["state_recovered"] = 1
         receipt_files: list[dict[str, object]] = []
         receipt_file_total = 0
         classified_roots: dict[str, list[tuple[str, RolloutClassification, int]]] = {
             carrier_id: [] for carrier_id in carrier_states
         }
+        current_locators_by_carrier: dict[str, dict[str, str]] = {}
 
         for home_text, carrier_id in sorted(homes.items(), key=lambda item: item[1]):
             home = Path(home_text)
             carrier_state = carrier_states[carrier_id]
             previous_inventory = carrier_state["inventory"]
             assert isinstance(previous_inventory, dict)
-            current_inventory = _inventory_rollouts(home)
-            changed_locators = [
-                locator
-                for locator, fingerprint in current_inventory.items()
-                if _fingerprint_changed(previous_inventory.get(locator), fingerprint)
-                and (not bootstrap or _bootstrap_candidate(locator, started))
-            ]
+            tracked = carrier_state["tracked_roots"]
+            assert isinstance(tracked, dict)
+            current_inventory, current_locators = _inventory_rollouts(home)
+            current_locators_by_carrier[carrier_id] = current_locators
+            changed_locator_hashes: list[str] = []
+            for locator_hash, fingerprint in current_inventory.items():
+                previous = previous_inventory.get(locator_hash)
+                changed = _fingerprint_changed(previous, fingerprint)
+                if not changed:
+                    continue
+                locator = current_locators[locator_hash]
+                locator_timestamp = _locator_timestamp(locator)
+                if bootstrap:
+                    if locator_timestamp is None:
+                        counts["quarantined_locator"] += 1
+                        receipt_file_total += 1
+                        _append_receipt_file(
+                            receipt_files,
+                            {
+                                "carrier_id": carrier_id,
+                                "locator_sha256": locator_hash,
+                                "status": "quarantined",
+                                "error_type": "locator_timestamp_invalid",
+                            },
+                        )
+                        continue
+                    if locator_timestamp > started + FUTURE_CLOCK_TOLERANCE:
+                        counts["quarantined_locator"] += 1
+                        receipt_file_total += 1
+                        _append_receipt_file(
+                            receipt_files,
+                            {
+                                "carrier_id": carrier_id,
+                                "locator_sha256": locator_hash,
+                                "status": "quarantined",
+                                "error_type": "locator_timestamp_future",
+                            },
+                        )
+                        continue
+                    if not _bootstrap_candidate(locator, started):
+                        continue
+                    changed_locator_hashes.append(locator_hash)
+                    continue
+                if locator_hash in tracked:
+                    changed_locator_hashes.append(locator_hash)
+                    continue
+                if previous is None:
+                    if locator_timestamp is None:
+                        counts["quarantined_locator"] += 1
+                        receipt_file_total += 1
+                        _append_receipt_file(
+                            receipt_files,
+                            {
+                                "carrier_id": carrier_id,
+                                "locator_sha256": locator_hash,
+                                "status": "quarantined",
+                                "error_type": "locator_timestamp_invalid",
+                            },
+                        )
+                    elif locator_timestamp >= cutoff:
+                        changed_locator_hashes.append(locator_hash)
+                    else:
+                        counts["new_pre_cutoff_ignored"] += 1
+                    continue
+                if int(fingerprint["size"]) > int(previous["size"]):
+                    changed_locator_hashes.append(locator_hash)
+                else:
+                    counts["unadopted_non_growth_ignored"] += 1
             carrier_state["inventory"] = current_inventory
             counts["inventoried"] += len(current_inventory)
-            counts["changed_candidates"] += len(changed_locators)
-            for locator in changed_locators:
-                fingerprint = current_inventory[locator]
+            counts["changed_candidates"] += len(changed_locator_hashes)
+            for locator_hash in changed_locator_hashes:
+                locator = current_locators[locator_hash]
+                fingerprint = current_inventory[locator_hash]
                 try:
                     path = _tracked_path(home, locator)
                 except (OSError, ValueError, ConsumerError) as exc:
@@ -492,29 +1150,33 @@ def run_consumer(
                         receipt_files,
                         {
                             "carrier_id": carrier_id,
-                            "locator": locator[:512],
+                            "locator_sha256": locator_hash,
                             "status": "classification_error",
-                            "error_type": type(exc).__name__,
+                            "error_type": _typed_error(exc),
                         },
                     )
                     continue
-                classification = classify_rollout(path)
+                classification = classify_rollout(path, now=started)
                 counts[f"classified_{classification.status}"] += 1
                 if classification.status != "root_cli":
-                    if classification.status in {"invalid", "read_error"}:
+                    if classification.status in {"invalid", "read_error", "quarantined"}:
                         receipt_file_total += 1
                         _append_receipt_file(
                             receipt_files,
                             {
                                 "carrier_id": carrier_id,
-                                "locator": str(path.name)[:256],
-                                "status": "classification_error",
+                                "locator_sha256": locator_hash,
+                                "status": (
+                                    "quarantined"
+                                    if classification.status == "quarantined"
+                                    else "classification_error"
+                                ),
                                 "error_type": classification.reason,
                             },
                         )
                     continue
                 classified_roots[carrier_id].append(
-                    (locator, classification, int(fingerprint["mtime_ns"]))
+                    (locator_hash, classification, int(fingerprint["mtime_ns"]))
                 )
 
         for carrier_id, roots in classified_roots.items():
@@ -525,27 +1187,21 @@ def run_consumer(
                 latest = max(
                     roots,
                     key=lambda item: (
-                        _parse_utc(item[1].timestamp, field="rollout timestamp"),
+                        _parse_utc(item[1].locator_timestamp, field="locator timestamp"),
                         item[2],
                         item[0],
                     ),
                 )
-                carrier_state["bootstrap_locator"] = latest[0]
-            bootstrap_locator = str(carrier_state.get("bootstrap_locator") or "")
-            for locator, classification, _modified_ns in roots:
-                if (bootstrap and locator == bootstrap_locator) or not bootstrap:
-                    existing_metadata = tracked.get(locator)
+                carrier_state["bootstrap_locator_sha256"] = latest[0]
+            bootstrap_locator_hash = str(carrier_state.get("bootstrap_locator_sha256") or "")
+            for locator_hash, _classification, _modified_ns in roots:
+                if (bootstrap and locator_hash == bootstrap_locator_hash) or not bootstrap:
+                    existing_metadata = tracked.get(locator_hash)
                     if not isinstance(existing_metadata, dict):
                         existing_metadata = {}
-                        tracked[locator] = existing_metadata
-                    existing_metadata.update(
-                        {
-                            "session_id": classification.session_id,
-                            "session_timestamp": classification.timestamp,
-                        }
-                    )
+                        tracked[locator_hash] = existing_metadata
                     if not bootstrap:
-                        fingerprint = carrier_state["inventory"][locator]
+                        fingerprint = carrier_state["inventory"][locator_hash]
                         assert isinstance(fingerprint, Mapping)
                         existing_metadata.update(
                             {
@@ -557,21 +1213,48 @@ def run_consumer(
                             }
                         )
 
-        import_candidates: list[tuple[str, Path, str, dict[str, object]]] = []
+        import_candidates: list[tuple[str, Path, str, str, dict[str, object], str]] = []
+        integrity_budget = MAX_INTEGRITY_RECHECKS_PER_RUN
         for home_text, carrier_id in sorted(homes.items(), key=lambda item: item[1]):
             home = Path(home_text)
             tracked = carrier_states[carrier_id]["tracked_roots"]
             assert isinstance(tracked, dict)
-            for locator in sorted(tracked):
-                metadata = tracked[locator]
+            current_locators = current_locators_by_carrier[carrier_id]
+            for locator_hash in sorted(tracked):
+                metadata = tracked[locator_hash]
                 if not isinstance(metadata, dict):
                     raise ConsumerError("tracked rollout metadata is invalid")
                 try:
+                    locator = current_locators.get(locator_hash)
+                    if locator is None:
+                        raise ConsumerError("tracked rollout is absent from inventory")
                     path = _tracked_path(home, locator)
                     stat_result = path.stat()
                     size = stat_result.st_size
                     modified_ns = stat_result.st_mtime_ns
                     cursor = _cursor_offset(Path(root), carrier_id, locator)
+                    quarantine_size = metadata.get("quarantine_size")
+                    quarantine_mtime_ns = metadata.get("quarantine_mtime_ns")
+                    if quarantine_size is not None or quarantine_mtime_ns is not None:
+                        if (
+                            int(quarantine_size or -1) == size
+                            and int(quarantine_mtime_ns or -1) == modified_ns
+                        ):
+                            counts["persistent_integrity_quarantine"] += 1
+                            metadata["last_status"] = "error"
+                            receipt_file_total += 1
+                            _append_receipt_file(
+                                receipt_files,
+                                {
+                                    "carrier_id": carrier_id,
+                                    "locator_sha256": locator_hash,
+                                    "status": "quarantined",
+                                    "error_type": "context_fabric_rejected",
+                                },
+                            )
+                            continue
+                        metadata.pop("quarantine_size", None)
+                        metadata.pop("quarantine_mtime_ns", None)
                     pending_size = metadata.get("pending_size")
                     pending_mtime_ns = metadata.get("pending_mtime_ns")
                     if pending_size is not None or pending_mtime_ns is not None:
@@ -604,6 +1287,22 @@ def run_consumer(
                         and int(metadata.get("last_size", -1)) == size
                         and int(metadata.get("last_mtime_ns", -1)) == modified_ns
                     ):
+                        if _integrity_recheck_due(metadata, started):
+                            if integrity_budget > 0:
+                                integrity_budget -= 1
+                                import_candidates.append(
+                                    (
+                                        carrier_id,
+                                        home,
+                                        locator_hash,
+                                        locator,
+                                        metadata,
+                                        "integrity_recheck",
+                                    )
+                                )
+                            else:
+                                counts["integrity_recheck_deferred"] += 1
+                            continue
                         counts["unchanged_cursor"] += 1
                         metadata["last_size"] = size
                         metadata["incomplete_tail"] = False
@@ -617,7 +1316,12 @@ def run_consumer(
                         counts["unchanged_incomplete_tail"] += 1
                         metadata["last_status"] = "unchanged_incomplete_tail"
                         continue
-                    import_candidates.append((carrier_id, home, locator, metadata))
+                    if not _retry_due(metadata, started, size=size, mtime_ns=modified_ns):
+                        counts["retry_backoff"] += 1
+                        continue
+                    import_candidates.append(
+                        (carrier_id, home, locator_hash, locator, metadata, "incremental")
+                    )
                 except (OSError, ValueError, sqlite3.Error, ConsumerError) as exc:
                     counts["file_error"] += 1
                     receipt_file_total += 1
@@ -625,14 +1329,29 @@ def run_consumer(
                         receipt_files,
                         {
                             "carrier_id": carrier_id,
-                            "locator": locator[:512],
+                            "locator_sha256": locator_hash,
                             "status": "error",
-                            "error_type": type(exc).__name__,
-                            "error": _bounded_error(exc),
+                            "error_type": _typed_error(exc),
                         },
                     )
 
-        for carrier_id, home, locator, metadata in import_candidates[:MAX_IMPORTS_PER_RUN]:
+        import_candidates.sort(
+            key=lambda item: (
+                1 if "retry_count" in item[4] else 0,
+                _parse_utc(item[4].get("next_retry_at"), field="consumer next_retry_at")
+                if item[4].get("next_retry_at") is not None
+                else datetime.min.replace(tzinfo=timezone.utc),
+                item[2],
+            )
+        )
+        for (
+            carrier_id,
+            home,
+            locator_hash,
+            locator,
+            metadata,
+            import_mode,
+        ) in import_candidates[:MAX_IMPORTS_PER_RUN]:
             receipt_file_total += 1
             try:
                 path = _tracked_path(home, locator)
@@ -643,11 +1362,21 @@ def run_consumer(
                     allowed_homes=homes,
                 )
                 imported_stat = path.stat()
+                prior_size = int(metadata.get("last_size", -1))
+                prior_mtime_ns = int(metadata.get("last_mtime_ns", -1))
                 metadata["last_size"] = imported_stat.st_size
                 metadata["last_mtime_ns"] = imported_stat.st_mtime_ns
                 metadata["incomplete_tail"] = bool(result.get("incomplete_tail", False))
-                metadata["last_status"] = "imported"
-                counts["imported"] += 1
+                metadata["last_integrity_check_at"] = _utc_text(started)
+                metadata["last_status"] = (
+                    "integrity_verified" if import_mode == "integrity_recheck" else "imported"
+                )
+                metadata.pop("quarantine_size", None)
+                metadata.pop("quarantine_mtime_ns", None)
+                _clear_retry(metadata)
+                counts[
+                    "integrity_verified" if import_mode == "integrity_recheck" else "imported"
+                ] += 1
                 counts["appended"] += int(result.get("appended", 0))
                 counts["duplicate"] += int(result.get("duplicate", 0))
                 counts["ignored"] += int(result.get("ignored", 0))
@@ -655,46 +1384,65 @@ def run_consumer(
                     receipt_files,
                     {
                         "carrier_id": carrier_id,
-                        "locator": locator[:512],
-                        "status": "imported",
+                        "locator_sha256": locator_hash,
+                        "status": (
+                            "integrity_verified"
+                            if import_mode == "integrity_recheck"
+                            else "imported"
+                        ),
                         "appended": int(result.get("appended", 0)),
                         "duplicate": int(result.get("duplicate", 0)),
                         "ignored": int(result.get("ignored", 0)),
                         "incomplete_tail": bool(result.get("incomplete_tail", False)),
                     },
                 )
+                quiet_before_ns = int(
+                    (started - TRACKED_STABLE_PRUNE_AFTER).timestamp() * 1_000_000_000
+                )
+                if (
+                    import_mode == "integrity_recheck"
+                    and not bool(result.get("incomplete_tail", False))
+                    and imported_stat.st_size == prior_size
+                    and imported_stat.st_mtime_ns == prior_mtime_ns
+                    and imported_stat.st_mtime_ns <= quiet_before_ns
+                ):
+                    tracked = carrier_states[carrier_id]["tracked_roots"]
+                    assert isinstance(tracked, dict)
+                    if tracked.get(locator_hash) is metadata:
+                        del tracked[locator_hash]
+                        counts["stable_roots_pruned"] += 1
             except Exception as exc:  # Per-file isolation is intentional at the scheduler edge.
                 metadata["last_status"] = "error"
+                if import_mode == "integrity_recheck":
+                    metadata["last_integrity_check_at"] = _utc_text(started)
+                    try:
+                        quarantined_stat = path.stat()
+                        metadata["quarantine_size"] = quarantined_stat.st_size
+                        metadata["quarantine_mtime_ns"] = quarantined_stat.st_mtime_ns
+                    except OSError:
+                        pass
+                elif _typed_error(exc) != "context_fabric_unavailable":
+                    try:
+                        failed_stat = path.stat()
+                        _record_retry(
+                            metadata,
+                            started,
+                            size=failed_stat.st_size,
+                            mtime_ns=failed_stat.st_mtime_ns,
+                        )
+                    except OSError:
+                        pass
                 counts["file_error"] += 1
                 _append_receipt_file(
                     receipt_files,
                     {
                         "carrier_id": carrier_id,
-                        "locator": locator[:512],
+                        "locator_sha256": locator_hash,
                         "status": "error",
-                        "error_type": type(exc).__name__,
-                        "error": _bounded_error(exc),
+                        "error_type": _typed_error(exc),
                     },
                 )
         counts["deferred"] += max(0, len(import_candidates) - MAX_IMPORTS_PER_RUN)
-
-        stable_before_ns = int((started - TRACKED_RETENTION).timestamp() * 1_000_000_000)
-        for home_text, carrier_id in homes.items():
-            home = Path(home_text)
-            tracked = carrier_states[carrier_id]["tracked_roots"]
-            assert isinstance(tracked, dict)
-            for locator in list(tracked):
-                try:
-                    path = _tracked_path(home, locator)
-                    stat_result = path.stat()
-                    if (
-                        stat_result.st_mtime_ns < stable_before_ns
-                        and _cursor_offset(Path(root), carrier_id, locator) == stat_result.st_size
-                    ):
-                        del tracked[locator]
-                        counts["pruned_stable"] += 1
-                except (OSError, ValueError, sqlite3.Error, ConsumerError):
-                    continue
 
         state["last_scan_at"] = _utc_text(scan_end)
         state["last_completed_at"] = _utc_text(_utc_now())
@@ -707,6 +1455,9 @@ def run_consumer(
                 "classification_error",
                 "classified_invalid",
                 "classified_read_error",
+                "classified_quarantined",
+                "quarantined_locator",
+                "persistent_integrity_quarantine",
             )
         )
         receipt = {
@@ -715,6 +1466,7 @@ def run_consumer(
             "started_at": _utc_text(started),
             "finished_at": _utc_text(finished),
             "bootstrap": bootstrap,
+            "state_recovered": state_recovered,
             "scan_start": _utc_text(scan_start),
             "scan_end": _utc_text(scan_end),
             "counts": dict(sorted(counts.items())),
@@ -745,14 +1497,13 @@ def main(argv: list[str] | None = None) -> int:
         receipt = {
             "schema_version": RECEIPT_SCHEMA_VERSION,
             "status": "failed",
-            "error_type": type(exc).__name__,
-            "error": _bounded_error(exc),
+            "error_type": _typed_error(exc),
             "authority": False,
         }
         print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
         return 2
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
-    return 0
+    return 2 if receipt.get("status") == "failed" else 0
 
 
 if __name__ == "__main__":
