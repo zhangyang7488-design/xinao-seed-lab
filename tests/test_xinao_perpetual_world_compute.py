@@ -126,6 +126,9 @@ def make_test_controller(
             "role": "late_fusion_root",
             "workspace": str(root_workspace),
         },
+        # Tests must never fall through to the production account-wide quota
+        # surface, even when the case exercises a full branch loop.
+        "world_turn_quota_root": str(tmp_path / "quota"),
         "continuation_delay_seconds": 0,
         "park_poll_seconds": 0,
     }
