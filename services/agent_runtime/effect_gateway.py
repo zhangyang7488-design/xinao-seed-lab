@@ -5,9 +5,11 @@ context-runtime, and other internal single-writer state do not pass through it.
 The production registry currently contains exactly one adapter: adoption of an
 already committed ``root-main`` output into the canonical logical-root store.
 
-The exported owner surface requires an unforgeable, process-local grant minted
-by an injected live authority boundary.  Merely importing this module, naming
-an owner, or reconstructing historical Context cannot mint a grant.
+The canonical production factory owns its authority boundary and currently
+fails with ``SELECTION_REQUIRED`` because no live selector is installed.  It
+does not accept a caller-supplied boundary.  Noncanonical test seams may inject
+a process-local grant boundary; merely importing this module, naming an owner,
+or reconstructing historical Context cannot mint such a grant.
 """
 
 from __future__ import annotations
@@ -27,7 +29,9 @@ from typing import Protocol
 import portalocker
 
 from services.xinao_perpetual_world_compute.logical_root_runtime import (
+    DEFAULT_EFFECT_GATEWAY_RUNTIME,
     DEFAULT_LOGICAL_ROOT_RUNTIME,
+    EFFECT_GATEWAY_TRANSACTION_PHASE_SCHEMA,
     LogicalRootError,
     LogicalRootStore,
     RootIdentity,
@@ -35,17 +39,13 @@ from services.xinao_perpetual_world_compute.logical_root_runtime import (
 
 REQUEST_SCHEMA = "xinao.effect-gateway-request.v2"
 RECEIPT_SCHEMA = "xinao.effect-gateway-receipt.v2"
-TRANSACTION_SCHEMA = "xinao.effect-gateway-transaction.v1"
+TRANSACTION_PHASE_SCHEMA = EFFECT_GATEWAY_TRANSACTION_PHASE_SCHEMA
+TRANSACTION_PROJECTION_SCHEMA = "xinao.effect-gateway-transaction-projection.v1"
 OWNER_INVOCATION_SCHEMA = "xinao.effect-gateway-current-owner-invocation.v2"
 LOGICAL_ROOT_ADOPTION_ADAPTER = "logical-root.adoption.v1"
 
-DEFAULT_EFFECT_GATEWAY_RUNTIME = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_effect_gateway"
-)
 DEFAULT_WORLD_COMPUTE_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME\state")
-DEFAULT_EFFECT_REALITY_ROOT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_effect_gateway\reality"
-)
+DEFAULT_EFFECT_REALITY_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_effect_gateway\reality")
 DEFAULT_EFFECT_BLIND_ROOT = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_effect_gateway\blind-boundaries"
 )
@@ -145,6 +145,20 @@ def _read_stable(path: Path) -> bytes:
     return raw
 
 
+def _is_regular_single_link_nonreparse(path: Path) -> bool:
+    try:
+        observed = path.lstat()
+    except OSError:
+        return False
+    attributes = int(getattr(observed, "st_file_attributes", 0))
+    reparse_flag = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    return (
+        stat.S_ISREG(observed.st_mode)
+        and not (reparse_flag and attributes & reparse_flag)
+        and observed.st_nlink == 1
+    )
+
+
 def _fsync_directory(path: Path) -> None:
     if os.name == "nt":
         return
@@ -170,9 +184,15 @@ def _replace_durable(path: Path, raw: bytes) -> None:
 
 
 def _write_durable_new(path: Path, raw: bytes) -> None:
-    if path.exists():
-        raise EffectGatewayError("RECEIPT_ALREADY_EXISTS", str(path))
-    _replace_durable(path, raw)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("xb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError as exc:
+        raise EffectGatewayError("IMMUTABLE_RECEIPT_ALREADY_EXISTS", str(path)) from exc
+    _fsync_directory(path.parent)
 
 
 def _load_canonical_record(
@@ -191,9 +211,7 @@ def _load_canonical_record(
         raise EffectGatewayError(f"{error_prefix}_INVALID", str(path))
     unsigned = dict(record)
     seal = unsigned.pop(seal_field, None)
-    if record.get("schema_version") != schema or seal != _sha256(
-        _canonical_json_bytes(unsigned)
-    ):
+    if record.get("schema_version") != schema or seal != _sha256(_canonical_json_bytes(unsigned)):
         raise EffectGatewayError(f"{error_prefix}_HASH_MISMATCH", str(path))
     return record
 
@@ -254,7 +272,9 @@ class EffectGatewayRequest:
     def __post_init__(self) -> None:
         object.__setattr__(self, "request_id", _require_id(self.request_id, "request_id"))
         object.__setattr__(self, "adapter_kind", _require_id(self.adapter_kind, "adapter_kind"))
-        object.__setattr__(self, "effect_owner_scope", _require_owner_scope(self.effect_owner_scope))
+        object.__setattr__(
+            self, "effect_owner_scope", _require_owner_scope(self.effect_owner_scope)
+        )
         object.__setattr__(self, "source_run_dir", Path(self.source_run_dir).absolute())
         slot = str(self.account_slot or "").upper()
         if slot not in {"A", "C"}:
@@ -364,7 +384,7 @@ class GatewayResult:
     replayed: bool
 
 
-EffectAdapter = Callable[[EffectGatewayRequest, CurrentOwnerGrant], AdapterOutcome]
+EffectAdapter = Callable[[EffectGatewayRequest, CurrentOwnerGrant, Path], AdapterOutcome]
 EffectReadback = Callable[[EffectGatewayRequest], AdapterOutcome]
 
 
@@ -372,6 +392,38 @@ EffectReadback = Callable[[EffectGatewayRequest], AdapterOutcome]
 class AdapterBinding:
     apply: EffectAdapter
     readback: EffectReadback
+
+
+class _NoLiveProductionSelection:
+    """Fixed production state until a real current-owner selector is installed."""
+
+    boundary_id = "canonical-production-selection-unavailable"
+    selection_available = False
+
+    def issue(
+        self,
+        *,
+        request_sha256: str,
+        effect_owner_scope: str,
+    ) -> CurrentOwnerGrant:
+        del request_sha256, effect_owner_scope
+        raise EffectGatewayError(
+            "SELECTION_REQUIRED",
+            "no live current-owner candidate selection is installed",
+        )
+
+    def consume(
+        self,
+        *,
+        grant: CurrentOwnerGrant,
+        request_sha256: str,
+        effect_owner_scope: str,
+    ) -> Mapping[str, object]:
+        del grant, request_sha256, effect_owner_scope
+        raise EffectGatewayError(
+            "SELECTION_REQUIRED",
+            "no live current-owner candidate selection is installed",
+        )
 
 
 @dataclass(frozen=True)
@@ -510,23 +562,32 @@ def _logical_root_outcome(
     store: LogicalRootStore,
     request: EffectGatewayRequest,
 ) -> AdapterOutcome:
-    current = store.reconstruct_current()
-    if current.receipt is None or current.receipt_path is None or current.artifact_path is None:
-        raise EffectGatewayError("EFFECT_NOT_APPLIED", "logical root has no generation")
-    source = current.receipt.get("source")
-    request_value = current.receipt.get("request")
-    if not isinstance(source, Mapping) or not isinstance(request_value, Mapping):
-        raise EffectGatewayError("ADAPTER_READBACK_MISMATCH", str(current.receipt_path))
-    if request_value.get("adoption_id") != request.request_id:
+    try:
+        adopted = store.read_adoption(request.request_id)
+    except LogicalRootError as exc:
+        if exc.code == "ADOPTION_NOT_FOUND":
+            raise EffectGatewayError(
+                "EFFECT_NOT_APPLIED", "logical root has no matching generation"
+            ) from exc
         raise EffectGatewayError(
-            "EFFECT_NOT_CURRENT",
-            "the selected adoption is not the current logical-root generation",
-        )
+            "ADAPTER_READBACK_MISMATCH", exc.detail, facts={"source_code": exc.code}
+        ) from exc
+    if adopted.receipt is None or adopted.receipt_path is None or adopted.artifact_path is None:
+        raise EffectGatewayError("EFFECT_NOT_APPLIED", "logical root has no matching generation")
+    source = adopted.receipt.get("source")
+    request_value = adopted.receipt.get("request")
+    if not isinstance(source, Mapping) or not isinstance(request_value, Mapping):
+        raise EffectGatewayError("ADAPTER_READBACK_MISMATCH", str(adopted.receipt_path))
+    if request_value.get("adoption_id") != request.request_id:
+        raise EffectGatewayError("ADAPTER_READBACK_MISMATCH", str(adopted.receipt_path))
+    evidence_refs = adopted.receipt.get("evidence_refs")
+    if not isinstance(evidence_refs, Mapping) or not isinstance(
+        evidence_refs.get("run_config"), Mapping
+    ):
+        raise EffectGatewayError("ADAPTER_READBACK_MISMATCH", str(adopted.receipt_path))
     observed = {
         "candidate_sha256": str(source.get("source_output_identity") or ""),
-        "source_run_sha256": str(
-            current.receipt["evidence_refs"]["run_config"]["sha256"]
-        ),
+        "source_run_sha256": str(evidence_refs["run_config"].get("sha256") or ""),
         "root_output_sha256": str(source.get("root_output_sha256") or ""),
     }
     if observed != _expected_candidate_hashes(request):
@@ -535,17 +596,18 @@ def _logical_root_outcome(
             "logical-root receipt does not match the gateway request",
             facts={"expected": _expected_candidate_hashes(request), "observed": observed},
         )
-    receipt_raw = _read_stable(current.receipt_path)
-    artifact_raw = _read_stable(current.artifact_path)
+    receipt_raw = _read_stable(adopted.receipt_path)
+    artifact_raw = _read_stable(adopted.artifact_path)
     if _sha256(artifact_raw) != request.root_output_sha256:
-        raise EffectGatewayError("ADAPTER_READBACK_MISMATCH", str(current.artifact_path))
+        raise EffectGatewayError("ADAPTER_READBACK_MISMATCH", str(adopted.artifact_path))
+    current = store.reconstruct_current()
     return AdapterOutcome(
         status="already_applied",
-        effect_identity={"kind": "logical_xinao_root_generation", **current.identity.to_dict()},
+        effect_identity={"kind": "logical_xinao_root_generation", **adopted.identity.to_dict()},
         readback={
-            "generation_receipt_path": str(current.receipt_path),
+            "generation_receipt_path": str(adopted.receipt_path),
             "generation_receipt_file_sha256": _sha256(receipt_raw),
-            "artifact_path": str(current.artifact_path),
+            "artifact_path": str(adopted.artifact_path),
             "artifact_sha256": _sha256(artifact_raw),
             "current_identity": current.identity.to_dict(),
             "logical_root_replayed": True,
@@ -556,7 +618,11 @@ def _logical_root_outcome(
 def logical_root_adoption_binding(store: LogicalRootStore) -> AdapterBinding:
     """Build the logical-root apply plus readback-only recovery binding."""
 
-    def apply(request: EffectGatewayRequest, grant: CurrentOwnerGrant) -> AdapterOutcome:
+    def apply(
+        request: EffectGatewayRequest,
+        grant: CurrentOwnerGrant,
+        prepared_receipt_path: Path,
+    ) -> AdapterOutcome:
         if request.adapter_kind != LOGICAL_ROOT_ADOPTION_ADAPTER:
             raise EffectGatewayError("ADAPTER_REQUEST_MISMATCH", request.adapter_kind)
         observed = _candidate_hashes(store, request)
@@ -567,13 +633,14 @@ def logical_root_adoption_binding(store: LogicalRootStore) -> AdapterBinding:
                 facts={"expected": _expected_candidate_hashes(request), "observed": observed},
             )
         try:
-            result = store.adopt(
+            result = store._adopt_from_effect_gateway(  # noqa: SLF001
                 source_run_dir=request.source_run_dir,
                 account_slot=request.account_slot,
                 expected_predecessor=request.expected_predecessor,
                 adoption_id=request.request_id,
                 selection_ref=f"effect-gateway-request-sha256:{request.sha256}",
                 selected_by=request.effect_owner_scope,
+                prepared_receipt_path=prepared_receipt_path,
             )
         except LogicalRootError as exc:
             raise EffectGatewayError(
@@ -590,7 +657,9 @@ def logical_root_adoption_binding(store: LogicalRootStore) -> AdapterBinding:
             },
         )
 
-    return AdapterBinding(apply=apply, readback=lambda request: _logical_root_outcome(store, request))
+    return AdapterBinding(
+        apply=apply, readback=lambda request: _logical_root_outcome(store, request)
+    )
 
 
 class EffectGateway:
@@ -609,9 +678,7 @@ class EffectGateway:
         self.root = policy.gateway_root
         self._adapters = dict(adapters)
         self._owner_boundary = owner_boundary
-        self._clock = clock or (
-            lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
-        )
+        self._clock = clock or (lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"))
         self._fault_injector = fault_injector
         if set(self._adapters) != {LOGICAL_ROOT_ADOPTION_ADAPTER}:
             raise EffectGatewayError(
@@ -619,6 +686,14 @@ class EffectGateway:
             )
         if not str(getattr(owner_boundary, "boundary_id", "")).strip():
             raise EffectGatewayError("OWNER_BOUNDARY_INVALID", "boundary_id is required")
+        targets_canonical_runtime = _path_key(policy.gateway_root) == _path_key(
+            DEFAULT_EFFECT_GATEWAY_RUNTIME
+        ) or _path_key(policy.logical_root) == _path_key(DEFAULT_LOGICAL_ROOT_RUNTIME)
+        if targets_canonical_runtime and not isinstance(owner_boundary, _NoLiveProductionSelection):
+            raise EffectGatewayError(
+                "PRODUCTION_AUTHORITY_BOUNDARY_FIXED",
+                "canonical Effect Gateway authority cannot be supplied by a caller",
+            )
 
     @property
     def receipts_dir(self) -> Path:
@@ -648,6 +723,11 @@ class EffectGateway:
 
         if not isinstance(request, EffectGatewayRequest):
             raise EffectGatewayError("REQUEST_INVALID", "typed EffectGatewayRequest required")
+        if getattr(self._owner_boundary, "selection_available", True) is False:
+            raise EffectGatewayError(
+                "SELECTION_REQUIRED",
+                "no live current-owner candidate selection is installed",
+            )
         self._require_adapter(request.adapter_kind)
         grant = self._owner_boundary.issue(
             request_sha256=request.sha256,
@@ -687,44 +767,155 @@ class EffectGateway:
             error_prefix="RECEIPT",
         )
 
-    def _load_transaction(self, path: Path) -> dict[str, object]:
-        return _load_canonical_record(
-            path,
-            schema=TRANSACTION_SCHEMA,
-            seal_field="transaction_sha256",
-            error_prefix="TRANSACTION",
-        )
-
-    def _write_transaction(
+    def _load_transaction_phase(
         self,
         path: Path,
+        *,
+        expected_phase: str,
+    ) -> dict[str, object]:
+        if not _is_regular_single_link_nonreparse(path):
+            raise EffectGatewayError("TRANSACTION_PHASE_NOT_IMMUTABLE", str(path))
+        phase = _load_canonical_record(
+            path,
+            schema=TRANSACTION_PHASE_SCHEMA,
+            seal_field="phase_receipt_sha256",
+            error_prefix="TRANSACTION_PHASE",
+        )
+        if phase.get("phase") != expected_phase:
+            raise EffectGatewayError("TRANSACTION_PHASE_INVALID", str(path))
+        return phase
+
+    def _write_transaction_projection(
+        self,
+        *,
+        request: EffectGatewayRequest,
+        phase_path: Path,
+        phase: Mapping[str, object],
+    ) -> None:
+        core: dict[str, object] = {
+            "schema_version": TRANSACTION_PROJECTION_SCHEMA,
+            "request_id": request.request_id,
+            "request_sha256": request.sha256,
+            "latest_phase": phase["phase"],
+            "phase_receipt_relative_path": phase_path.relative_to(self.root).as_posix(),
+            "phase_receipt_sha256": phase["phase_receipt_sha256"],
+            "updated_at": self._clock(),
+            "projection_is_authority": False,
+        }
+        projection = {
+            **core,
+            "projection_sha256": _sha256(_canonical_json_bytes(core)),
+        }
+        _replace_durable(
+            phase_path.parent / "current.json",
+            _canonical_json_bytes(projection),
+        )
+
+    def _write_transaction_phase(
+        self,
+        transaction_dir: Path,
         *,
         request: EffectGatewayRequest,
         grant_evidence: Mapping[str, object],
         phase: str,
-        outcome: AdapterOutcome | None = None,
+        predecessor_phase: Mapping[str, object] | None,
+        outcome: AdapterOutcome | None,
     ) -> dict[str, object]:
+        path = transaction_dir / f"{phase}.json"
+        predecessor_ref = (
+            {
+                "phase": predecessor_phase["phase"],
+                "phase_receipt_sha256": predecessor_phase["phase_receipt_sha256"],
+            }
+            if predecessor_phase is not None
+            else None
+        )
         core: dict[str, object] = {
-            "schema_version": TRANSACTION_SCHEMA,
+            "schema_version": TRANSACTION_PHASE_SCHEMA,
             "phase": phase,
             "request": request.to_dict(),
             "request_sha256": request.sha256,
             "owner_grant_evidence": dict(grant_evidence),
             "adapter_outcome": outcome.to_dict() if outcome is not None else None,
-            "updated_at": self._clock(),
+            "predecessor_phase": predecessor_ref,
+            "created_at": self._clock(),
         }
-        record = {**core, "transaction_sha256": _sha256(_canonical_json_bytes(core))}
-        _replace_durable(path, _canonical_json_bytes(record))
+        record = {
+            **core,
+            "phase_receipt_sha256": _sha256(_canonical_json_bytes(core)),
+        }
+        _write_durable_new(path, _canonical_json_bytes(record))
+        self._write_transaction_projection(
+            request=request,
+            phase_path=path,
+            phase=record,
+        )
         return record
 
+    def _load_transaction_phases(
+        self,
+        transaction_dir: Path,
+        request: EffectGatewayRequest,
+    ) -> list[tuple[Path, dict[str, object]]]:
+        if not transaction_dir.exists():
+            return []
+        if not transaction_dir.is_dir():
+            raise EffectGatewayError("TRANSACTION_LAYOUT_INVALID", str(transaction_dir))
+        allowed_names = {
+            "PREPARED.json",
+            "EFFECT_APPLIED.json",
+            "COMPLETED.json",
+            "current.json",
+        }
+        extras = sorted(
+            entry.name for entry in transaction_dir.iterdir() if entry.name not in allowed_names
+        )
+        if extras:
+            raise EffectGatewayError(
+                "TRANSACTION_LAYOUT_INVALID",
+                f"unexpected transaction entries: {extras}",
+            )
+        result: list[tuple[Path, dict[str, object]]] = []
+        previous: Mapping[str, object] | None = None
+        missing_seen = False
+        for phase_name in ("PREPARED", "EFFECT_APPLIED", "COMPLETED"):
+            path = transaction_dir / f"{phase_name}.json"
+            if not path.exists():
+                missing_seen = True
+                continue
+            if missing_seen:
+                raise EffectGatewayError("TRANSACTION_PHASE_GAP", str(path))
+            phase = self._load_transaction_phase(path, expected_phase=phase_name)
+            if (
+                phase.get("request_sha256") != request.sha256
+                or phase.get("request") != request.to_dict()
+            ):
+                raise EffectGatewayError("IDEMPOTENCY_KEY_CONFLICT", str(path))
+            expected_predecessor = (
+                {
+                    "phase": previous["phase"],
+                    "phase_receipt_sha256": previous["phase_receipt_sha256"],
+                }
+                if previous is not None
+                else None
+            )
+            if phase.get("predecessor_phase") != expected_predecessor:
+                raise EffectGatewayError("TRANSACTION_PHASE_CHAIN_MISMATCH", str(path))
+            if (phase_name == "PREPARED") != (phase.get("adapter_outcome") is None):
+                raise EffectGatewayError("TRANSACTION_PHASE_INVALID", str(path))
+            if previous is not None and phase.get("owner_grant_evidence") != result[0][1].get(
+                "owner_grant_evidence"
+            ):
+                raise EffectGatewayError("TRANSACTION_GRANT_CHAIN_MISMATCH", str(path))
+            result.append((path, phase))
+            previous = phase
+        return result
+
     @staticmethod
-    def _outcome_matches_receipt(
+    def _outcome_matches_mapping(
         outcome: AdapterOutcome,
-        receipt: Mapping[str, object],
+        stored: Mapping[str, object],
     ) -> bool:
-        stored = receipt.get("adapter_outcome")
-        if not isinstance(stored, Mapping):
-            return False
         readback = stored.get("readback")
         if not isinstance(readback, Mapping):
             return False
@@ -737,6 +928,15 @@ class EffectGateway:
         return stored.get("effect_identity") == dict(outcome.effect_identity) and all(
             readback.get(key) == outcome.readback.get(key) for key in stable_keys
         )
+
+    @classmethod
+    def _outcome_matches_receipt(
+        cls,
+        outcome: AdapterOutcome,
+        receipt: Mapping[str, object],
+    ) -> bool:
+        stored = receipt.get("adapter_outcome")
+        return isinstance(stored, Mapping) and cls._outcome_matches_mapping(outcome, stored)
 
     def _complete_receipt(
         self,
@@ -776,9 +976,60 @@ class EffectGateway:
         self.receipts_dir.mkdir(parents=True, exist_ok=True)
         self.transactions_dir.mkdir(parents=True, exist_ok=True)
         receipt_path = self.receipts_dir / f"{request.request_id}.json"
-        transaction_path = self.transactions_dir / f"{request.request_id}.json"
+        transaction_dir = self.transactions_dir / request.request_id
         with portalocker.Lock(self.root / ".effect-gateway.lock", mode="a+b", timeout=30):
             _verify_evidence_contract(request, self.policy)
+            phases = self._load_transaction_phases(transaction_dir, request)
+            transaction_was_completed = len(phases) == 3 and receipt_path.exists()
+            if not phases:
+                transaction_dir.mkdir(parents=True, exist_ok=False)
+                prepared = self._write_transaction_phase(
+                    transaction_dir,
+                    request=request,
+                    grant_evidence=grant_evidence,
+                    phase="PREPARED",
+                    predecessor_phase=None,
+                    outcome=None,
+                )
+                phases = [(transaction_dir / "PREPARED.json", prepared)]
+                self._fault("after_prepared")
+            prepared_path, prepared = phases[0]
+            selected_grant_evidence = prepared.get("owner_grant_evidence")
+            if not isinstance(selected_grant_evidence, Mapping):
+                raise EffectGatewayError("TRANSACTION_PHASE_INVALID", str(prepared_path))
+
+            if len(phases) == 1:
+                try:
+                    outcome = adapter.readback(request)
+                except EffectGatewayError as exc:
+                    if exc.code != "EFFECT_NOT_APPLIED":
+                        raise
+                    outcome = adapter.apply(request, grant, prepared_path)
+                self._fault("after_adapter_apply")
+                effect_phase = self._write_transaction_phase(
+                    transaction_dir,
+                    request=request,
+                    grant_evidence=selected_grant_evidence,
+                    phase="EFFECT_APPLIED",
+                    predecessor_phase=prepared,
+                    outcome=outcome,
+                )
+                phases.append((transaction_dir / "EFFECT_APPLIED.json", effect_phase))
+                self._fault("after_effect")
+            else:
+                effect_path, effect_phase = phases[1]
+                stored_outcome = effect_phase.get("adapter_outcome")
+                if not isinstance(stored_outcome, Mapping):
+                    raise EffectGatewayError("TRANSACTION_PHASE_INVALID", str(effect_path))
+                outcome = adapter.readback(request)
+                if not self._outcome_matches_mapping(outcome, stored_outcome):
+                    raise EffectGatewayError("EFFECT_READBACK_DRIFT", str(effect_path))
+                if len(phases) == 3:
+                    completed_outcome = phases[2][1].get("adapter_outcome")
+                    if not isinstance(
+                        completed_outcome, Mapping
+                    ) or not self._outcome_matches_mapping(outcome, completed_outcome):
+                        raise EffectGatewayError("EFFECT_READBACK_DRIFT", str(phases[2][0]))
 
             if receipt_path.exists():
                 receipt = self._load_receipt(receipt_path)
@@ -790,79 +1041,51 @@ class EffectGateway:
                         "IDEMPOTENCY_KEY_CONFLICT",
                         f"request_id {request.request_id} is bound to different request bytes",
                     )
-                readback = adapter.readback(request)
-                if not self._outcome_matches_receipt(readback, receipt):
+                if not self._outcome_matches_receipt(outcome, receipt):
                     raise EffectGatewayError("EFFECT_READBACK_DRIFT", str(receipt_path))
-                return GatewayResult(receipt=receipt, receipt_path=receipt_path, replayed=True)
-
-            transaction: Mapping[str, object] | None = None
-            if transaction_path.exists():
-                transaction = self._load_transaction(transaction_path)
-                if (
-                    transaction.get("request_sha256") != request.sha256
-                    or transaction.get("request") != request.to_dict()
-                ):
-                    raise EffectGatewayError("IDEMPOTENCY_KEY_CONFLICT", str(transaction_path))
-
-            if transaction is None or transaction.get("phase") == "prepared":
-                if transaction is None:
-                    self._write_transaction(
-                        transaction_path,
-                        request=request,
-                        grant_evidence=grant_evidence,
-                        phase="prepared",
+            else:
+                if len(phases) == 3:
+                    raise EffectGatewayError(
+                        "COMPLETED_TRANSACTION_RECEIPT_MISSING", str(receipt_path)
                     )
-                    self._fault("after_prepared")
-                try:
-                    outcome = adapter.readback(request)
-                except EffectGatewayError as exc:
-                    if exc.code not in {"EFFECT_NOT_APPLIED", "EFFECT_NOT_CURRENT"}:
-                        raise
-                    outcome = adapter.apply(request, grant)
-                self._write_transaction(
-                    transaction_path,
+                receipt = self._complete_receipt(
+                    path=receipt_path,
                     request=request,
-                    grant_evidence=grant_evidence,
-                    phase="effect_applied",
+                    grant_evidence=selected_grant_evidence,
                     outcome=outcome,
                 )
-                self._fault("after_effect")
-            elif transaction.get("phase") == "effect_applied":
-                stored_outcome = transaction.get("adapter_outcome")
-                if not isinstance(stored_outcome, Mapping):
-                    raise EffectGatewayError("TRANSACTION_INVALID", str(transaction_path))
-                outcome = adapter.readback(request)
-                if stored_outcome.get("effect_identity") != dict(outcome.effect_identity):
-                    raise EffectGatewayError("EFFECT_READBACK_DRIFT", str(transaction_path))
-            elif transaction.get("phase") == "completed":
-                outcome = adapter.readback(request)
-            else:
-                raise EffectGatewayError("TRANSACTION_PHASE_INVALID", str(transaction_path))
+                self._fault("after_receipt")
 
-            receipt = self._complete_receipt(
-                path=receipt_path,
-                request=request,
-                grant_evidence=grant_evidence,
-                outcome=outcome,
-            )
-            self._write_transaction(
-                transaction_path,
-                request=request,
-                grant_evidence=grant_evidence,
-                phase="completed",
-                outcome=outcome,
-            )
+            if len(phases) == 2:
+                completed = self._write_transaction_phase(
+                    transaction_dir,
+                    request=request,
+                    grant_evidence=selected_grant_evidence,
+                    phase="COMPLETED",
+                    predecessor_phase=phases[1][1],
+                    outcome=outcome,
+                )
+                phases.append((transaction_dir / "COMPLETED.json", completed))
+            elif len(phases) != 3:
+                raise EffectGatewayError("TRANSACTION_PHASE_INVALID", str(transaction_dir))
+
             if self._load_receipt(receipt_path) != receipt:
                 raise EffectGatewayError("RECEIPT_READBACK_FAILED", str(receipt_path))
-            return GatewayResult(receipt=receipt, receipt_path=receipt_path, replayed=False)
+            latest_path, latest_phase = phases[-1]
+            self._write_transaction_projection(
+                request=request,
+                phase_path=latest_path,
+                phase=latest_phase,
+            )
+            return GatewayResult(
+                receipt=receipt,
+                receipt_path=receipt_path,
+                replayed=transaction_was_completed,
+            )
 
 
-def production_effect_gateway(
-    owner_boundary: LiveOwnerGrantBoundary,
-    *,
-    fault_injector: Callable[[str], None] | None = None,
-) -> EffectGateway:
-    """Build the fixed production roots and single-adapter registry."""
+def production_effect_gateway() -> EffectGateway:
+    """Build the fixed canonical broker with no caller-mintable selection."""
 
     policy = EffectGatewayPolicy(
         gateway_root=DEFAULT_EFFECT_GATEWAY_RUNTIME,
@@ -877,18 +1100,16 @@ def production_effect_gateway(
     return EffectGateway(
         policy,
         adapters={LOGICAL_ROOT_ADOPTION_ADAPTER: logical_root_adoption_binding(store)},
-        owner_boundary=owner_boundary,
-        fault_injector=fault_injector,
+        owner_boundary=_NoLiveProductionSelection(),
     )
 
 
 def invoke_logical_root_adoption_as_current_owner(
-    owner_boundary: LiveOwnerGrantBoundary,
     request: EffectGatewayRequest,
 ) -> GatewayResult:
     """Canonical live handler used by the formal CLI/action surface."""
 
-    return production_effect_gateway(owner_boundary).invoke_as_current_owner(request)
+    return production_effect_gateway().invoke_as_current_owner(request)
 
 
 __all__ = [
@@ -910,6 +1131,8 @@ __all__ = [
     "OWNER_INVOCATION_SCHEMA",
     "RECEIPT_SCHEMA",
     "REQUEST_SCHEMA",
+    "TRANSACTION_PHASE_SCHEMA",
+    "TRANSACTION_PROJECTION_SCHEMA",
     "build_logical_root_adoption_request",
     "invoke_logical_root_adoption_as_current_owner",
     "logical_root_adoption_binding",

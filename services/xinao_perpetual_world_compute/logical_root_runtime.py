@@ -31,10 +31,15 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_LOGICAL_ROOT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_logical_root")
+DEFAULT_EFFECT_GATEWAY_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_effect_gateway")
 
 GENERATION_RECEIPT_SCHEMA = "xinao.logical-root-generation-receipt.v1"
 CURRENT_PROJECTION_SCHEMA = "xinao.logical-root-current-projection.v1"
 FROZEN_WORLD_SEED_SCHEMA = "xinao.logical-root-frozen-world-seed.v1"
+EFFECT_GATEWAY_REQUEST_SCHEMA = "xinao.effect-gateway-request.v2"
+EFFECT_GATEWAY_OWNER_INVOCATION_SCHEMA = "xinao.effect-gateway-current-owner-invocation.v2"
+EFFECT_GATEWAY_TRANSACTION_PHASE_SCHEMA = "xinao.effect-gateway-transaction-phase.v2"
+EFFECT_GATEWAY_LOGICAL_ROOT_ADAPTER = "logical-root.adoption.v1"
 
 _RUN_V1 = "xinao.cleanroom-c.perpetual-run.v1"
 _RUN_V2 = "xinao.cleanroom.perpetual-world-compute-run.v2"
@@ -247,6 +252,38 @@ def _same_path(left: Path | str, right: Path | str) -> bool:
     )
 
 
+def _same_runtime_location(left: Path | str, right: Path | str) -> bool:
+    """Compare live filesystem identity, including a junction/symlink alias."""
+
+    left_path = Path(left).absolute()
+    right_path = Path(right).absolute()
+    if _same_path(left_path, right_path):
+        return True
+    try:
+        if _same_path(left_path.resolve(strict=False), right_path.resolve(strict=False)):
+            return True
+    except OSError:
+        pass
+    try:
+        return os.path.samefile(left_path, right_path)
+    except (FileNotFoundError, OSError):
+        return False
+
+
+def _is_regular_single_link_nonreparse(path: Path) -> bool:
+    try:
+        observed = path.lstat()
+    except OSError:
+        return False
+    attributes = int(getattr(observed, "st_file_attributes", 0))
+    reparse_flag = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    return (
+        stat.S_ISREG(observed.st_mode)
+        and not (reparse_flag and attributes & reparse_flag)
+        and observed.st_nlink == 1
+    )
+
+
 def _is_within(path: Path, parent: Path) -> bool:
     try:
         return os.path.commonpath((str(path), str(parent))) == os.path.commonpath(
@@ -254,6 +291,91 @@ def _is_within(path: Path, parent: Path) -> bool:
         )
     except ValueError:
         return False
+
+
+def _validate_effect_gateway_prepared_receipt(
+    prepared_receipt_path: Path | str,
+    *,
+    source_run_dir: Path,
+    account_slot: str,
+    expected_predecessor: RootIdentity,
+    adoption_id: str,
+    selection_ref: str,
+    selected_by: str,
+) -> None:
+    """Validate the one durable broker phase allowed to enter canonical adopt.
+
+    This establishes a filesystem protocol boundary, not a process ACL claim.
+    The canonical broker writes this receipt with exclusive-create semantics;
+    the logical-root store consumes only its exact path and sealed bytes.
+    """
+
+    prepared_path = Path(prepared_receipt_path).absolute()
+    expected_path = (
+        DEFAULT_EFFECT_GATEWAY_RUNTIME / "transactions" / adoption_id / "PREPARED.json"
+    ).absolute()
+    if not _same_path(prepared_path, expected_path):
+        raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_PATH_INVALID", str(prepared_path))
+    for directory in (
+        DEFAULT_EFFECT_GATEWAY_RUNTIME,
+        DEFAULT_EFFECT_GATEWAY_RUNTIME / "transactions",
+        expected_path.parent,
+    ):
+        try:
+            observed = directory.lstat()
+        except OSError as exc:
+            raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_MISSING", str(directory)) from exc
+        attributes = int(getattr(observed, "st_file_attributes", 0))
+        reparse_flag = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+        if not stat.S_ISDIR(observed.st_mode) or (reparse_flag and attributes & reparse_flag):
+            raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_PATH_INVALID", str(directory))
+    if not _is_regular_single_link_nonreparse(prepared_path):
+        raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_NOT_IMMUTABLE", str(prepared_path))
+    raw = _read_stable(prepared_path, error_type=LogicalRootConflict)
+    try:
+        record = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_INVALID", str(prepared_path)) from exc
+    if not isinstance(record, dict) or raw != _canonical_json_bytes(record):
+        raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_INVALID", str(prepared_path))
+    unsigned = dict(record)
+    seal = unsigned.pop("phase_receipt_sha256", None)
+    if (
+        record.get("schema_version") != EFFECT_GATEWAY_TRANSACTION_PHASE_SCHEMA
+        or record.get("phase") != "PREPARED"
+        or seal != _sha256(_canonical_json_bytes(unsigned))
+        or record.get("adapter_outcome") is not None
+        or record.get("predecessor_phase") is not None
+    ):
+        raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_INVALID", str(prepared_path))
+    request = record.get("request")
+    if not isinstance(request, Mapping):
+        raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_INVALID", str(prepared_path))
+    request_sha = _sha256(_canonical_json_bytes(dict(request)))
+    if (
+        record.get("request_sha256") != request_sha
+        or request.get("schema_version") != EFFECT_GATEWAY_REQUEST_SCHEMA
+        or request.get("request_id") != adoption_id
+        or request.get("adapter_kind") != EFFECT_GATEWAY_LOGICAL_ROOT_ADAPTER
+        or request.get("effect_owner_scope") != selected_by
+        or not _same_path(str(request.get("source_run_dir") or ""), source_run_dir)
+        or request.get("account_slot") != account_slot
+        or request.get("expected_predecessor") != expected_predecessor.to_dict()
+        or selection_ref != f"effect-gateway-request-sha256:{request_sha}"
+    ):
+        raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_REQUEST_MISMATCH", str(prepared_path))
+    grant = record.get("owner_grant_evidence")
+    if not isinstance(grant, Mapping) or (
+        grant.get("schema_version") != EFFECT_GATEWAY_OWNER_INVOCATION_SCHEMA
+        or grant.get("request_sha256") != request_sha
+        or grant.get("effect_owner_scope") != selected_by
+        or grant.get("current_grant_consumed_once") is not True
+        or grant.get("historical_context_can_mint_grant") is not False
+        or grant.get("proof_is_not_serialized") is not True
+        or not str(grant.get("boundary_id") or "")
+        or not str(grant.get("grant_id") or "")
+    ):
+        raise LogicalRootConflict("EFFECT_GATEWAY_PREPARED_GRANT_INVALID", str(prepared_path))
 
 
 def _parse_time(value: object, *, label: str) -> dt.datetime:
@@ -1202,6 +1324,16 @@ class LogicalRootStore:
         chain = self._load_chain_unlocked()
         return chain[-1] if chain else LogicalRootSnapshot.genesis()
 
+    def read_adoption(self, adoption_id: str) -> LogicalRootSnapshot:
+        """Read one exact historical adoption without requiring it to be current."""
+
+        normalized_id = _require_identifier(adoption_id, label="adoption_id")
+        for snapshot in self._load_chain_unlocked():
+            assert snapshot.receipt is not None
+            if snapshot.receipt["request"].get("adoption_id") == normalized_id:
+                return snapshot
+        raise LogicalRootConflict("ADOPTION_NOT_FOUND", normalized_id)
+
     def read_current_artifact(self) -> bytes | None:
         current = self.reconstruct_current()
         if current.artifact_path is None:
@@ -1392,6 +1524,83 @@ class LogicalRootStore:
         selection_ref: str,
         selected_by: str,
     ) -> AdoptionResult:
+        """Direct adoption surface retained only for noncanonical stores.
+
+        The canonical runtime is effect-bearing shared state and therefore
+        admits adoption only through the broker's sealed PREPARED phase.
+        Temporary and noncanonical stores retain this seam for isolated tests.
+        """
+
+        if _same_runtime_location(self.root, DEFAULT_LOGICAL_ROOT_RUNTIME):
+            raise LogicalRootConflict(
+                "CANONICAL_ADOPTION_REQUIRES_EFFECT_GATEWAY",
+                "direct LogicalRootStore.adopt is disabled for the canonical runtime",
+            )
+        return self._adopt(
+            source_run_dir=source_run_dir,
+            account_slot=account_slot,
+            expected_predecessor=expected_predecessor,
+            adoption_id=adoption_id,
+            selection_ref=selection_ref,
+            selected_by=selected_by,
+        )
+
+    def _adopt_from_effect_gateway(
+        self,
+        *,
+        source_run_dir: Path | str,
+        account_slot: str,
+        expected_predecessor: RootIdentity | Mapping[str, Any],
+        adoption_id: str,
+        selection_ref: str,
+        selected_by: str,
+        prepared_receipt_path: Path | str,
+    ) -> AdoptionResult:
+        """Package-private broker entry; it does not claim a process ACL."""
+
+        if isinstance(expected_predecessor, RootIdentity):
+            predecessor = expected_predecessor
+            predecessor.validate(error_type=LogicalRootConflict)
+        elif isinstance(expected_predecessor, Mapping):
+            predecessor = RootIdentity.from_mapping(expected_predecessor)
+        else:
+            raise LogicalRootConflict(
+                "PREDECESSOR_IDENTITY_INVALID", "RootIdentity or mapping required"
+            )
+        normalized_run = Path(source_run_dir).absolute()
+        slot = str(account_slot or "").upper()
+        normalized_adoption_id = _require_identifier(adoption_id, label="adoption_id")
+        normalized_selection_ref = _require_identifier(selection_ref, label="selection_ref")
+        normalized_selected_by = _require_owner_label(selected_by)
+        if _same_runtime_location(self.root, DEFAULT_LOGICAL_ROOT_RUNTIME):
+            _validate_effect_gateway_prepared_receipt(
+                prepared_receipt_path,
+                source_run_dir=normalized_run,
+                account_slot=slot,
+                expected_predecessor=predecessor,
+                adoption_id=normalized_adoption_id,
+                selection_ref=normalized_selection_ref,
+                selected_by=normalized_selected_by,
+            )
+        return self._adopt(
+            source_run_dir=normalized_run,
+            account_slot=slot,
+            expected_predecessor=predecessor,
+            adoption_id=normalized_adoption_id,
+            selection_ref=normalized_selection_ref,
+            selected_by=normalized_selected_by,
+        )
+
+    def _adopt(
+        self,
+        *,
+        source_run_dir: Path | str,
+        account_slot: str,
+        expected_predecessor: RootIdentity | Mapping[str, Any],
+        adoption_id: str,
+        selection_ref: str,
+        selected_by: str,
+    ) -> AdoptionResult:
         """Append one owner-selected, already-committed root-main output.
 
         ``expected_predecessor`` is an optimistic CAS identity.  Exact replay of
@@ -1495,7 +1704,9 @@ class LogicalRootStore:
 __all__ = [
     "AdoptionResult",
     "CURRENT_PROJECTION_SCHEMA",
+    "DEFAULT_EFFECT_GATEWAY_RUNTIME",
     "DEFAULT_LOGICAL_ROOT_RUNTIME",
+    "EFFECT_GATEWAY_TRANSACTION_PHASE_SCHEMA",
     "FROZEN_WORLD_SEED_SCHEMA",
     "GENERATION_RECEIPT_SCHEMA",
     "LogicalRootConflict",

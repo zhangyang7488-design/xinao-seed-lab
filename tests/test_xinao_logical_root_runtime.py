@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import services.xinao_perpetual_world_compute.logical_root_runtime as logical_root_module
 from services.xinao_perpetual_world_compute.logical_root_runtime import (
     LogicalRootConflict,
     LogicalRootEvidenceError,
@@ -339,6 +340,56 @@ def test_exact_replay_is_idempotent_and_key_reuse_conflicts(tmp_path: Path) -> N
         )
     assert raised.value.code == "IDEMPOTENCY_KEY_CONFLICT"
     assert len(list(store.receipts_dir.iterdir())) == 1
+
+
+def test_canonical_store_rejects_direct_adopt_before_creating_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical = tmp_path / "canonical-logical-root"
+    monkeypatch.setattr(logical_root_module, "DEFAULT_LOGICAL_ROOT_RUNTIME", canonical)
+    store = LogicalRootStore(canonical)
+
+    with pytest.raises(LogicalRootConflict) as rejected:
+        store.adopt(
+            source_run_dir=tmp_path / "unused-source",
+            account_slot="A",
+            expected_predecessor=RootIdentity.genesis(),
+            adoption_id="direct-canonical",
+            selection_ref="direct-selection",
+            selected_by="direct-caller",
+        )
+
+    assert rejected.value.code == "CANONICAL_ADOPTION_REQUIRES_EFFECT_GATEWAY"
+    assert not canonical.exists()
+
+
+def test_canonical_store_rejects_direct_adopt_through_filesystem_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical = tmp_path / "canonical-logical-root"
+    alias = tmp_path / "canonical-alias"
+    canonical.mkdir()
+    try:
+        alias.symlink_to(canonical, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory alias unavailable: {exc}")
+    monkeypatch.setattr(logical_root_module, "DEFAULT_LOGICAL_ROOT_RUNTIME", canonical)
+    store = LogicalRootStore(alias)
+
+    with pytest.raises(LogicalRootConflict) as rejected:
+        store.adopt(
+            source_run_dir=tmp_path / "unused-source",
+            account_slot="C",
+            expected_predecessor=RootIdentity.genesis(),
+            adoption_id="direct-canonical-alias",
+            selection_ref="direct-selection",
+            selected_by="direct-caller",
+        )
+
+    assert rejected.value.code == "CANONICAL_ADOPTION_REQUIRES_EFFECT_GATEWAY"
+    assert list(canonical.iterdir()) == []
 
 
 @pytest.mark.parametrize("tamper_target", ["artifact", "receipt"])
