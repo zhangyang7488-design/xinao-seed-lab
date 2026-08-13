@@ -2991,6 +2991,38 @@ def test_installer_audit_running_task_still_requires_fresh_receipt() -> None:
     assert audit["consumer_health"] == "receipt_stale"
 
 
+def test_installer_audit_accepts_ready_ignore_new_wake_coalescing_with_fresh_receipt() -> None:
+    exit_code, audit, raw_output = _mock_installer_audit(
+        last_task_result=2147946720,
+        receipt_age_minutes=0,
+        trusted_acl=True,
+        task_state="Ready",
+    )
+
+    assert exit_code == 0, raw_output
+    assert audit["status"] == "installed_valid"
+    assert audit["valid"] is True
+    assert audit["task_state"] == "Ready"
+    assert audit["task_running"] is False
+    assert audit["task_wake_coalesced"] is True
+    assert audit["task_result_health"] == "task_wake_coalesced"
+    assert audit["consumer_health"] == "healthy"
+
+
+def test_installer_audit_ready_wake_coalescing_still_requires_fresh_receipt() -> None:
+    exit_code, audit, _raw_output = _mock_installer_audit(
+        last_task_result=2147946720,
+        receipt_age_minutes=30,
+        trusted_acl=True,
+        task_state="Ready",
+    )
+
+    assert exit_code != 0
+    assert audit["valid"] is False
+    assert audit["task_wake_coalesced"] is True
+    assert audit["consumer_health"] == "receipt_stale"
+
+
 def test_installer_audit_accepts_fifteen_minute_watchdog_contract() -> None:
     exit_code, audit, raw_output = _mock_installer_audit(
         last_task_result=0,
