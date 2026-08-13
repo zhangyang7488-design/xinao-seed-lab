@@ -82,6 +82,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "system_awareness_consumer.py",
     "taste_qualification.py",
     "taste_corpus.py",
+    "taste_codex_shadow.py",
     "taste_shadow_runner.py",
     "thin_bootstrap_sandbox.py",
     "thin_evidence_writer.py",
