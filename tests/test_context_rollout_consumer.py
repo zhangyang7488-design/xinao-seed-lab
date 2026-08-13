@@ -385,7 +385,11 @@ def _copy_adopted_bundle_sources(tmp_path: Path) -> tuple[Path, Path, Path]:
     for relative_path in app_paths:
         destination = app_root / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(consumer.REPO_ROOT / relative_path, destination)
+        canonical_bytes = subprocess.check_output(
+            ["git", "cat-file", "blob", f"HEAD:{relative_path.as_posix()}"],
+            cwd=consumer.REPO_ROOT,
+        )
+        destination.write_bytes(canonical_bytes)
     lock_path = app_root / "scripts" / "context_rollout_consumer.bundle.lock.json"
     shutil.copy2(
         consumer.REPO_ROOT / "scripts" / "context_rollout_consumer.bundle.lock.json",
@@ -1675,7 +1679,7 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
         "python_distribution": "cpython-3.13.14-official",
     }
     assert release_lock["content_id"] == (
-        "a0a62b88f355d3cf1e5e39387d0502e01670167377634cae514766ef8a506d46"
+        "882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823"
     )
     assert len(release_lock["files"]) == 1332
     locked_paths = [item["relative_path"] for item in release_lock["files"]]
@@ -1688,7 +1692,7 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
         "sha256": "fd352a4f3f47c040f11ea2ceedd63fb41a0c80ef37123424da33aa8e42dc8764",
     }
     assert locked_by_path["app/services/agent_runtime/context_fabric.py"]["sha256"] == (
-        "2ca481932ae391acd3318d8ba074610e9a226a0300012183f9c49940500e36a0"
+        "5d6b8cd173d85ad866d3593a68072e308faa9d636121f3d25e2a346f80a622fd"
     )
     assert (
         locked_by_path["app/services/agent_runtime/context_runtime_completion.py"]["sha256"]
@@ -1736,10 +1740,53 @@ def test_installer_source_release_lock_accepts_only_the_adopted_source_plan(
     assert result == {
         "status": "valid",
         "file_count": 1332,
-        "total_bytes": 40_798_886,
-        "content_id": "a0a62b88f355d3cf1e5e39387d0502e01670167377634cae514766ef8a506d46",
+        "total_bytes": 40_796_469,
+        "content_id": "882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823",
     }
     assert not (tmp_path / "LocalAppData" / "XINAO").exists()
+
+
+def test_bundle_release_lock_matches_fresh_head_lf_application_bytes() -> None:
+    lock = json.loads(
+        (consumer.REPO_ROOT / "scripts/context_rollout_consumer.bundle.lock.json").read_bytes()
+    )
+    locked_by_path = {item["relative_path"]: item for item in lock["files"]}
+    source_paths = (
+        Path("scripts/context_rollout_consumer.py"),
+        Path("services/__init__.py"),
+        Path("services/agent_runtime/__init__.py"),
+        Path("services/agent_runtime/context_fabric.py"),
+        Path("services/agent_runtime/context_runtime_completion.py"),
+    )
+
+    for source_path in source_paths:
+        canonical_bytes = subprocess.check_output(
+            ["git", "cat-file", "blob", f"HEAD:{source_path.as_posix()}"],
+            cwd=consumer.REPO_ROOT,
+        )
+        assert b"\r\n" not in canonical_bytes
+        locked_path = (
+            f"app/{source_path.as_posix()}"
+            if source_path.parts[0] != "scripts"
+            else "app/scripts/context_rollout_consumer.py"
+        )
+        assert locked_by_path[locked_path] == {
+            "relative_path": locked_path,
+            "size": len(canonical_bytes),
+            "sha256": hashlib.sha256(canonical_bytes).hexdigest(),
+        }
+        attributes = subprocess.check_output(
+            ["git", "check-attr", "text", "eol", "--", source_path.as_posix()],
+            cwd=consumer.REPO_ROOT,
+            text=True,
+        )
+        assert f"{source_path.as_posix()}: text: set" in attributes
+        assert f"{source_path.as_posix()}: eol: lf" in attributes
+
+    canonical_manifest = "".join(
+        f"{item['relative_path']}\0{item['size']}\0{item['sha256']}\n" for item in lock["files"]
+    ).encode()
+    assert hashlib.sha256(canonical_manifest).hexdigest() == lock["content_id"]
 
 
 def test_installer_apply_preflight_rejects_source_and_lock_tamper_without_residue(

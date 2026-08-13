@@ -6,7 +6,7 @@
     "release": "2026-08-13",
     "python_distribution": "cpython-3.13.14-official"
   },
-  "content_id": "a0a62b88f355d3cf1e5e39387d0502e01670167377634cae514766ef8a506d46",
+  "content_id": "882dda531d281ac73a8ed447a438a79f511310ef1b5bd4af6ebe8b363b27f823",
   "files": [
     {
       "relative_path": "app/scripts/context_rollout_consumer.py",
@@ -15,18 +15,18 @@
     },
     {
       "relative_path": "app/services/__init__.py",
-      "size": 56,
-      "sha256": "9ccbfaf70902e4305a0e8f7fa1fb98b8d869386c476b021b6f112ba1131f7012"
+      "size": 55,
+      "sha256": "c73abf19b1ece3d8e2824e6ec3cd9d580b9e7c5772c32528a17d33d293b5e78b"
     },
     {
       "relative_path": "app/services/agent_runtime/__init__.py",
-      "size": 56,
-      "sha256": "9ccbfaf70902e4305a0e8f7fa1fb98b8d869386c476b021b6f112ba1131f7012"
+      "size": 55,
+      "sha256": "c73abf19b1ece3d8e2824e6ec3cd9d580b9e7c5772c32528a17d33d293b5e78b"
     },
     {
       "relative_path": "app/services/agent_runtime/context_fabric.py",
-      "size": 101067,
-      "sha256": "2ca481932ae391acd3318d8ba074610e9a226a0300012183f9c49940500e36a0"
+      "size": 98652,
+      "sha256": "5d6b8cd173d85ad866d3593a68072e308faa9d636121f3d25e2a346f80a622fd"
     },
     {
       "relative_path": "app/services/agent_runtime/context_runtime_completion.py",
