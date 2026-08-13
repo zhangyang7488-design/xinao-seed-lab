@@ -13,6 +13,7 @@ docs/tool_glue/CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md text eol=lf
 # The rollout-consumer bundle and its release lock are byte-hash pinned.
 scripts/Install-SContextRolloutConsumer.ps1 text eol=lf
 scripts/context_rollout_consumer.py text eol=lf
+scripts/Invoke-SPresentationDelivery.ps1 text eol=lf
 scripts/context_rollout_consumer.bundle.lock.json text eol=lf
 services/__init__.py text eol=lf
 services/agent_runtime/__init__.py text eol=lf

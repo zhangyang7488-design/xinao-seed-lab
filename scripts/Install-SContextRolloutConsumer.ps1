@@ -20,25 +20,31 @@ $bundleLockPath = 'E:\XINAO_RESEARCH_WORKSPACES\S\scripts\context_rollout_consum
 $consumerReceiptPath = 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\last_receipt.json'
 $presentationReceiptPath = 'D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric\_consumer\presentation_last_receipt.json'
 $expectedPresentationRuntimeRootHashes = @(
-    'adb880fbd3d9c491c6ce49d56397e1e25242348b43d5611ac2c49d326622f855',
-    '49f6dd97d62d05a2bb2c80025b0bb9ce9e27800d0ccff5ebcc2e71f7023fe680',
-    '9a2efb050d003f98c1d34def251707680406dbe33df3423273d9c6b6fcea1e0c'
+    '4dd6d4179cda425a90a3b46c52baa7e705ac26d95df3ed2b763f85478926d9c0',
+    'afc8ff4d120f1968ad1fbaf4bb096435eba32561859786ee859a5d284c3782aa',
+    '247ddd4bc4925aa2786b84b1495d657f23194b59e013058d8c0e84d200815691',
+    'f1e7525ba72d661a66ef07895cfd662f9473a7c8f1f8bfb8b53b38ec99fed0b1',
+    '5ed766c971420da10a2b8b4a30d4b13c1954a2fc4930fc2a53ca05677a59c281',
+    'b469bf51ee586a5c3ab9aa595288f3d505f39a4870d7a0f4e3a899ad504006a3',
+    '91f853881f3bfcfbf1b165f0e679b14a7a49d6b6fc9200c5c93e283db533b39f',
+    '1cf11489bc55199360b58b8c88e8a8f9544c6a27250de6b4e0cd847a7499ec60'
 )
 $officialPythonSha256 = 'ef8f51028ac5329641985112f8efb1c2d4c47c86b8011ddf7e6fae21e2b4e5a1'
 $officialPythonwSha256 = '95225ed035643523e8c586c11981e276541dce4949eb35cf8cf5741c824249d4'
-$expectedBundleLockSha256 = '3448f1db0532cb515c04fe7f25c67175a8be63babb2e139d2d07d9e3c67429c3'
-$expectedBundleContentId = 'ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e'
-$expectedBundleFileCount = 1336
-$managedUpgradeSourceContentId = 'd11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e'
-$managedUpgradeSourceManifestSha256 = '60f3c9c455452783c1a083a97b1125eadf444026b405a5fb8661c3cc42d4dbcc'
+$expectedBundleLockSha256 = 'd39e0828fe172e1338604a66b1e9b80a074401887a599977627e839efed46a59'
+$expectedBundleContentId = 'ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80'
+$expectedBundleFileCount = 1337
+$managedUpgradeSourceContentId = 'ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e'
+$managedUpgradeSourceManifestSha256 = 'ae9d1041929a0e6f24f06c1afe6203dc3b1579ad3de457c90c23d8dcce9b983e'
 $managedUpgradeSourceFileCount = 1336
-$managedUpgradeSourceNormalizedXmlSha256 = 'b018a2e0e81c1357567be9840e6b69e0219ed6a494b556969c6fc3caec5342ca'
+$managedUpgradeSourceNormalizedXmlSha256 = '88387e861731f7277ad20d004781ce5c7f02d591bef32dd9d3e87cdd7526c101'
 $mutationMutexName = 'Global\XINAO.S.ContextRolloutConsumer.Mutation.v1'
 $bundleLockSchema = 's.context_rollout_consumer.bundle_lock.v1'
 $requiredLockedFilePaths = @(
     'python/python.exe',
     'python/pythonw.exe',
     'app/scripts/context_rollout_consumer.py',
+    'app/scripts/Invoke-SPresentationDelivery.ps1',
     'app/services/__init__.py',
     'app/services/agent_runtime/__init__.py',
     'app/services/agent_runtime/context_fabric.py',
@@ -60,7 +66,8 @@ $managedUpgradeSourceRequiredPaths = @(
 $directLockedFileHashes = [ordered]@{
     'python/python.exe' = $officialPythonSha256
     'python/pythonw.exe' = $officialPythonwSha256
-    'app/scripts/context_rollout_consumer.py' = '9b365a5d61f6fec700f1ad6be622f86c434a8d9b464776c28a3deaa89931842b'
+    'app/scripts/context_rollout_consumer.py' = '786aa0cc3380cd11b693bc565bcf00de6a44e7fc2f99318307ea734d05f893dd'
+    'app/scripts/Invoke-SPresentationDelivery.ps1' = '11137a2faacd8af55320aebdd7f2d08d01e5a20cd213a6a3615b6302f9016e21'
 }
 $bundleBoundary = [Environment]::ExpandEnvironmentVariables('%LOCALAPPDATA%')
 if ([string]::IsNullOrWhiteSpace($bundleBoundary) -or -not [System.IO.Path]::IsPathRooted($bundleBoundary)) {
@@ -653,6 +660,7 @@ function Get-SourceBundlePlan {
     }
     $appSourceMap = [ordered]@{
         'app/scripts/context_rollout_consumer.py' = $sourceConsumerScript
+        'app/scripts/Invoke-SPresentationDelivery.ps1' = Join-Path $sourceRepositoryRoot 'scripts\Invoke-SPresentationDelivery.ps1'
         'app/services/__init__.py' = Join-Path $sourceRepositoryRoot 'services\__init__.py'
         'app/services/agent_runtime/__init__.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\__init__.py'
         'app/services/agent_runtime/context_fabric.py' = Join-Path $sourceRepositoryRoot 'services\agent_runtime\context_fabric.py'
@@ -1652,11 +1660,11 @@ function Get-ConsumerTaskAudit {
                 ) -or
                 [string]$presentationReceipt.status -notin @('completed', 'completed_with_errors') -or
                 $presentationReceipt.runtime_roots -isnot [System.Array] -or
-                @($presentationReceipt.runtime_roots).Count -ne 3 -or
+                @($presentationReceipt.runtime_roots).Count -ne 8 -or
                 $presentationReceipt.counts -isnot [System.Management.Automation.PSCustomObject] -or
                 -not [string]::Equals(
                     [string]$presentationReceipt.visible_emitter,
-                    'not_configured',
+                    'windows_notify_icon.v1',
                     [System.StringComparison]::Ordinal
                 ) -or $presentationReceipt.ui_interception_claimed -isnot [bool] -or
                 $presentationReceipt.ui_interception_claimed -ne $false -or
@@ -1665,7 +1673,8 @@ function Get-ConsumerTaskAudit {
                 throw 'Presentation receipt shape is invalid.'
             }
             $allowedPresentationCountFields = @(
-                'absent', 'error', 'observed', 'pending_delivery', 'transitions'
+                'absent', 'error', 'observed', 'pending_delivery', 'transitions',
+                'notification_attempted', 'notification_acknowledged', 'notification_failed'
             )
             foreach ($property in @($presentationReceipt.counts.PSObject.Properties)) {
                 if ([string]$property.Name -notin $allowedPresentationCountFields -or

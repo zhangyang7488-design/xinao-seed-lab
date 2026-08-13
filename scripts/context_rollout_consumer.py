@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -35,6 +36,9 @@ from services.agent_runtime.context_fabric import (  # noqa: E402
     import_codex_rollout,
 )
 from services.agent_runtime.presentation_delivery import (  # noqa: E402
+    DELIVERY_KIND_DELTA,
+    PresentationDeliveryItem,
+    acknowledge_delivery,
     read_presentation_outbox,
     read_presentation_state,
 )
@@ -73,10 +77,25 @@ LOCATOR_PAYLOAD_TOLERANCE = timedelta(seconds=5)
 FUTURE_CLOCK_TOLERANCE = timedelta(seconds=5)
 PRODUCTION_CONTEXT_FABRIC_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\S_Context_Fabric")
 PRODUCTION_PRESENTATION_RUNTIME_ROOTS = (
-    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_world_compute"),
-    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c"),
-    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale2_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale3_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale4_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale2_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale3_20260813"),
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale4_20260813"),
 )
+PRODUCTION_PRESENTATION_NOTIFICATION_ADAPTER = REPO_ROOT / "scripts" / "Invoke-SPresentationDelivery.ps1"
+PRODUCTION_PRESENTATION_NOTIFICATION_RECEIPT_ROOT = (
+    PRODUCTION_CONTEXT_FABRIC_ROOT / CONSUMER_DIR_NAME / "presentation_delivery_receipts"
+)
+PRESENTATION_VISIBLE_EMITTER = "windows_notify_icon.v1"
+PRESENTATION_NOTIFICATION_CATEGORIES = frozenset(
+    {"runtime_incident", "needs_user", "stop_pause", "blocked"}
+)
+PRESENTATION_NOTIFICATION_CONSUMER_ID = "s.windows_notify_icon.v1"
+_PRESENTATION_NOTIFICATION_RECEIPT_RE = re.compile(r"presentation_toast_[0-9a-f]{64}")
 _POINTER_TO_CONTROLLER_SCHEMA = {
     "xinao.cleanroom.perpetual-world-compute-run.v2": (
         "xinao.cleanroom.perpetual-world-compute-controller-state.v2"
@@ -84,18 +103,11 @@ _POINTER_TO_CONTROLLER_SCHEMA = {
     "xinao.cleanroom-c.perpetual-run.v1": ("xinao.cleanroom-c.perpetual-controller-state.v1"),
 }
 _PRODUCTION_PRESENTATION_ROOT_CONTRACTS = {
-    os.path.normcase(str(PRODUCTION_PRESENTATION_RUNTIME_ROOTS[0])): {
+    os.path.normcase(str(runtime_root)): {
         "pointer_schema": "xinao.cleanroom.perpetual-world-compute-run.v2",
-        "account_slot": "",
-    },
-    os.path.normcase(str(PRODUCTION_PRESENTATION_RUNTIME_ROOTS[1])): {
-        "pointer_schema": "xinao.cleanroom-c.perpetual-run.v1",
-        "account_slot": "C",
-    },
-    os.path.normcase(str(PRODUCTION_PRESENTATION_RUNTIME_ROOTS[2])): {
-        "pointer_schema": "xinao.cleanroom.perpetual-world-compute-run.v2",
-        "account_slot": "A",
-    },
+        "account_slot": "A" if index < 4 else "C",
+    }
+    for index, runtime_root in enumerate(PRODUCTION_PRESENTATION_RUNTIME_ROOTS)
 }
 _MAX_PRESENTATION_POINTER_BYTES = 1024 * 1024
 
@@ -370,11 +382,124 @@ def _validate_presentation_binding(binding: Mapping[str, str]) -> None:
             raise ConsumerError(f"{object_name} changed before transition append")
 
 
+def _notification_powershell_path(environ: Mapping[str, str]) -> Path:
+    system_root = str(environ.get("SystemRoot") or environ.get("SYSTEMROOT") or "").strip()
+    if not system_root:
+        raise ConsumerError("presentation notification has no Windows system root")
+    powershell = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    if not powershell.is_file() or _is_reparse_point(powershell):
+        raise ConsumerError("presentation notification PowerShell is unavailable")
+    return powershell
+
+
+def _invoke_presentation_notification(
+    item: PresentationDeliveryItem,
+    *,
+    adapter_path: Path,
+    receipt_root: Path,
+    environ: Mapping[str, str],
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> str:
+    adapter = Path(adapter_path)
+    if not adapter.is_file() or _is_reparse_point(adapter):
+        raise ConsumerError("presentation notification adapter is unavailable")
+    request = {
+        "schema_version": "s.presentation_notify_icon.request.v1",
+        "delivery_key": item.delivery_key,
+        "title": "S research runtime",
+        "body": item.text,
+    }
+    completed = runner(
+        [
+            str(_notification_powershell_path(environ)),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Sta",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(adapter.resolve(strict=True)),
+            "-ReceiptRoot",
+            str(receipt_root),
+        ],
+        input=json.dumps(request, ensure_ascii=False, separators=(",", ":")),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    stdout = str(completed.stdout or "").strip()
+    if completed.returncode != 0 or _PRESENTATION_NOTIFICATION_RECEIPT_RE.fullmatch(stdout) is None:
+        raise ConsumerError("presentation notification emitter did not return a durable receipt")
+    return stdout
+
+
+def deliver_presentation_notifications(
+    *,
+    root: Path,
+    adapter_path: Path,
+    receipt_root: Path,
+    carrier_id: str,
+    environ: Mapping[str, str] | None = None,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, int]:
+    """Deliver only interruption-worthy deltas and ACK only durable success.
+
+    Material progress and major results deliberately remain available to an
+    explicit status consumer instead of creating background notification
+    traffic.  Adapter failure is isolated per item and leaves the canonical
+    outbox item unacknowledged for a later retry.
+    """
+
+    effective_environ = os.environ if environ is None else environ
+    selected = tuple(
+        item
+        for item in read_presentation_outbox(root=Path(root), audience="user")
+        if item.delivery_kind == DELIVERY_KIND_DELTA
+        and item.category in PRESENTATION_NOTIFICATION_CATEGORIES
+    )
+    attempted = 0
+    acknowledged = 0
+    failed = 0
+    for item in selected:
+        attempted += 1
+        try:
+            receipt_id = _invoke_presentation_notification(
+                item,
+                adapter_path=adapter_path,
+                receipt_root=receipt_root,
+                environ=effective_environ,
+                runner=runner,
+            )
+            acknowledge_delivery(
+                item,
+                delivery_receipt_id=receipt_id,
+                consumer_id=PRESENTATION_NOTIFICATION_CONSUMER_ID,
+                carrier_id=carrier_id,
+                root=Path(root),
+                environ=effective_environ,
+            )
+            acknowledged += 1
+        except Exception:
+            failed += 1
+    return {
+        "notification_attempted": attempted,
+        "notification_acknowledged": acknowledged,
+        "notification_failed": failed,
+    }
+
+
 def run_presentation_step(
     *,
     root: Path = PRODUCTION_CONTEXT_FABRIC_ROOT,
     runtime_roots: Sequence[Path] = PRODUCTION_PRESENTATION_RUNTIME_ROOTS,
     carrier_id: str = "s-primary",
+    notification_adapter: Path | None = None,
+    notification_receipt_root: Path | None = None,
+    notification_environ: Mapping[str, str] | None = None,
+    notification_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> dict[str, object]:
     """Observe controller-only state into Context and read the delivery surface.
 
@@ -477,14 +602,48 @@ def run_presentation_step(
             totals["error"] += 1
         results.append(item)
 
+    visible_emitter = "not_configured"
+    if notification_adapter is not None:
+        delivery_counts = deliver_presentation_notifications(
+            root=Path(root),
+            adapter_path=Path(notification_adapter),
+            receipt_root=(
+                Path(notification_receipt_root)
+                if notification_receipt_root is not None
+                else _consumer_directory(Path(root)) / "presentation_delivery_receipts"
+            ),
+            carrier_id=carrier_id,
+            environ=notification_environ,
+            runner=notification_runner,
+        )
+        totals.update(delivery_counts)
+        visible_emitter = PRESENTATION_VISIBLE_EMITTER
+        totals["pending_delivery"] = 0
+        for result in results:
+            activity_id = str(result.get("activity_id") or "")
+            if not activity_id:
+                continue
+            pending = read_presentation_outbox(
+                root=Path(root), activity_id=activity_id, audience="user"
+            )
+            routine_pending = sum(item.category == "routine" for item in pending)
+            result["pending_delivery_count"] = len(pending)
+            result["routine_pending_count"] = routine_pending
+            result["visible_pending_count"] = len(pending) - routine_pending
+            totals["pending_delivery"] += len(pending)
+
     receipt = {
         "schema_version": PRESENTATION_RECEIPT_SCHEMA_VERSION,
-        "status": "completed_with_errors" if totals["error"] else "completed",
+        "status": (
+            "completed_with_errors"
+            if totals["error"] or totals["notification_failed"]
+            else "completed"
+        ),
         "started_at": _utc_text(started),
         "finished_at": _utc_text(_utc_now()),
         "runtime_roots": results,
         "counts": dict(sorted(totals.items())),
-        "visible_emitter": "not_configured",
+        "visible_emitter": visible_emitter,
         "ui_interception_claimed": False,
         "authority": False,
     }
@@ -1830,7 +1989,10 @@ def main(argv: list[str] | None = None) -> int:
         receipt = run_consumer_to_quiescence()
         presentation_status = "not_run"
         if receipt.get("status") in {"completed", "completed_with_errors"}:
-            presentation_receipt = run_presentation_step()
+            presentation_receipt = run_presentation_step(
+                notification_adapter=PRODUCTION_PRESENTATION_NOTIFICATION_ADAPTER,
+                notification_receipt_root=PRODUCTION_PRESENTATION_NOTIFICATION_RECEIPT_ROOT,
+            )
             presentation_status = str(presentation_receipt.get("status") or "failed")
     except Exception as exc:
         receipt = {

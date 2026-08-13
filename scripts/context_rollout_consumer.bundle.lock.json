@@ -6,12 +6,17 @@
     "release": "2026-08-13",
     "python_distribution": "cpython-3.13.14-official"
   },
-  "content_id": "ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e",
+  "content_id": "ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80",
   "files": [
     {
+      "relative_path": "app/scripts/Invoke-SPresentationDelivery.ps1",
+      "size": 8557,
+      "sha256": "11137a2faacd8af55320aebdd7f2d08d01e5a20cd213a6a3615b6302f9016e21"
+    },
+    {
       "relative_path": "app/scripts/context_rollout_consumer.py",
-      "size": 77233,
-      "sha256": "9b365a5d61f6fec700f1ad6be622f86c434a8d9b464776c28a3deaa89931842b"
+      "size": 83812,
+      "sha256": "786aa0cc3380cd11b693bc565bcf00de6a44e7fc2f99318307ea734d05f893dd"
     },
     {
       "relative_path": "app/services/__init__.py",

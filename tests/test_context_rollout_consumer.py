@@ -25,6 +25,21 @@ TURN_ID = "turn-context-rollout-consumer"
 BASE_NOW = datetime(2026, 8, 13, 6, 0, tzinfo=timezone.utc)
 
 
+def test_production_presentation_roots_are_exact_scale_worlds() -> None:
+    assert consumer.PRODUCTION_PRESENTATION_RUNTIME_ROOTS == (
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale_20260813"),
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale2_20260813"),
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale3_20260813"),
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_a_scale4_20260813"),
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale_20260813"),
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale2_20260813"),
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale3_20260813"),
+        Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_perpetual_c_scale4_20260813"),
+    )
+    assert all("perpetual_world_compute" not in str(path) for path in consumer.PRODUCTION_PRESENTATION_RUNTIME_ROOTS)
+    assert all(not str(path).endswith(("perpetual_a", "perpetual_c")) for path in consumer.PRODUCTION_PRESENTATION_RUNTIME_ROOTS)
+
+
 def _line(value: dict[str, object]) -> bytes:
     return (
         json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -261,6 +276,7 @@ def _mock_installer_audit(
             "python/python.exe": b"mock-official-python-distribution",
             "python/pythonw.exe": b"mock-official-windowless-python-distribution",
             "app/scripts/context_rollout_consumer.py": b"# mock consumer\n",
+            "app/scripts/Invoke-SPresentationDelivery.ps1": b"# mock notification adapter\n",
             "app/services/__init__.py": b"# mock package\n",
             "app/services/agent_runtime/__init__.py": b"# mock package\n",
             "app/services/agent_runtime/context_fabric.py": b"# mock fabric\n",
@@ -322,6 +338,30 @@ def _mock_installer_audit(
             else (bundle_python if action_console_python else bundle_action_python)
         )
         rule_sid = "$mockSid" if trusted_acl else "'S-1-5-11'"
+        presentation_runtime_receipts = ",".join(
+            json.dumps(
+                {
+                    "runtime_root_sha256": digest,
+                    "observer_status": "absent",
+                    "transition_count": 0,
+                    "pending_delivery_count": 0,
+                    "routine_pending_count": 0,
+                    "visible_pending_count": 0,
+                    "authority": False,
+                },
+                separators=(",", ":"),
+            )
+            for digest in (
+                "4dd6d4179cda425a90a3b46c52baa7e705ac26d95df3ed2b763f85478926d9c0",
+                "afc8ff4d120f1968ad1fbaf4bb096435eba32561859786ee859a5d284c3782aa",
+                "247ddd4bc4925aa2786b84b1495d657f23194b59e013058d8c0e84d200815691",
+                "f1e7525ba72d661a66ef07895cfd662f9473a7c8f1f8bfb8b53b38ec99fed0b1",
+                "5ed766c971420da10a2b8b4a30d4b13c1954a2fc4930fc2a53ca05677a59c281",
+                "b469bf51ee586a5c3ab9aa595288f3d505f39a4870d7a0f4e3a899ad504006a3",
+                "91f853881f3bfcfbf1b165f0e679b14a7a49d6b6fc9200c5c93e283db533b39f",
+                "1cf11489bc55199360b58b8c88e8a8f9544c6a27250de6b4e0cd847a7499ec60",
+            )
+        )
         command = rf"""
 $ErrorActionPreference = 'Stop'
 $env:LOCALAPPDATA = '{str(local_app_data).replace("'", "''")}'
@@ -341,7 +381,7 @@ $mockReceipt = @'
 {{"schema_version":"s.context_rollout_consumer.receipt.v1","status":"{receipt_status}","started_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{receipt_age_minutes}).ToString('o'))","bootstrap":false,"state_recovered":false,"scan_start":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-20).ToString('o'))","scan_end":"$($mockNow.AddMinutes(-{receipt_age_minutes}).AddSeconds(-1).ToString('o'))","counts":{{"appended":1,"inventoried":1{extra_count_json}}},"files":[{{"carrier_id":"s-primary","locator_sha256":"$($mockLocatorHash)","status":"imported","appended":1,"duplicate":0,"ignored":0,"incomplete_tail":false{extra_file_json}}}],"file_receipts_total":1,"file_receipts_omitted":0,"authority":false{extra_json}}}
 '@
 $mockPresentationReceipt = @'
-{{"schema_version":"s.context_rollout_presentation.receipt.v1","status":"{presentation_receipt_status}","started_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).AddSeconds(-10).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).ToString('o'))","runtime_roots":[{{"runtime_root_sha256":"adb880fbd3d9c491c6ce49d56397e1e25242348b43d5611ac2c49d326622f855","observer_status":"absent","transition_count":0,"pending_delivery_count":0,"routine_pending_count":0,"visible_pending_count":0,"authority":false}},{{"runtime_root_sha256":"49f6dd97d62d05a2bb2c80025b0bb9ce9e27800d0ccff5ebcc2e71f7023fe680","observer_status":"absent","transition_count":0,"pending_delivery_count":0,"routine_pending_count":0,"visible_pending_count":0,"authority":false}},{{"runtime_root_sha256":"9a2efb050d003f98c1d34def251707680406dbe33df3423273d9c6b6fcea1e0c","observer_status":"absent","transition_count":0,"pending_delivery_count":0,"routine_pending_count":0,"visible_pending_count":0,"authority":false}}],"counts":{{"absent":3}},"visible_emitter":"not_configured","ui_interception_claimed":false,"authority":false{extra_presentation_json}}}
+{{"schema_version":"s.context_rollout_presentation.receipt.v1","status":"{presentation_receipt_status}","started_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).AddSeconds(-10).ToString('o'))","finished_at":"$($mockNow.AddMinutes(-{presentation_receipt_age_minutes}).ToString('o'))","runtime_roots":[{presentation_runtime_receipts}],"counts":{{"absent":8,"notification_attempted":0,"notification_acknowledged":0,"notification_failed":0}},"visible_emitter":"windows_notify_icon.v1","ui_interception_claimed":false,"authority":false{extra_presentation_json}}}
 '@
 function Get-ScheduledTask {{
     [CmdletBinding()] param([string]$TaskName, [string]$TaskPath)
@@ -484,6 +524,7 @@ def _copy_adopted_bundle_sources(tmp_path: Path) -> tuple[Path, Path, Path]:
     app_root = tmp_path / "source-app"
     app_paths = (
         Path("scripts/context_rollout_consumer.py"),
+        Path("scripts/Invoke-SPresentationDelivery.ps1"),
         Path("services/__init__.py"),
         Path("services/agent_runtime/__init__.py"),
         Path("services/agent_runtime/context_fabric.py"),
@@ -726,8 +767,8 @@ function Test-BundlePayload {{
         [Nullable[int]]$ExpectedFileCount
     )
     [void]($script:bundleBindingValid =
-        $ExpectedContentId -eq 'd11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e' -and
-        $ExpectedManifestSha256 -eq '60f3c9c455452783c1a083a97b1125eadf444026b405a5fb8661c3cc42d4dbcc' -and
+        $ExpectedContentId -eq 'ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e' -and
+        $ExpectedManifestSha256 -eq 'ae9d1041929a0e6f24f06c1afe6203dc3b1579ad3de457c90c23d8dcce9b983e' -and
         @($RequiredPaths).Count -eq 7 -and $ExpectedFileCount -eq 1336)
     [pscustomobject]@{{
         valid = $script:bundleBindingValid
@@ -743,8 +784,8 @@ function Export-ScheduledTask {{ return $script:mockManagedXml }}
 function Get-ScheduledTask {{
     $description = 'XINAO S context rollout consumer v1; registration=' + ('a' * 32) +
         ';registered_at=2026-08-13T10:58:08.7987777+00:00' +
-        ';content_id=d11fe5fa8a1b6014a1073b29ab70fc999ad005f5c33bf5148d697ee1a792511e' +
-        ';manifest_sha256=60f3c9c455452783c1a083a97b1125eadf444026b405a5fb8661c3cc42d4dbcc'
+        ';content_id=ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e' +
+        ';manifest_sha256=ae9d1041929a0e6f24f06c1afe6203dc3b1579ad3de457c90c23d8dcce9b983e'
     $execute = 'C:\owned\python\{action_name}'
     $arguments = '-I -B "C:\owned\app\scripts\context_rollout_consumer.py"'
     $hidden = $false
@@ -2383,18 +2424,26 @@ def test_installer_has_exact_current_user_ignore_new_contract() -> None:
         "python_distribution": "cpython-3.13.14-official",
     }
     assert release_lock["content_id"] == (
-        "ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e"
+        "ab30ddf91121299f0ed0a0595b4af13dc215a88512ed7c670090d1d2453b4c80"
     )
-    assert len(release_lock["files"]) == 1336
+    assert len(release_lock["files"]) == 1337
     locked_paths = [item["relative_path"] for item in release_lock["files"]]
     assert locked_paths == sorted(locked_paths)
     assert len({path.casefold() for path in locked_paths}) == len(locked_paths)
     locked_by_path = {item["relative_path"]: item for item in release_lock["files"]}
-    assert locked_by_path["app/scripts/context_rollout_consumer.py"] == {
-        "relative_path": "app/scripts/context_rollout_consumer.py",
-        "size": 77233,
-        "sha256": "9b365a5d61f6fec700f1ad6be622f86c434a8d9b464776c28a3deaa89931842b",
-    }
+    for relative_path, source_path in (
+        ("app/scripts/context_rollout_consumer.py", Path("scripts/context_rollout_consumer.py")),
+        (
+            "app/scripts/Invoke-SPresentationDelivery.ps1",
+            Path("scripts/Invoke-SPresentationDelivery.ps1"),
+        ),
+    ):
+        source_bytes = (consumer.REPO_ROOT / source_path).read_bytes()
+        assert locked_by_path[relative_path] == {
+            "relative_path": relative_path,
+            "size": len(source_bytes),
+            "sha256": hashlib.sha256(source_bytes).hexdigest(),
+        }
     assert locked_by_path["app/services/agent_runtime/context_fabric.py"]["sha256"] == (
         "5d6b8cd173d85ad866d3593a68072e308faa9d636121f3d25e2a346f80a622fd"
     )
@@ -2441,11 +2490,12 @@ def test_installer_source_release_lock_accepts_only_the_adopted_source_plan(
     exit_code, result, raw_output = _run_source_lock_probe(installer)
 
     assert exit_code == 0, raw_output
+    release_lock = json.loads(lock_path.read_bytes())
     assert result == {
         "status": "valid",
-        "file_count": 1336,
-        "total_bytes": 40_924_670,
-        "content_id": "ea4258e4fc3fa66dbbf6372e1ddb3c86e4a8231fbd4179495c5560b40b7ec32e",
+        "file_count": len(release_lock["files"]),
+        "total_bytes": sum(int(item["size"]) for item in release_lock["files"]),
+        "content_id": release_lock["content_id"],
     }
     assert not (tmp_path / "LocalAppData" / "XINAO").exists()
 
@@ -2457,6 +2507,7 @@ def test_bundle_release_lock_matches_adopted_lf_application_bytes() -> None:
     locked_by_path = {item["relative_path"]: item for item in lock["files"]}
     source_paths = (
         Path("scripts/context_rollout_consumer.py"),
+        Path("scripts/Invoke-SPresentationDelivery.ps1"),
         Path("services/__init__.py"),
         Path("services/agent_runtime/__init__.py"),
         Path("services/agent_runtime/context_fabric.py"),
@@ -2473,7 +2524,7 @@ def test_bundle_release_lock_matches_adopted_lf_application_bytes() -> None:
         locked_path = (
             f"app/{source_path.as_posix()}"
             if source_path.parts[0] != "scripts"
-            else "app/scripts/context_rollout_consumer.py"
+            else f"app/scripts/{source_path.name}"
         )
         assert locked_by_path[locked_path] == {
             "relative_path": locked_path,
@@ -3101,6 +3152,214 @@ def test_presentation_step_controller_only_incident_is_one_and_replay_stays_one(
             "SELECT event_kind,COUNT(*) FROM events GROUP BY event_kind"
         ).fetchall()
     assert rows == [("presentation_runtime_transition", 1)]
+
+
+def test_presentation_notification_success_acks_once_by_delivery_key(
+    tmp_path: Path,
+) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    runtime_root = _presentation_runtime(
+        tmp_path,
+        status="FAILED",
+        updated_at="2026-08-13T10:01:00Z",
+        thread_errors={"controller": "typed incident presence"},
+    )
+    adapter = tmp_path / "Invoke-SPresentationDelivery.ps1"
+    adapter.write_text("# bounded test adapter\n", encoding="utf-8")
+    system_root = tmp_path / "Windows"
+    powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    powershell.parent.mkdir(parents=True)
+    powershell.write_bytes(b"test-powershell")
+    calls: list[dict[str, object]] = []
+
+    def notify(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        request = json.loads(str(kwargs["input"]))
+        calls.append({"command": command, "request": request, **kwargs})
+        receipt_id = "presentation_toast_" + request["delivery_key"].removeprefix("delivery_")
+        return subprocess.CompletedProcess(command, 0, stdout=receipt_id + "\n", stderr="")
+
+    first = consumer.run_presentation_step(
+        root=root,
+        runtime_roots=[runtime_root],
+        notification_adapter=adapter,
+        notification_receipt_root=tmp_path / "delivery-receipts",
+        notification_environ={"SystemRoot": str(system_root)},
+        notification_runner=notify,
+    )
+    replay = consumer.run_presentation_step(
+        root=root,
+        runtime_roots=[runtime_root],
+        notification_adapter=adapter,
+        notification_receipt_root=tmp_path / "delivery-receipts",
+        notification_environ={"SystemRoot": str(system_root)},
+        notification_runner=notify,
+    )
+
+    assert first["status"] == "completed"
+    assert first["visible_emitter"] == "windows_notify_icon.v1"
+    assert first["ui_interception_claimed"] is False
+    assert first["counts"]["notification_attempted"] == 1
+    assert first["counts"]["notification_acknowledged"] == 1
+    assert first["counts"]["notification_failed"] == 0
+    assert first["runtime_roots"][0]["pending_delivery_count"] == 0
+    assert replay["counts"]["notification_attempted"] == 0
+    assert replay["runtime_roots"][0]["pending_delivery_count"] == 0
+    assert len(calls) == 1
+    assert calls[0]["request"]["schema_version"] == "s.presentation_notify_icon.request.v1"
+    assert calls[0]["request"]["delivery_key"].startswith("delivery_")
+    assert "typed incident presence" not in json.dumps(calls[0]["command"])
+
+
+def test_presentation_notification_failure_does_not_ack(
+    tmp_path: Path,
+) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    runtime_root = _presentation_runtime(
+        tmp_path,
+        status="FAILED",
+        updated_at="2026-08-13T10:01:00Z",
+        thread_errors={"controller": "typed incident presence"},
+    )
+    adapter = tmp_path / "Invoke-SPresentationDelivery.ps1"
+    adapter.write_text("# bounded test adapter\n", encoding="utf-8")
+    system_root = tmp_path / "Windows"
+    powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    powershell.parent.mkdir(parents=True)
+    powershell.write_bytes(b"test-powershell")
+
+    def fail(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 2, stdout="", stderr="no interactive desktop")
+
+    failed = consumer.run_presentation_step(
+        root=root,
+        runtime_roots=[runtime_root],
+        notification_adapter=adapter,
+        notification_receipt_root=tmp_path / "delivery-receipts",
+        notification_environ={"SystemRoot": str(system_root)},
+        notification_runner=fail,
+    )
+
+    assert failed["status"] == "completed_with_errors"
+    assert failed["counts"]["notification_attempted"] == 1
+    assert failed["counts"]["notification_acknowledged"] == 0
+    assert failed["counts"]["notification_failed"] == 1
+    assert failed["runtime_roots"][0]["pending_delivery_count"] == 1
+    with sqlite3.connect(root / "context_fabric.sqlite3") as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM events WHERE event_kind='presentation_delivery_ack'"
+        ).fetchone()[0] == 0
+
+
+def test_presentation_notification_does_not_interrupt_for_major_result(
+    tmp_path: Path,
+) -> None:
+    root, _home, _homes = _runtime(tmp_path)
+    runtime_root = _presentation_runtime(
+        tmp_path,
+        status="MAJOR_RESEARCH_RESULT",
+        updated_at="2026-08-13T10:01:00Z",
+    )
+    adapter = tmp_path / "Invoke-SPresentationDelivery.ps1"
+    adapter.write_text("# bounded test adapter\n", encoding="utf-8")
+    calls: list[object] = []
+
+    def should_not_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((args, kwargs))
+        raise AssertionError("major result must not create a background interruption")
+
+    receipt = consumer.run_presentation_step(
+        root=root,
+        runtime_roots=[runtime_root],
+        notification_adapter=adapter,
+        notification_receipt_root=tmp_path / "delivery-receipts",
+        notification_environ={},
+        notification_runner=should_not_run,
+    )
+
+    assert receipt["status"] == "completed"
+    assert receipt["counts"]["notification_attempted"] == 0
+    assert receipt["runtime_roots"][0]["pending_delivery_count"] == 1
+    assert calls == []
+
+
+def test_presentation_notify_icon_adapter_is_fail_closed_and_idempotent() -> None:
+    script = (consumer.REPO_ROOT / "scripts/Invoke-SPresentationDelivery.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "[Environment]::UserInteractive" in script
+    assert "Get-Process -Name explorer" in script
+    assert "Read-ExistingReceipt" in script
+    assert "delivery_[0-9a-f]{64}" in script
+    assert "ShowBalloonTip" in script
+    assert "ui_interception_claimed = $false" in script
+    assert script.index("ShowBalloonTip") < script.index("[System.IO.File]::Move")
+
+
+def test_presentation_notify_icon_adapter_replays_durable_receipt_without_popup(
+    tmp_path: Path,
+) -> None:
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    if powershell is None:
+        pytest.skip("PowerShell is unavailable")
+    delivery_key = "delivery_" + ("a" * 64)
+    receipt_id = "presentation_toast_" + ("a" * 64)
+    title = "S research runtime"
+    body = "runtime incident"
+    receipt_root = tmp_path / "receipts"
+    receipt_root.mkdir()
+    (receipt_root / f"{delivery_key}.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "s.presentation_notify_icon.receipt.v1",
+                "adapter_id": "windows_notify_icon.v1",
+                "delivery_key": delivery_key,
+                "receipt_id": receipt_id,
+                "title_sha256": hashlib.sha256(title.encode()).hexdigest(),
+                "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
+                "delivered_at": "2026-08-13T10:00:00+00:00",
+                "ui_interception_claimed": False,
+                "authority": False,
+            },
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    request = json.dumps(
+        {
+            "schema_version": "s.presentation_notify_icon.request.v1",
+            "delivery_key": delivery_key,
+            "title": title,
+            "body": body,
+        },
+        separators=(",", ":"),
+    )
+
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Sta",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(consumer.REPO_ROOT / "scripts/Invoke-SPresentationDelivery.ps1"),
+            "-ReceiptRoot",
+            str(receipt_root),
+        ],
+        input=request,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == receipt_id
+    assert len(list(receipt_root.iterdir())) == 1
 
 
 def test_presentation_step_same_root_run_rollover_routine_supersedes_incident(
