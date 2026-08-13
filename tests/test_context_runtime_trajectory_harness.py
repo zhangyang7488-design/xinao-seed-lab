@@ -166,6 +166,7 @@ def test_app_server_json_stdio_client_parses_interleaved_protocol(tmp_path: Path
 import json
 import sys
 
+turn_counter = 0
 for line in sys.stdin:
     message = json.loads(line)
     method = message.get("method")
@@ -175,11 +176,16 @@ for line in sys.stdin:
         print(json.dumps({"id": request_id, "result": {"userAgent": "fixture"}}), flush=True)
     elif method == "hooks/list":
         print(json.dumps({"id": request_id, "result": {"data": []}}), flush=True)
+    elif method in {"thread/start", "thread/resume"}:
+        print(json.dumps({"id": request_id, "result": {"thread": {"id": "thread-fixture"}}}), flush=True)
     elif method == "turn/start":
-        turn = {"id": "turn-fixture", "items": [], "status": "inProgress"}
+        turn_counter += 1
+        turn_id = f"turn-fixture-{turn_counter}"
+        turn = {"id": turn_id, "items": [], "status": "inProgress"}
         print(json.dumps({"id": request_id, "result": {"turn": turn}}), flush=True)
         print(json.dumps({"method": "turn/started", "params": {"threadId": "thread-fixture", "turn": turn}}), flush=True)
-        print(json.dumps({"method": "item/completed", "params": {"threadId": "thread-fixture", "turnId": "turn-fixture", "item": {"id": "item-fixture", "type": "agentMessage", "text": "FIXTURE-NONCE"}}}), flush=True)
+        print(json.dumps({"method": "hook/completed", "params": {"run": {"eventName": "sessionStart", "status": "completed"}}}), flush=True)
+        print(json.dumps({"method": "item/completed", "params": {"threadId": "thread-fixture", "turnId": turn_id, "item": {"id": f"item-fixture-{turn_counter}", "type": "agentMessage", "text": "FIXTURE-NONCE"}}}), flush=True)
         turn["status"] = "completed"
         print(json.dumps({"method": "turn/completed", "params": {"threadId": "thread-fixture", "turn": turn}}), flush=True)
 """,
@@ -193,16 +199,37 @@ for line in sys.stdin:
     ) as client:
         client.initialize(timeout=5)
         assert client.request("hooks/list", {"cwds": [str(tmp_path)]}, timeout=5) == {"data": []}
-        text, messages = harness._run_live_turn(
+        start = client.request("thread/start", {}, timeout=5)
+        observed_steps: list[str] = []
+        start_text, start_messages = harness._run_live_turn_then_observe_session_start(
             client,
             thread_id="thread-fixture",
-            prompt="fixture prompt",
+            prompt="startup fixture prompt",
             working_dir=tmp_path,
             timeout=5,
+            before_hook_wait=lambda: observed_steps.append("startup_hook"),
+        )
+        resume = client.request("thread/resume", {"threadId": "thread-fixture"}, timeout=5)
+        resume_text, resume_messages = harness._run_live_turn_then_observe_session_start(
+            client,
+            thread_id="thread-fixture",
+            prompt="resume fixture prompt",
+            working_dir=tmp_path,
+            timeout=5,
+            before_hook_wait=lambda: observed_steps.append("resume_hook"),
         )
 
-    assert text == "FIXTURE-NONCE"
-    assert "turn/started" in [message.get("method") for message in messages]
+    assert start == resume == {"thread": {"id": "thread-fixture"}}
+    assert start_text == resume_text == "FIXTURE-NONCE"
+    assert "turn/started" in [message.get("method") for message in start_messages]
+    assert "turn/started" in [message.get("method") for message in resume_messages]
+    assert observed_steps == ["startup_hook", "resume_hook"]
+    assert [
+        method
+        for method in client.sent_methods
+        if method in {"thread/start", "thread/resume", "turn/start"}
+    ] == ["thread/start", "turn/start", "thread/resume", "turn/start"]
+    assert [message.get("method") for message in client.messages].count("hook/completed") == 2
     assert client.stderr_receipt["line_count"] == 0
 
 
@@ -610,12 +637,15 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
     monkeypatch.setenv("CODEX_ACCESS_TOKEN", "fake-access-token-must-not-reach-child")
     monkeypatch.setenv("FAKE_AMBIENT_SECRET", "fake-ambient-must-not-reach-child")
     observed_child_env: dict[str, str] = {}
+    protocol_events: list[str] = []
 
     class BrokenProtocolClient:
         pid = 43210
 
         def __init__(self, command, *, cwd, environ):
             observed_child_env.update(environ)
+            self.messages = []
+            self.sent_methods = []
 
         def __enter__(self):
             return self
@@ -624,8 +654,59 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
             return None
 
         def initialize(self, *, timeout):
+            protocol_events.append("initialize")
             (source_b / "auth.json").write_bytes(b"fixture refreshed opaque account state\n")
-            raise harness.LiveProtocolError("fixture protocol failure after native launch")
+
+        def request(self, method, params, *, timeout):
+            protocol_events.append(f"request:{method}")
+            self.sent_methods.append(method)
+            if method == "hooks/list":
+                hooks = [
+                    {
+                        "source": "user",
+                        "sourcePath": str(source_b / "hooks.json"),
+                        "eventName": event_name,
+                        "trustStatus": "trusted",
+                    }
+                    for event_name in (
+                        "sessionStart",
+                        "userPromptSubmit",
+                        "stop",
+                        "preCompact",
+                        "postCompact",
+                        "sessionEnd",
+                    )
+                ]
+                return {"data": [{"hooks": hooks}]}
+            if method == "thread/start":
+                return {"thread": {"id": "thread-fixture"}}
+            if method == "thread/name/set":
+                return {}
+            if method == "turn/start":
+                return {"turn": {"id": "turn-fixture", "status": "inProgress"}}
+            raise AssertionError(f"unexpected request: {method}")
+
+        def wait_notification(self, method, *, timeout, predicate=None):
+            protocol_events.append(f"wait:{method}")
+            if method == "thread/name/updated":
+                return {
+                    "method": method,
+                    "params": {
+                        "threadId": "thread-fixture",
+                        "threadName": "fixture-name",
+                    },
+                }
+            if method == "turn/completed":
+                return {
+                    "method": method,
+                    "params": {
+                        "threadId": "thread-fixture",
+                        "turn": {"id": "turn-fixture", "status": "completed"},
+                    },
+                }
+            if method == "hook/completed":
+                raise harness.LiveProtocolError("fixture startup hook timeout")
+            raise AssertionError(f"unexpected notification: {method}")
 
     monkeypatch.setattr(harness, "_AppServerClient", BrokenProtocolClient)
     operation_root = tmp_path / "operation"
@@ -662,6 +743,13 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
     assert receipt["existing_account_session_written"] is False
     evidence = receipt["cases"][0]["evidence"]
     assert evidence["auth_mode"] == "existing_b_home"
+    assert evidence["protocol_step"] == "startup_hook"
+    assert evidence["protocol_trace"] == [
+        "hooks_trust",
+        "thread_start",
+        "startup_turn",
+        "startup_hook",
+    ]
     assert evidence["b_account_configuration_unchanged"] is True
     assert evidence["b_account_protection_before"] == protected_before
     assert evidence["b_account_protection_after"] == protected_before
@@ -685,6 +773,16 @@ def test_existing_b_home_uses_configured_account_without_forwarding_or_copying_s
     assert "sk-fake-must-not-reach-existing-home-child" not in serialized
     assert "fake-access-token-must-not-reach-child" not in serialized
     assert "fake-ambient-must-not-reach-child" not in serialized
+    assert protocol_events == [
+        "initialize",
+        "request:hooks/list",
+        "request:thread/start",
+        "request:thread/name/set",
+        "wait:thread/name/updated",
+        "request:turn/start",
+        "wait:turn/completed",
+        "wait:hook/completed",
+    ]
 
 
 def test_fabric_session_evidence_reads_only_bounded_metadata(tmp_path: Path) -> None:

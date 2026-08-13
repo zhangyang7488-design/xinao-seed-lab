@@ -129,6 +129,19 @@ that one bounded native trajectory survived; it does not isolate Context Fabric
 as the sole causal mechanism, prove permanent model uptake, or establish a
 longitudinal reduction in correction burden.
 
+Codex 0.147 emits the startup and resume `SessionStart` hook during the first
+turn on that process, not as completion of `thread/start` or `thread/resume`.
+The harness therefore completes the corresponding `turn/start` before checking
+the SessionStart notification; an early notification is retained in the JSON
+client backlog and consumed by that check. Compact remains action-driven and is
+checked immediately after `thread/compact/start`.
+
+Failed observed receipts persist no protocol error text. They expose only an
+error type and a bounded `protocol_step` from: `hooks_trust`, `thread_start`,
+`startup_turn`, `startup_hook`, `correction_turn`, `compact_item`,
+`compact_turn`, `compact_hook`, `post_compact_turn`, `resume`, `resume_turn`,
+`resume_hook`, or `readback`.
+
 Exit codes are `0` pass, `1` assertion or post-eligibility native-protocol
 failure, `2` usage or pre-protocol infrastructure failure, and `3` missing live
 prerequisites. Once every prerequisite has passed, native protocol errors and

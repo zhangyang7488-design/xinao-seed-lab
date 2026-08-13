@@ -42,6 +42,23 @@ LIVE_HOOK_SINK_SCHEMA = "s.context_runtime_live_hook_sink.v1"
 LIVE_CLAIM_CLASS = "context_live_observed"
 _CODEX_VERSION_RE = re.compile(r"^codex-cli\s+(\d+\.\d+\.\d+)\s*$")
 _LIVE_AUTH_ENV_NAMES = ("OPENAI_API_KEY", "CODEX_ACCESS_TOKEN")
+_LIVE_PROTOCOL_STEPS = frozenset(
+    {
+        "hooks_trust",
+        "thread_start",
+        "startup_turn",
+        "startup_hook",
+        "correction_turn",
+        "compact_item",
+        "compact_turn",
+        "compact_hook",
+        "post_compact_turn",
+        "resume",
+        "resume_turn",
+        "resume_hook",
+        "readback",
+    }
+)
 _WINDOWS_CHILD_ENV_NAMES = (
     "SYSTEMROOT",
     "WINDIR",
@@ -1065,15 +1082,18 @@ def _live_failed(
     requirements: Mapping[str, bool],
     codex_version: str,
     error: BaseException,
+    protocol_step: str,
     auth_mode: str = "environment_isolated",
     existing_account_session_written: bool = False,
     account_configuration_unchanged: bool | None = None,
     account_protection_before: Mapping[str, object] | None = None,
     account_protection_after: Mapping[str, object] | None = None,
+    protocol_trace: Sequence[str] = (),
 ) -> dict[str, object]:
     """Return a failed live observation without persisting a possibly secret error."""
 
     error_type = type(error).__name__
+    bounded_step = protocol_step if protocol_step in _LIVE_PROTOCOL_STEPS else "readback"
     case = {
         "case_id": "CTX_LIVE_START_COMPACT_RESUME",
         "status": "failed",
@@ -1084,6 +1104,8 @@ def _live_failed(
         "evidence": {
             "codex_version": codex_version,
             "failure_stage": "post_eligibility_native_protocol",
+            "protocol_step": bounded_step,
+            "protocol_trace": [step for step in protocol_trace if step in _LIVE_PROTOCOL_STEPS],
             "error_type": error_type,
             "auth_mode": auth_mode,
             "existing_account_session_written": existing_account_session_written,
@@ -1395,6 +1417,36 @@ def _run_live_turn(
     return _agent_text(messages), messages
 
 
+def _run_live_turn_then_observe_session_start(
+    client: _AppServerClient,
+    *,
+    thread_id: str,
+    prompt: str,
+    working_dir: Path,
+    timeout: float,
+    before_hook_wait: Callable[[], None],
+) -> tuple[str, list[dict[str, object]]]:
+    """Run the first turn, then consume the SessionStart hook from live/backlog."""
+
+    result = _run_live_turn(
+        client,
+        thread_id=thread_id,
+        prompt=prompt,
+        working_dir=working_dir,
+        timeout=timeout,
+    )
+    before_hook_wait()
+    client.wait_notification(
+        "hook/completed",
+        timeout=15,
+        predicate=lambda params: (
+            isinstance(params.get("run"), Mapping)
+            and params["run"].get("eventName") == "sessionStart"
+        ),
+    )
+    return result
+
+
 def _read_sink_records(path: Path) -> list[dict[str, object]]:
     if not path.is_file():
         return []
@@ -1619,6 +1671,15 @@ def run_live(
     command = [str(codex_path), "app-server", "--stdio"]
     thread_id = ""
     test_thread_name = ""
+    protocol_step = "hooks_trust"
+    protocol_trace: list[str] = []
+
+    def enter_protocol_step(step: str) -> None:
+        nonlocal protocol_step
+        if step not in _LIVE_PROTOCOL_STEPS:
+            raise ValueError("unbounded live protocol step")
+        protocol_step = step
+        protocol_trace.append(step)
 
     def post_eligibility_failure(error: BaseException) -> dict[str, object]:
         protected_unchanged: bool | None = None
@@ -1644,15 +1705,18 @@ def run_live(
             requirements=requirements,
             codex_version=codex_version,
             error=error,
+            protocol_step=protocol_step,
             auth_mode=auth_mode,
             existing_account_session_written=existing_account_session_written,
             account_configuration_unchanged=protected_unchanged,
             account_protection_before=protected_before,
             account_protection_after=protected_after_failure,
+            protocol_trace=protocol_trace,
         )
 
     try:
         if not use_existing_b_home:
+            enter_protocol_step("hooks_trust")
             with _AppServerClient(command, cwd=working_dir, environ=environ) as discovery:
                 discovery.initialize(timeout=15)
                 discovered_result = discovery.request(
@@ -1672,12 +1736,14 @@ def run_live(
         sent_methods: list[str] = []
         process_pids: list[int] = []
         with _AppServerClient(command, cwd=working_dir, environ=environ) as first:
+            enter_protocol_step("hooks_trust")
             process_pids.append(first.pid)
             first.initialize(timeout=15)
             trusted_result = first.request("hooks/list", {"cwds": [str(working_dir)]}, timeout=15)
             trusted = _owned_hooks(trusted_result, hooks_path)
             if len(trusted) != 6 or any(hook.get("trustStatus") != "trusted" for hook in trusted):
                 raise LiveProtocolError("the selected account did not expose six trusted hooks")
+            enter_protocol_step("thread_start")
             start_result = first.request(
                 "thread/start",
                 {
@@ -1711,15 +1777,8 @@ def run_live(
                     and params.get("threadName") == test_thread_name
                 ),
             )
-            first.wait_notification(
-                "hook/completed",
-                timeout=15,
-                predicate=lambda params: (
-                    isinstance(params.get("run"), Mapping)
-                    and params["run"].get("eventName") == "sessionStart"
-                ),
-            )
-            seed_text, _ = _run_live_turn(
+            enter_protocol_step("startup_turn")
+            seed_text, _ = _run_live_turn_then_observe_session_start(
                 first,
                 thread_id=thread_id,
                 prompt=(
@@ -1728,7 +1787,9 @@ def run_live(
                 ),
                 working_dir=working_dir,
                 timeout=timeout,
+                before_hook_wait=lambda: enter_protocol_step("startup_hook"),
             )
+            enter_protocol_step("correction_turn")
             correction_text, _ = _run_live_turn(
                 first,
                 thread_id=thread_id,
@@ -1740,6 +1801,7 @@ def run_live(
                 timeout=timeout,
             )
             compact_start = len(first.messages)
+            enter_protocol_step("compact_item")
             first.request("thread/compact/start", {"threadId": thread_id}, timeout=timeout)
             first.wait_notification(
                 "item/completed",
@@ -1750,6 +1812,7 @@ def run_live(
                     and params["item"].get("type") == "contextCompaction"
                 ),
             )
+            enter_protocol_step("compact_turn")
             first.wait_notification(
                 "turn/completed",
                 timeout=timeout,
@@ -1759,6 +1822,7 @@ def run_live(
                     and params["turn"].get("status") == "completed"
                 ),
             )
+            enter_protocol_step("compact_hook")
             first.wait_notification(
                 "hook/completed",
                 timeout=15,
@@ -1768,6 +1832,7 @@ def run_live(
                 ),
             )
             compact_messages = first.messages[compact_start:]
+            enter_protocol_step("post_compact_turn")
             compact_text, _ = _run_live_turn(
                 first,
                 thread_id=thread_id,
@@ -1783,6 +1848,7 @@ def run_live(
         first_stderr = first.stderr_receipt
 
         with _AppServerClient(command, cwd=working_dir, environ=environ) as resumed:
+            enter_protocol_step("resume")
             process_pids.append(resumed.pid)
             resumed.initialize(timeout=15)
             resume_result = resumed.request(
@@ -1803,15 +1869,8 @@ def run_live(
             resumed_thread_id = str(resume_result["thread"].get("id", ""))
             if not resumed_thread_id:
                 raise LiveProtocolError("thread/resume returned an empty thread id")
-            resumed.wait_notification(
-                "hook/completed",
-                timeout=15,
-                predicate=lambda params: (
-                    isinstance(params.get("run"), Mapping)
-                    and params["run"].get("eventName") == "sessionStart"
-                ),
-            )
-            resume_text, _ = _run_live_turn(
+            enter_protocol_step("resume_turn")
+            resume_text, _ = _run_live_turn_then_observe_session_start(
                 resumed,
                 thread_id=thread_id,
                 prompt=(
@@ -1820,6 +1879,7 @@ def run_live(
                 ),
                 working_dir=working_dir,
                 timeout=timeout,
+                before_hook_wait=lambda: enter_protocol_step("resume_hook"),
             )
         all_messages.extend(resumed.messages)
         sent_methods.extend(resumed.sent_methods)
@@ -1827,6 +1887,7 @@ def run_live(
     except (OSError, subprocess.SubprocessError, LiveProtocolError) as error:
         return post_eligibility_failure(error)
 
+    enter_protocol_step("readback")
     try:
         sink_records = [] if use_existing_b_home else _read_sink_records(hook_log)
         source_home_fingerprints_after = {
@@ -1994,6 +2055,7 @@ def run_live(
                 _sha256_text(path) for path in new_session_rollouts
             ],
             "existing_account_session_written": existing_account_session_written,
+            "protocol_trace": protocol_trace,
             "first_stderr": first_stderr,
             "resumed_stderr": resumed_stderr,
             "claim_scope": (
