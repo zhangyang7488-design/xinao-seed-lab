@@ -145,6 +145,7 @@ def request_context_consumer_wake(
     except Exception:
         return False
 
+
 LIFECYCLE_STATES = (
     "CONTINUE",
     "WAIT",
@@ -386,7 +387,8 @@ if ($worldBindingRequested) {
         throw "WORLD_RUNTIME_BINDING_CODEX_ARGS_PATH_MISMATCH"
     }
     try {
-        $sealedCodexArgs = @(Get-Content -LiteralPath $sealedCodexArgsPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+        $sealedCodexArgsParsed = Get-Content -LiteralPath $sealedCodexArgsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $sealedCodexArgs = @($sealedCodexArgsParsed)
     }
     catch {
         throw "WORLD_RUNTIME_BINDING_CODEX_ARGS_JSON_INVALID"
@@ -4517,9 +4519,7 @@ def _validate_prior_quarantined_attempt(
     disposition = read_json_object(disposition_path)
     stdout_path = attempt_dir / "exec_stdout.jsonl"
     event_summary = (
-        _summarize_attempt_events(stdout_path)
-        if stdout_path.is_file()
-        else {"terminal_events": []}
+        _summarize_attempt_events(stdout_path) if stdout_path.is_file() else {"terminal_events": []}
     )
     message_path = attempt_dir / "last_message.txt"
     lifecycle = (
@@ -4568,7 +4568,9 @@ def _validate_prior_quarantined_attempt(
         expected_reason = "BODY_INCIDENT_DETECTED_DURING_RECOVERY"
         if reason != expected_reason:
             raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_REASON_DRIFT: {disposition_path}")
-    elif not mechanically_complete and reason != "NO_UNAMBIGUOUS_COMPLETED_TURN_EVENT_AND_LIFECYCLE":
+    elif (
+        not mechanically_complete and reason != "NO_UNAMBIGUOUS_COMPLETED_TURN_EVENT_AND_LIFECYCLE"
+    ):
         raise PerpetualRuntimeError(f"RECOVERY_DISPOSITION_REASON_DRIFT: {disposition_path}")
     elif mechanically_complete and reason not in {
         "REQUIRED_RUNTIME_BINDING_UNAVAILABLE_DURING_RECOVERY",

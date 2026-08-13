@@ -840,6 +840,69 @@ def test_live_cleanroom_launcher_freezes_mandatory_runtime_binding_surface(
     assert parse.returncode == 0, parse.stdout + parse.stderr
 
 
+def test_windows_powershell_runtime_binding_reloads_codex_args_as_flat_array(
+    tmp_path: Path,
+) -> None:
+    powershell = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+    if not powershell.is_file():
+        pytest.skip("Windows PowerShell 5.1 is unavailable")
+    arguments = [
+        "-m",
+        "gpt-5.6-sol",
+        "-c",
+        'model_reasoning_effort="max"',
+        "exec",
+        "resume",
+        "11111111-1111-1111-1111-111111111111",
+        "--json",
+        "--skip-git-repo-check",
+        "--output-last-message",
+        str(tmp_path / "last message.txt"),
+        "-",
+    ]
+    arguments_path = tmp_path / "codex_args.json"
+    arguments_path.write_text(json.dumps(arguments), encoding="utf-8")
+    quoted_path = str(arguments_path).replace("'", "''")
+    command = (
+        f"$parsedCodexArgs=Get-Content -LiteralPath '{quoted_path}' -Raw -Encoding UTF8|ConvertFrom-Json;"
+        "$loadedCodexArgs=@($parsedCodexArgs);[string[]]$CodexArgs=$loadedCodexArgs;"
+        f"$sealedCodexArgsParsed=Get-Content -LiteralPath '{quoted_path}' -Raw -Encoding UTF8|ConvertFrom-Json;"
+        "$sealedCodexArgs=@($sealedCodexArgsParsed);"
+        "if($sealedCodexArgs.Count-ne$CodexArgs.Count){exit 10};"
+        "for($i=0;$i-lt$sealedCodexArgs.Count;$i++){"
+        "if(-not($sealedCodexArgs[$i]-is[string])-or"
+        "-not[string]::Equals([string]$sealedCodexArgs[$i],[string]$CodexArgs[$i],"
+        "[StringComparison]::Ordinal)){exit 11}};"
+        "if($sealedCodexArgs.Count-ne12){exit 12}"
+    )
+    result = subprocess.run(
+        [
+            str(powershell),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    generated = create_world_isolated_launcher(
+        Path(r"E:\CODEX_CLEANROOM\Open-Codex-Cleanroom.ps1"),
+        tmp_path / "Open-Codex-World-Bound.ps1",
+        require_runtime_binding=True,
+    )
+    assert generated["runtime_binding_required"] is True
+    launcher_text = (tmp_path / "Open-Codex-World-Bound.ps1").read_text(encoding="utf-8")
+    assert "$sealedCodexArgsParsed = Get-Content" in launcher_text
+    assert "$sealedCodexArgs = @($sealedCodexArgsParsed)" in launcher_text
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Codex Windows sandbox probe")
 def test_pinned_cleanroom_codex_sandbox_allows_lineage_and_denies_shared_bodies(
     tmp_path: Path,
@@ -1832,9 +1895,7 @@ def test_reconcile_commits_later_receipt_after_prior_attempt_was_quarantined(
     tmp_path: Path,
 ) -> None:
     controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
-    first_attempt = (
-        controller.lineage_dir("world-01") / "turns" / "turn-000001" / "attempt-01"
-    )
+    first_attempt = controller.lineage_dir("world-01") / "turns" / "turn-000001" / "attempt-01"
     first_attempt.mkdir(parents=True)
     (first_attempt / "prompt.txt").write_text("research", encoding="utf-8")
     (first_attempt / "exec_stderr.txt").write_text("runtime failed", encoding="utf-8")
