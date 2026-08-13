@@ -3634,12 +3634,7 @@ def prepare_reality_migration(args: argparse.Namespace) -> dict[str, Any]:
                     + json.dumps(unresolved_quota, ensure_ascii=False, sort_keys=True)
                 )
             source_repo = resolve_path(config["source_repo"])
-            source = validate_source_repo(source_repo)
-            if source["head"].casefold() != str(config["source_head"]).casefold():
-                raise PerpetualRuntimeError(
-                    "REALITY_MIGRATION_CANONICAL_SOURCE_HEAD_MISMATCH: "
-                    f"expected={config['source_head']} observed={source['head']}"
-                )
+            source = validate_pinned_source_commit(source_repo, str(config["source_head"]))
             all_specs = [*config["branch_lineages"], config["root_lineage"]]
             workspace_roots: dict[str, Path] = {}
             lineage_receipts: list[dict[str, str]] = []

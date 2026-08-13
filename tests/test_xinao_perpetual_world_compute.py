@@ -2489,12 +2489,11 @@ def test_prepare_reality_migration_is_offline_per_run_and_preserves_control_stat
     monkeypatch.setattr(controller_module, "find_live_runtime_processes", lambda *_args: {})
     monkeypatch.setattr(
         controller_module,
-        "validate_source_repo",
-        lambda repo: {
+        "validate_pinned_source_commit",
+        lambda repo, source_head: {
             "root": str(repo),
-            "head": "a" * 40,
-            "branch": "main",
-            "status_sha256": "b" * 64,
+            "current_head": "f" * 40,
+            "source_head": source_head,
         },
     )
     monkeypatch.setattr(
@@ -2563,6 +2562,11 @@ def test_prepare_reality_migration_is_offline_per_run_and_preserves_control_stat
         lineage_id: workspace.resolve() for lineage_id, workspace in workspaces.items()
     }
     assert call["active_child_pids"] == {}
+    assert result["source"] == {
+        "root": str(source_repo.resolve()),
+        "current_head": "f" * 40,
+        "source_head": "a" * 40,
+    }
 
 
 def test_prepare_reality_migration_rejects_live_child_before_copy(
