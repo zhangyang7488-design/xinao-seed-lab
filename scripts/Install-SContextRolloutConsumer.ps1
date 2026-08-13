@@ -10,6 +10,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell can be launched by the declared uv/Python runtime rather
+# than directly by pwsh.  In that case it inherits pwsh's PSModulePath verbatim
+# and may discover incompatible PowerShell 7 modules before its own inbox
+# modules.  Bind the two cmdlet surfaces used for hashing and ACL readback to
+# this host's own release before any audit or mutation.
+if ($PSVersionTable.PSEdition -eq 'Desktop') {
+    foreach ($moduleName in @('Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Security')) {
+        $moduleManifest = Join-Path $PSHOME "Modules\$moduleName\$moduleName.psd1"
+        Import-Module -Name $moduleManifest -ErrorAction Stop
+    }
+}
+
 $taskName = 'XINAO-S-Context-Rollout-Consumer-v1'
 $taskPath = '\'
 $sourcePythonRoot = 'D:\XINAO_RESEARCH_RUNTIME\tools\cpython-3.13.14-official'
@@ -1321,7 +1333,7 @@ function Get-ConsumerTaskAudit {
         [System.StringComparison]::OrdinalIgnoreCase
     )
     $taskWakeCoalesced = $taskInfoValid -and
-        $lastTaskResult -eq 2147946720 -and
+        $lastTaskResult -in @(267009, 2147946720) -and
         [string]::Equals(
             [string]$task.Settings.MultipleInstances,
             'IgnoreNew',

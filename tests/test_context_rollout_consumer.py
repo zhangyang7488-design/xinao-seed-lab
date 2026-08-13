@@ -2991,9 +2991,12 @@ def test_installer_audit_running_task_still_requires_fresh_receipt() -> None:
     assert audit["consumer_health"] == "receipt_stale"
 
 
-def test_installer_audit_accepts_ready_ignore_new_wake_coalescing_with_fresh_receipt() -> None:
+@pytest.mark.parametrize("ready_result", [267009, 2147946720])
+def test_installer_audit_accepts_ready_ignore_new_wake_coalescing_with_fresh_receipt(
+    ready_result: int,
+) -> None:
     exit_code, audit, raw_output = _mock_installer_audit(
-        last_task_result=2147946720,
+        last_task_result=ready_result,
         receipt_age_minutes=0,
         trusted_acl=True,
         task_state="Ready",
