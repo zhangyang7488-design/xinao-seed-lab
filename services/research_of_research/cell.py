@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from services.research_of_research.continuation import request_continuation_reconcile
 from services.xinao_perpetual_world_compute.controller import (
     WORLD_TURN_QUOTA_LEASE_SCHEMA,
     _release_byte_lock,
@@ -2116,6 +2117,13 @@ def run_cell(
         receipt["receipt_sha256"] = _sha(_canonical_bytes(receipt))
         receipt_path = run_dir / "run_receipt.json"
         atomic_write_json(receipt_path, receipt)
+        # Optional low-latency bell only.  A sibling one-shot Scheduled Task
+        # rescans durable receipts, so task absence/failure cannot fail the run
+        # or create a commit-notify dual-write requirement.
+        request_continuation_reconcile(
+            receipt_path=receipt_path,
+            runtime_root=cell_dir.parent.parent,
+        )
         atomic_write_json(
             state_path,
             {"schema": RUN_SCHEMA, "run_id": run_id, "status": status, "finished_at": now_iso()},

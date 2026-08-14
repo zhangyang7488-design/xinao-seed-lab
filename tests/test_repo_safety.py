@@ -1781,7 +1781,10 @@ def test_current_retained_executable_roots_have_no_known_retired_continuity_toke
             for token in ("register-scheduledtask", "new-scheduledtasktrigger")
         )
     }
-    assert scheduled_task_carriers == {"scripts/Install-SContextRolloutConsumer.ps1"}
+    assert scheduled_task_carriers == {
+        "scripts/Install-SContextRolloutConsumer.ps1",
+        "scripts/Install-SResearchOfResearchContinuation.ps1",
+    }
 
 
 def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -> None:
