@@ -45,6 +45,7 @@ from services.xinao_perpetual_world_compute.controller import (
     classify_body_incident_events,
     classify_failure,
     cleanroom_config_identity,
+    clone_isolated_repo,
     create_world_isolated_launcher,
     exclusive_lock,
     find_live_runtime_processes,
@@ -255,6 +256,36 @@ def git(repo: Path, *args: str) -> str:
         text=True,
     )
     return completed.stdout.strip()
+
+
+def test_clone_isolated_repo_enables_long_paths_before_first_checkout(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    git(source, "init", "--quiet")
+    git(source, "config", "user.email", "long-path-clone@example.invalid")
+    git(source, "config", "user.name", "Long Path Clone")
+    git(source, "config", "core.longpaths", "true")
+    relative = (
+        Path("archive")
+        / ("a" * 80)
+        / ("b" * 80)
+        / (("c" * 70) + ".bin")
+    )
+    source_file = source / relative
+    source_file.parent.mkdir(parents=True)
+    source_file.write_bytes(b"\x00exact long-path world bytes\xff")
+    git(source, "add", "--all")
+    git(source, "commit", "--quiet", "-m", "long path fixture")
+    head = git(source, "rev-parse", "HEAD")
+    destination = tmp_path / "isolated-lineage-with-a-long-destination-name"
+
+    receipt = clone_isolated_repo(source, destination, head)
+
+    assert (destination / relative).read_bytes() == b"\x00exact long-path world bytes\xff"
+    assert git(destination, "config", "--bool", "core.longpaths") == "true"
+    assert git(destination, "status", "--porcelain=v1", "--untracked-files=all") == ""
+    assert receipt["head"] == head
+    assert receipt["remote_count"] == "0"
 
 
 def attach_deep_evidence(controller: PerpetualController, attempt_dir: Path) -> str:

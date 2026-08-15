@@ -1728,11 +1728,19 @@ def clone_isolated_repo(source: Path, destination: Path, head: str) -> dict[str,
         timeout=600,
     )
     try:
+        # Git for Windows may report a successful detached checkout while
+        # silently leaving tracked paths deleted when the destination makes
+        # their full path exceed MAX_PATH.  The lineage itself also needs this
+        # setting for later model-selected Git operations over the frozen
+        # world, so bind it in the clone before the first checkout.
+        run_checked(["git", "-C", destination, "config", "core.longpaths", "true"])
         run_checked(["git", "-C", destination, "checkout", "--quiet", "--detach", head])
         remotes = git_output(destination, "remote")
         if "origin" in remotes.splitlines():
             run_checked(["git", "-C", destination, "remote", "remove", "origin"])
         observed_head = git_output(destination, "rev-parse", "HEAD")
+        if git_output(destination, "config", "--bool", "core.longpaths") != "true":
+            raise PerpetualRuntimeError(f"LINEAGE_LONG_PATH_SUPPORT_MISSING: {destination}")
         status = git_output(destination, "status", "--porcelain=v1", "--untracked-files=all")
         if observed_head != head or status:
             raise PerpetualRuntimeError(
