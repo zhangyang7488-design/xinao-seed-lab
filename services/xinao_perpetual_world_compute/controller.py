@@ -41,7 +41,8 @@ DEEP_EVIDENCE_ARTIFACT_MANIFEST_SCHEMA = "xinao.cleanroom.world-compute-artifact
 BODY_INCIDENT_SCHEMA = "xinao.cleanroom.world-compute-body-incident.v1"
 BODY_CLASSIFICATION_REVIEW_SCHEMA = "xinao.cleanroom.body-classification-review.v1"
 FAILURE_CLASSIFICATION_REVIEW_SCHEMA = "xinao.cleanroom.failure-classification-review.v1"
-WORLD_ISOLATED_LAUNCHER_SCHEMA = "xinao.cleanroom.world-isolated-launcher.v1"
+LEGACY_WORLD_ISOLATED_LAUNCHER_SCHEMA = "xinao.cleanroom.world-isolated-launcher.v1"
+WORLD_ISOLATED_LAUNCHER_SCHEMA = "xinao.cleanroom.world-isolated-launcher.v2"
 WORLD_RUNTIME_BINDING_SCHEMA = "xinao.cleanroom.world-runtime-binding.v1"
 WORLD_RUNTIME_BINDING_APPLIED_SCHEMA = "xinao.cleanroom.world-runtime-binding-applied.v1"
 WORLD_TURN_QUOTA_LEASE_SCHEMA = "xinao.cleanroom.world-turn-quota-lease.v1"
@@ -276,6 +277,66 @@ _UNSANDBOXED_LAUNCH_LINE = (
     b"& $codexExe --cd $launchWorkdir --dangerously-bypass-approvals-and-sandbox "
     b"@slotSpecificCodexArgs @CodexArgs"
 )
+_SHARED_TEMP_ASSIGNMENT = b'$env:TEMP = Join-Path $cleanRoot "runtime\\tmp"'
+_SHARED_TMP_ASSIGNMENT = b"$env:TMP = $env:TEMP"
+_WORLD_GIT_SAFE_INSERT_SEAM = b"if ($SurfaceProbe) {"
+
+
+def _world_private_temp_block(*, newline: bytes) -> bytes:
+    return newline.join(
+        (
+            b"if ($isSharedWorkspace) {",
+            b'    throw "WORLD_ISOLATED_SHARED_WORKSPACE_FORBIDDEN: $launchWorkdir"',
+            b"}",
+            b"$launchWorkdirFinal = [CleanroomFinalPath]::Resolve($launchWorkdir)",
+            b"if (-not $launchWorkdirFinal.Equals(",
+            b"    $launchWorkdir,",
+            b"    [StringComparison]::OrdinalIgnoreCase",
+            b")) {",
+            b'    throw "WORLD_LINEAGE_WORKDIR_REPARSE_OR_ALIAS_FORBIDDEN: $launchWorkdirFinal"',
+            b"}",
+            b'$worldPrivateTemp = Join-Path $launchWorkdir ".xinao\\carrier\\tmp"',
+            b'$worldPrivateTempParts = @(".xinao", "carrier", "tmp")',
+            b"$worldPrivateTempCursor = $launchWorkdir",
+            b"foreach ($worldPrivateTempPart in $worldPrivateTempParts) {",
+            b"    $worldPrivateTempCursor = Join-Path $worldPrivateTempCursor $worldPrivateTempPart",
+            b"    if (Test-Path -LiteralPath $worldPrivateTempCursor) {",
+            b"        $worldPrivateTempItem = Get-Item -LiteralPath $worldPrivateTempCursor -Force",
+            b"        if (-not $worldPrivateTempItem.PSIsContainer -or",
+            b"            ($worldPrivateTempItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {",
+            b'            throw "WORLD_PRIVATE_TEMP_PATH_INVALID: $worldPrivateTempCursor"',
+            b"        }",
+            b"    }",
+            b"    else {",
+            b"        New-Item -ItemType Directory -Path $worldPrivateTempCursor | Out-Null",
+            b"    }",
+            b"}",
+            b"$worldPrivateTempFinal = [CleanroomFinalPath]::Resolve($worldPrivateTemp)",
+            b'$expectedWorldPrivateTempFinal = Join-Path $launchWorkdirFinal ".xinao\\carrier\\tmp"',
+            b"if (-not $worldPrivateTempFinal.Equals(",
+            b"    $expectedWorldPrivateTempFinal,",
+            b"    [StringComparison]::OrdinalIgnoreCase",
+            b")) {",
+            b'    throw "WORLD_PRIVATE_TEMP_OUTSIDE_LINEAGE: $worldPrivateTempFinal"',
+            b"}",
+            b"$env:TEMP = $worldPrivateTemp",
+            b"$env:TMP = $env:TEMP",
+        )
+    )
+
+
+def _world_git_safe_directory_block(*, newline: bytes) -> bytes:
+    return newline.join(
+        (
+            b"# This process-local Git trust entry admits only the exact isolated lineage.",
+            b'$env:GIT_CONFIG_COUNT = "1"',
+            b'$env:GIT_CONFIG_KEY_0 = "safe.directory"',
+            b"$env:GIT_CONFIG_VALUE_0 = ($launchWorkdir -replace '\\\\', '/')",
+            b"",
+        )
+    )
+
+
 def _world_sandboxed_launch_line(*, network_access: bool) -> bytes:
     value = b"true" if network_access else b"false"
     return (
@@ -820,9 +881,25 @@ def create_world_isolated_launcher(
     raw = source_launcher.read_bytes()
     if raw.count(_UNSANDBOXED_LAUNCH_LINE) != 1:
         raise PerpetualRuntimeError("CLEANROOM_LAUNCHER_UNSANDBOXED_EXEC_SEAM_MISMATCH")
+    newline = b"\r\n" if b"\r\n" in raw else b"\n"
+    shared_temp_block = _SHARED_TEMP_ASSIGNMENT + newline + _SHARED_TMP_ASSIGNMENT
+    if raw.count(shared_temp_block) != 1:
+        raise PerpetualRuntimeError("CLEANROOM_LAUNCHER_TEMP_ASSIGNMENT_SEAM_MISMATCH")
+    if raw.count(_WORLD_GIT_SAFE_INSERT_SEAM) != 1:
+        raise PerpetualRuntimeError("CLEANROOM_LAUNCHER_GIT_SAFE_INSERT_SEAM_MISMATCH")
     isolated = raw.replace(
         _UNSANDBOXED_LAUNCH_LINE,
         _world_sandboxed_launch_line(network_access=network_access),
+        1,
+    )
+    isolated = isolated.replace(
+        shared_temp_block,
+        _world_private_temp_block(newline=newline),
+        1,
+    )
+    isolated = isolated.replace(
+        _WORLD_GIT_SAFE_INSERT_SEAM,
+        _world_git_safe_directory_block(newline=newline) + _WORLD_GIT_SAFE_INSERT_SEAM,
         1,
     )
     isolated = isolated.replace(
@@ -864,6 +941,8 @@ def create_world_isolated_launcher(
         "network_access": bool(network_access),
         "writable_scope": "lineage_workspace_only",
         "additional_writable_roots": [],
+        "temporary_storage_scope": "current_lineage_workspace_private",
+        "git_safe_directory_scope": "exact_current_lineage_workspace",
         "runtime_binding_supported": binding_support,
         "runtime_binding_schema": WORLD_RUNTIME_BINDING_SCHEMA if binding_support else None,
         "runtime_binding_applied_schema": (
@@ -884,8 +963,13 @@ def validate_body_boundary_config(config: Mapping[str, Any]) -> dict[str, Any] |
     network_access = boundary.get("network_access")
     if type(network_access) is not bool:
         raise PerpetualRuntimeError("WORLD_BODY_BOUNDARY_CONFIG_INVALID")
+    schema = boundary.get("schema")
+    if schema not in {
+        LEGACY_WORLD_ISOLATED_LAUNCHER_SCHEMA,
+        WORLD_ISOLATED_LAUNCHER_SCHEMA,
+    }:
+        raise PerpetualRuntimeError("WORLD_BODY_BOUNDARY_CONFIG_INVALID")
     expected = {
-        "schema": WORLD_ISOLATED_LAUNCHER_SCHEMA,
         "sandbox_mode": "workspace-write",
         "approval_policy": "never",
         "network_access": network_access,
@@ -913,6 +997,39 @@ def validate_body_boundary_config(config: Mapping[str, Any]) -> dict[str, Any] |
         != 1
     ):
         raise PerpetualRuntimeError("WORLD_BODY_LAUNCHER_SEMANTICS_INVALID")
+    extended_boundary = {
+        "temporary_storage_scope": "current_lineage_workspace_private",
+        "git_safe_directory_scope": "exact_current_lineage_workspace",
+    }
+    extended_values = {key: boundary.get(key) for key in extended_boundary}
+    if schema == WORLD_ISOLATED_LAUNCHER_SCHEMA:
+        if extended_values != extended_boundary:
+            raise PerpetualRuntimeError("WORLD_BODY_BOUNDARY_CONFIG_INVALID")
+        required_body_markers = (
+            b"WORLD_ISOLATED_SHARED_WORKSPACE_FORBIDDEN",
+            b"WORLD_LINEAGE_WORKDIR_REPARSE_OR_ALIAS_FORBIDDEN",
+            b"WORLD_PRIVATE_TEMP_PATH_INVALID",
+            b"WORLD_PRIVATE_TEMP_OUTSIDE_LINEAGE",
+            b"$env:TEMP = $worldPrivateTemp",
+            b"$env:TMP = $env:TEMP",
+            b'$env:GIT_CONFIG_KEY_0 = "safe.directory"',
+            b"$env:GIT_CONFIG_VALUE_0 = ($launchWorkdir -replace",
+        )
+        if (
+            any(raw.count(marker) != 1 for marker in required_body_markers)
+            or _SHARED_TEMP_ASSIGNMENT in raw
+            or b'$env:GIT_CONFIG_VALUE_0 = "*"' in raw
+        ):
+            raise PerpetualRuntimeError("WORLD_BODY_LAUNCHER_SEMANTICS_INVALID")
+    elif any(value is not None for value in extended_values.values()) or any(
+        marker in raw
+        for marker in (
+            b"WORLD_ISOLATED_SHARED_WORKSPACE_FORBIDDEN",
+            b"WORLD_PRIVATE_TEMP_PATH_INVALID",
+            b'$env:GIT_CONFIG_KEY_0 = "safe.directory"',
+        )
+    ):
+        raise PerpetualRuntimeError("WORLD_BODY_BOUNDARY_CONFIG_INVALID")
     if config.get("runtime_binding_required") is True:
         required_markers = (
             b"WORLD_RUNTIME_BINDING_ARGUMENTS_INCOMPLETE",
@@ -5635,6 +5752,8 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
             "network_access": True,
             "writable_scope": "current_lineage_workspace_only",
             "additional_writable_roots": [],
+            "temporary_storage_scope": world_launcher["temporary_storage_scope"],
+            "git_safe_directory_scope": world_launcher["git_safe_directory_scope"],
             "s_repo_writable": False,
             "cleanroom_shared_body_writable": False,
             "account_config_writable": False,
@@ -7975,6 +8094,8 @@ def _seal_repaired_controller_release(
                 "network_access": True,
                 "writable_scope": "current_lineage_workspace_only",
                 "additional_writable_roots": [],
+                "temporary_storage_scope": isolated_launcher["temporary_storage_scope"],
+                "git_safe_directory_scope": isolated_launcher["git_safe_directory_scope"],
                 "s_repo_writable": False,
                 "cleanroom_shared_body_writable": False,
                 "account_config_writable": False,

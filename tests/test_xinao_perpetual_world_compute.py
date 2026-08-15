@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -953,6 +954,9 @@ def test_world_launcher_enforces_workspace_write_without_changing_shared_launche
     source = tmp_path / "Open-Codex-Cleanroom.ps1"
     original = (
         b"before\r\n"
+        b'$env:TEMP = Join-Path $cleanRoot "runtime\\tmp"\r\n'
+        b"$env:TMP = $env:TEMP\r\n"
+        b"if ($SurfaceProbe) {\r\n}\r\n"
         b"& $codexExe --cd $launchWorkdir --dangerously-bypass-approvals-and-sandbox "
         b"@slotSpecificCodexArgs @CodexArgs\r\n"
         b"after\r\n"
@@ -967,8 +971,48 @@ def test_world_launcher_enforces_workspace_write_without_changing_shared_launche
     assert "--sandbox workspace-write" in isolated
     assert "sandbox_workspace_write.network_access=true" in isolated
     assert "--dangerously-bypass-approvals-and-sandbox" not in isolated
+    assert '$worldPrivateTemp = Join-Path $launchWorkdir ".xinao\\carrier\\tmp"' in isolated
+    assert "WORLD_PRIVATE_TEMP_OUTSIDE_LINEAGE" in isolated
+    assert '$env:GIT_CONFIG_KEY_0 = "safe.directory"' in isolated
+    assert "$env:GIT_CONFIG_VALUE_0 = ($launchWorkdir -replace '\\\\', '/')" in isolated
     assert receipt["writable_scope"] == "lineage_workspace_only"
     assert receipt["additional_writable_roots"] == []
+    assert receipt["temporary_storage_scope"] == "current_lineage_workspace_private"
+    assert receipt["git_safe_directory_scope"] == "exact_current_lineage_workspace"
+
+
+@pytest.mark.parametrize(
+    ("source_bytes", "reason"),
+    [
+        (
+            b"if ($SurfaceProbe) {\n}\n"
+            b"& $codexExe --cd $launchWorkdir --dangerously-bypass-approvals-and-sandbox "
+            b"@slotSpecificCodexArgs @CodexArgs\n",
+            "CLEANROOM_LAUNCHER_TEMP_ASSIGNMENT_SEAM_MISMATCH",
+        ),
+        (
+            b'$env:TEMP = Join-Path $cleanRoot "runtime\\tmp"\n'
+            b"$env:TMP = $env:TEMP\n"
+            b"& $codexExe --cd $launchWorkdir --dangerously-bypass-approvals-and-sandbox "
+            b"@slotSpecificCodexArgs @CodexArgs\n",
+            "CLEANROOM_LAUNCHER_GIT_SAFE_INSERT_SEAM_MISMATCH",
+        ),
+    ],
+)
+def test_world_launcher_fails_closed_without_private_temp_or_exact_git_seam(
+    tmp_path: Path,
+    source_bytes: bytes,
+    reason: str,
+) -> None:
+    source = tmp_path / "Open-Codex-Cleanroom.ps1"
+    source.write_bytes(source_bytes)
+
+    with pytest.raises(PerpetualRuntimeError, match=reason):
+        create_world_isolated_launcher(
+            source,
+            tmp_path / "Open-Codex-World-Isolated.ps1",
+            network_access=True,
+        )
 
 
 def test_frozen_world_launcher_does_not_depend_on_later_source_launcher_bytes(
@@ -976,6 +1020,9 @@ def test_frozen_world_launcher_does_not_depend_on_later_source_launcher_bytes(
 ) -> None:
     source = tmp_path / "Open-Codex-Cleanroom.ps1"
     source.write_bytes(
+        b'$env:TEMP = Join-Path $cleanRoot "runtime\\tmp"\n'
+        b"$env:TMP = $env:TEMP\n"
+        b"if ($SurfaceProbe) {\n}\n"
         b"& $codexExe --cd $launchWorkdir --dangerously-bypass-approvals-and-sandbox "
         b"@slotSpecificCodexArgs @CodexArgs\n"
     )
@@ -988,12 +1035,14 @@ def test_frozen_world_launcher_does_not_depend_on_later_source_launcher_bytes(
         "launcher_source_path": str(source),
         "launcher_source_sha256": receipt["source_sha256"],
         "body_boundary": {
-            "schema": "xinao.cleanroom.world-isolated-launcher.v1",
+            "schema": "xinao.cleanroom.world-isolated-launcher.v2",
             "sandbox_mode": "workspace-write",
             "approval_policy": "never",
             "network_access": True,
             "writable_scope": "current_lineage_workspace_only",
             "additional_writable_roots": [],
+            "temporary_storage_scope": "current_lineage_workspace_private",
+            "git_safe_directory_scope": "exact_current_lineage_workspace",
             "s_repo_writable": False,
             "cleanroom_shared_body_writable": False,
             "account_config_writable": False,
@@ -1012,6 +1061,99 @@ def test_frozen_world_launcher_does_not_depend_on_later_source_launcher_bytes(
         controller_module.validate_body_boundary_config(config)
 
 
+def test_extended_world_body_boundary_fails_closed_when_temp_or_git_marker_drifts(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "Open-Codex-Cleanroom.ps1"
+    source.write_bytes(
+        b'$env:TEMP = Join-Path $cleanRoot "runtime\\tmp"\n'
+        b"$env:TMP = $env:TEMP\n"
+        b"if ($SurfaceProbe) {\n}\n"
+        b"& $codexExe --cd $launchWorkdir --dangerously-bypass-approvals-and-sandbox "
+        b"@slotSpecificCodexArgs @CodexArgs\n"
+    )
+    run_dir = tmp_path / "run"
+    launcher = run_dir / "Open-Codex-World-Isolated.ps1"
+    receipt = create_world_isolated_launcher(source, launcher, network_access=True)
+    config = {
+        "run_dir": str(run_dir),
+        "launcher_path": str(launcher),
+        "launcher_source_path": str(source),
+        "launcher_source_sha256": receipt["source_sha256"],
+        "body_boundary": {
+            "schema": "xinao.cleanroom.world-isolated-launcher.v2",
+            "sandbox_mode": "workspace-write",
+            "approval_policy": "never",
+            "network_access": True,
+            "writable_scope": "current_lineage_workspace_only",
+            "additional_writable_roots": [],
+            "temporary_storage_scope": "current_lineage_workspace_private",
+            "git_safe_directory_scope": "exact_current_lineage_workspace",
+            "s_repo_writable": False,
+            "cleanroom_shared_body_writable": False,
+            "account_config_writable": False,
+            "body_incident_schema": "xinao.cleanroom.world-compute-body-incident.v1",
+        },
+    }
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["validate_body_boundary_config"],
+    )
+    assert controller_module.validate_body_boundary_config(config) == config["body_boundary"]
+
+    launcher.write_bytes(
+        launcher.read_bytes().replace(
+            b'GIT_CONFIG_KEY_0 = "safe.directory"',
+            b'GIT_CONFIG_KEY_0 = "safe.directorx"',
+        )
+    )
+    with pytest.raises(PerpetualRuntimeError, match="WORLD_BODY_LAUNCHER_SEMANTICS_INVALID"):
+        controller_module.validate_body_boundary_config(config)
+
+
+def test_legacy_world_body_boundary_stays_recoverable_but_cannot_claim_v2_limb(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    launcher = run_dir / "Open-Codex-World-Isolated.ps1"
+    launcher.write_bytes(
+        b"& $codexExe --cd $launchWorkdir --sandbox workspace-write "
+        b'-c "sandbox_workspace_write.network_access=true" '
+        b"@slotSpecificCodexArgs @CodexArgs\n"
+    )
+    boundary = {
+        "schema": "xinao.cleanroom.world-isolated-launcher.v1",
+        "sandbox_mode": "workspace-write",
+        "approval_policy": "never",
+        "network_access": True,
+        "writable_scope": "current_lineage_workspace_only",
+        "additional_writable_roots": [],
+        "s_repo_writable": False,
+        "cleanroom_shared_body_writable": False,
+        "account_config_writable": False,
+        "body_incident_schema": "xinao.cleanroom.world-compute-body-incident.v1",
+    }
+    config = {
+        "run_dir": str(run_dir),
+        "launcher_path": str(launcher),
+        "launcher_source_path": str(launcher),
+        "launcher_source_sha256": sha256_file(launcher),
+        "body_boundary": boundary,
+    }
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["validate_body_boundary_config"],
+    )
+
+    assert controller_module.validate_body_boundary_config(config) == boundary
+
+    boundary["temporary_storage_scope"] = "current_lineage_workspace_private"
+    boundary["git_safe_directory_scope"] = "exact_current_lineage_workspace"
+    with pytest.raises(PerpetualRuntimeError, match="WORLD_BODY_BOUNDARY_CONFIG_INVALID"):
+        controller_module.validate_body_boundary_config(config)
+
+
 def test_live_cleanroom_launcher_freezes_to_valid_world_isolated_powershell(
     tmp_path: Path,
 ) -> None:
@@ -1020,7 +1162,12 @@ def test_live_cleanroom_launcher_freezes_to_valid_world_isolated_powershell(
     if not source.is_file() or not powershell.is_file():
         pytest.skip("live Windows clean-room launcher is not present")
     destination = tmp_path / "Open-Codex-World-Isolated.ps1"
-    create_world_isolated_launcher(source, destination, network_access=True)
+    receipt = create_world_isolated_launcher(source, destination, network_access=True)
+    raw = destination.read_bytes()
+    assert receipt["temporary_storage_scope"] == "current_lineage_workspace_private"
+    assert receipt["git_safe_directory_scope"] == "exact_current_lineage_workspace"
+    assert b"WORLD_PRIVATE_TEMP_OUTSIDE_LINEAGE" in raw
+    assert b'$env:GIT_CONFIG_KEY_0 = "safe.directory"' in raw
     quoted_destination = str(destination).replace("'", "''")
     parser_command = (
         "$t=$null;$e=$null;"
@@ -1084,12 +1231,14 @@ def test_live_cleanroom_launcher_freezes_mandatory_runtime_binding_surface(
         "branch_lineages": [{"lineage_id": "world-01"}],
         "root_lineage": {"lineage_id": "root-main"},
         "body_boundary": {
-            "schema": "xinao.cleanroom.world-isolated-launcher.v1",
+            "schema": "xinao.cleanroom.world-isolated-launcher.v2",
             "sandbox_mode": "workspace-write",
             "approval_policy": "never",
             "network_access": True,
             "writable_scope": "current_lineage_workspace_only",
             "additional_writable_roots": [],
+            "temporary_storage_scope": "current_lineage_workspace_private",
+            "git_safe_directory_scope": "exact_current_lineage_workspace",
             "s_repo_writable": False,
             "cleanroom_shared_body_writable": False,
             "account_config_writable": False,
@@ -1240,6 +1389,7 @@ def test_pinned_cleanroom_codex_sandbox_allows_lineage_and_denies_shared_bodies(
 
     live_protected_roots = [
         Path(r"E:\CODEX_CLEANROOM\workspace"),
+        Path(r"E:\CODEX_CLEANROOM\runtime\tmp"),
         Path(r"E:\XINAO_RESEARCH_WORKSPACES\S"),
         Path(r"E:\CODEX_CLEANROOM\codex-home"),
         Path(r"E:\CODEX_CLEANROOM\research-lineages"),
@@ -1256,6 +1406,87 @@ def test_pinned_cleanroom_codex_sandbox_allows_lineage_and_denies_shared_bodies(
             assert not target.exists()
         finally:
             target.unlink(missing_ok=True)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Codex Windows sandbox probe")
+def test_world_private_temp_and_process_git_trust_work_inside_pinned_sandbox(
+    tmp_path: Path,
+) -> None:
+    codex = Path(
+        r"E:\CODEX_CLEANROOM\runtime\codex-package\node_modules\@openai"
+        r"\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe"
+    )
+    python = Path(r"E:\CODEX_CLEANROOM\runtime\tools\python-3.13.14\python.exe")
+    git = shutil.which("git")
+    if not codex.is_file() or not python.is_file() or git is None:
+        pytest.skip("Pinned clean-room Codex, Python, or Git is unavailable")
+    workspace = tmp_path / "world-01"
+    private_temp = workspace / ".xinao" / "carrier" / "tmp"
+    private_temp.mkdir(parents=True)
+    initialized = subprocess.run(
+        [git, "init", str(workspace)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+    environment = dict(os.environ)
+    for key in list(environment):
+        folded = key.upper()
+        if folded in {"GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"} or folded.startswith(
+            ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
+        ):
+            environment.pop(key)
+    environment.update(
+        {
+            "TEMP": str(private_temp),
+            "TMP": str(private_temp),
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": str(workspace).replace("\\", "/"),
+        }
+    )
+
+    def sandbox(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(codex), "sandbox", "-P", ":workspace", "-C", str(workspace), *command],
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            check=False,
+        )
+
+    temp_probe = sandbox(
+        [
+            str(python),
+            "-c",
+            (
+                "import json,pathlib,tempfile;"
+                "p=pathlib.Path(tempfile.mkdtemp());"
+                "(p/'proof.txt').write_text('ok',encoding='utf-8');"
+                "print(json.dumps({'temp':str(p),'proof':(p/'proof.txt').read_text()}))"
+            ),
+        ]
+    )
+    assert temp_probe.returncode == 0, temp_probe.stdout + temp_probe.stderr
+    temp_result = json.loads(
+        next(line for line in reversed(temp_probe.stdout.splitlines()) if line.startswith("{"))
+    )
+    assert Path(temp_result["temp"]).resolve().is_relative_to(private_temp.resolve())
+    assert temp_result["proof"] == "ok"
+
+    git_config = sandbox([git, "config", "--get-all", "safe.directory"])
+    assert git_config.returncode == 0, git_config.stdout + git_config.stderr
+    assert str(workspace).replace("\\", "/") in git_config.stdout.splitlines()
+    git_status = sandbox([git, "status", "--porcelain=v1"])
+    assert git_status.returncode == 0, git_status.stdout + git_status.stderr
+    assert "dubious ownership" not in (git_status.stdout + git_status.stderr).lower()
 
 
 def test_body_incident_classification_keeps_only_hash_bound_failure_metadata(
@@ -3694,6 +3925,9 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     launcher = tmp_path / "launcher.ps1"
     launcher.write_bytes(
         b"# frozen test launcher\n"
+        b'$env:TEMP = Join-Path $cleanRoot "runtime\\tmp"\n'
+        b"$env:TMP = $env:TEMP\n"
+        b"if ($SurfaceProbe) {\n}\n"
         b"& $codexExe --cd $launchWorkdir --dangerously-bypass-approvals-and-sandbox "
         b"@slotSpecificCodexArgs @CodexArgs\n"
         b'sandbox_mode = "danger-full-access"\n'
@@ -3811,6 +4045,14 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     assert updated["controller_release_history"][0]["path"] == str(old_release)
     assert updated["deep_evidence_required"] is True
     assert updated["body_boundary"]["sandbox_mode"] == "workspace-write"
+    assert (
+        updated["body_boundary"]["temporary_storage_scope"]
+        == "current_lineage_workspace_private"
+    )
+    assert (
+        updated["body_boundary"]["git_safe_directory_scope"]
+        == "exact_current_lineage_workspace"
+    )
     assert updated["launcher_path"] != str(launcher)
     assert Path(updated["launcher_path"]).is_file()
     assert b"--sandbox workspace-write" in Path(updated["launcher_path"]).read_bytes()
