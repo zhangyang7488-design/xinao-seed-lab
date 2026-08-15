@@ -18,6 +18,16 @@ Window/turn boundaries, local completion, reports, plan labels,
 `HumanApprovalReceipt`, and activation names do not reset scope or manufacture a
 gate.
 
+After any child, worker, research/search, implementation, test, commit, canary,
+readback, or local report settles, the active S/Codex builder settles only that
+bounded item, reconstructs the exact-current parent and pending causal frontier,
+and runs the next already-authorized causal task in the same lifecycle. A final
+answer, handoff, IDLE, or waiting for the human to say “continue” is itself a
+terminal action and therefore requires Pause/Stop, a real user-only value fork,
+a major effect boundary, a proved blocker, or verified parent completion. This
+event-bounded reasoning relation is not a daemon, scheduler, task ledger, fixed
+RunNext service, Research Sol self-wake, or permission to invent work.
+
 This posture neither invents a task from history nor creates unattended,
 cross-restart, out-of-scope, or major external authority. Explicit Pause/Stop,
 user-exclusive decisive facts or value forks, new accounts/audiences/payments/
@@ -43,7 +53,9 @@ reasoning obligation, not a new agenda controller.
 The baseline is carried by four current consumers and one cold recovery surface:
 
 1. **Hot runtime:** the global A/B `AGENTS.md` files hold the minimal zero-beat,
-   speech-as-increment rule, and event-triggered bounded-closure obligation.
+   speech-as-increment rule, event-triggered bounded-closure obligation, and
+   post-child parent-frontier re-entry relation. S additionally carries its
+   role-specific projection in the repository-root `AGENTS.md`.
 2. **Current increment and bounded re-entry:** UserPromptSubmit injects one thin
    zero-beat reminder plus a compact mechanical runtime observation before each
    new user increment. SessionStart is installed only for `resume|compact`; it
@@ -74,7 +86,9 @@ current spoken increment
    recovery, verification, and execution
 -> action or non-action
 -> real-consumer readback
--> reanchor or verified completion
+-> settle only the bounded child
+-> reconstruct exact-current world and pending parent frontier
+-> next already-authorized action or verified parent completion
 ```
 
 Engineering patterns may complete means after intent binding; they must not
@@ -146,8 +160,10 @@ verifier, worker terminal, or
 approval artifact can silently widen or narrow the live scope. A migrated
 component must retain its parent service path, live consumer, reversible
 carrier, positive and negative behavior, fresh readback, and explicit unknowns;
-after validation, execution returns only to the exact pre-migration activity
-and return point already bound in the surviving parent. Validation does not
+after validation, execution returns to the exact pre-migration activity and
+return point already bound in the surviving parent, reconciles the still-open
+frontier, and continues the next admitted task without a report-wall handoff.
+Validation does not
 authorize S or an effect Owner to derive a new domain problem from repository status.
 
 The non-runtime capability lineage at

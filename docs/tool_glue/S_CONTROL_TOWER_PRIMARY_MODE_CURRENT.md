@@ -185,6 +185,42 @@ branch terminal、一次 fusion、漂亮报告或局部 null 都不自动关闭�
 
 对于已经 `RUNNING` 的持续 episode，修 launcher/controller、跑回归、recover 原 lineage、冻结证据或启动 fresh fusion 都是后台维护事件，不是新的父任务，也不是交回用户的完成点。维护子事务完成后，S 保持 episode 存活并继续原合同；没有能改变用户判断的事实就不主动生成用户消息，确需回应时只陈述对象状态或最小真实分叉。完整 PID、manifest、路径、hash、测试、commit 和恢复账留在可追溯 receipt，只有用户明确索取、真实阻塞、需要授权、账号/额度变化、Pause/Stop 或实质运行/认识状态转折时展开。一次 assistant turn 结束也不等于 episode 停止；过程减负不能被翻译成对用户的安置、接管承诺或离场许可，也不得用一堵工程结算报告制造父活动已经交付完毕的语义。
 
+### 8.1 当前 S 建设者的父前沿回入
+
+上面的持续性首先约束当前正在建设/修复 S 的 Codex 自己，不能被缩成
+Research Sol 的未来 wake 或一个 unattended guardian。当前 S builder 完成一项研究、
+外部查找、工人候选、实现、测试、commit、canary 或 readback 后，只结算这个子项，
+随后在同一生命周期重新面对 exact-current world 与仍存活的父活动：
+
+```text
+CURRENT_PARENT_ACTIVITY
+↓
+select current actionable causal task
+↓
+research / external search / worker / implementation
+↓
+real consumer readback
+↓
+settle only that task
+↓
+RECONSTRUCT CURRENT WORLD
+↓
+RECONCILE PENDING TASK FRONTIER
+↓
+choose NEXT already-authorized causal task
+↓
+RUN_NEXT
+↺
+```
+
+`final`、handoff、IDLE 或等待用户再说“继续”都是会改变控制状态的 terminal
+action，不是局部子项结束后的中性默认。只有明确 Pause/Stop、真实用户专属价值分叉、
+重大 effect/授权边界、已证阻塞或父结果真实完成，才允许当前 builder 从这条父链
+final-yield。这个关系不要求常驻模型、后台 guardian、定时器、task ledger、固定
+`RunNext` 服务或第二控制面；它也不把某个文件、旧计划或 Research Sol 输出提升成
+下一任务 authority。Research Sol 的 `WAIT/wake`、S runtime guardian 的事件等待、以及
+当前建设者在同一已授权父活动中跨子项施工，是三个不同生命周期层。
+
 ### 9. 两种默认持续性
 
 当前人话与 live contract 已经任命 S 守护新仓库持续研究时，存在两条不能互相压缩的连续关系：

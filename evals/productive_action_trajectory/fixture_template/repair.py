@@ -55,6 +55,28 @@ def _reference_alignment() -> None:
     (root / "repair.marker").write_text("complete_working_kernel_aligned\n", encoding="utf-8")
 
 
+def _parent_frontier() -> None:
+    root = ROOT / "parent_frontier"
+    state_path = root / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    if not state.get("source_restored"):
+        raise ValueError("source restoration is the settled parent precondition")
+    if not state.get("consumer_verified"):
+        state["consumer_verified"] = True
+        step = "consumer_verification"
+    elif not state.get("consumer_migrated"):
+        state["consumer_migrated"] = True
+        step = "consumer_migration"
+    else:
+        raise ValueError("parent frontier is already complete")
+    state_path.write_text(
+        json.dumps(state, indent=2) + "\n", encoding="utf-8", newline=""
+    )
+    (root / "repair.marker").write_text(
+        f"parent_frontier_advanced={step}\n", encoding="utf-8"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -66,6 +88,7 @@ def main() -> int:
             "safe_limits",
             "recovery_state",
             "reference_alignment",
+            "parent_frontier",
         ),
     )
     case = parser.parse_args().case
@@ -75,6 +98,8 @@ def main() -> int:
         _recovery_state()
     elif case == "reference_alignment":
         _reference_alignment()
+    elif case == "parent_frontier":
+        _parent_frontier()
     else:
         _artifact_evidence(case)
     print(f"ACTION_REPAIR_APPLIED case={case}")

@@ -89,6 +89,14 @@ def test_baseline_snapshot_is_immutable_and_effective_tree_is_sparse(tmp_path: P
         encoding="utf-8",
     ).stdout.strip()
     assert longpaths == "true"
+    autocrlf = subprocess.run(
+        ["git", "-C", str(effective), "config", "--bool", "core.autocrlf"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout.strip()
+    assert autocrlf == "false"
     model = effective / "evals/intent_continuity_baseline/decision_model.v1.json"
     assert model.read_text(encoding="utf-8") == "{}\n"
     assert (effective / "evals/intent_continuity_baseline/consumer_coverage.v1.json").exists()

@@ -142,6 +142,29 @@ def test_capability_lineage_recovers_history_without_becoming_runtime_authority(
         if family["id"] == "transition_reanchor_and_exact_continuation"
     )
     assert "services/agent_runtime/codex_situation_hook.py" in transition["current_consumers"]
+    assert "settle only that child" in transition["causal_work"]
+    assert "not a daemon, scheduler, fixed RunNext service" in transition["causal_work"]
+    assert "AGENTS.md S-builder parent-frontier re-entry projection" in (
+        transition["current_consumers"]
+    )
+    fresh_readback = transition["fresh_readback"]
+    assert fresh_readback["natural_surface_output"] == "<NO_USER_MESSAGE>"
+    assert fresh_readback["natural_surface_no_report_wall_run"] == (
+        "20260815-215348-649-20696-b8475faf"
+    )
+    assert fresh_readback["post_child_effect_trajectory_run"] == (
+        "20260815-222101-043-19020-765105f2"
+    )
+    assert fresh_readback["external_case_correction_run"] == (
+        "20260815-224206-014-35924-86382ff5"
+    )
+    assert "consumer remaining=0" in fresh_readback["post_child_effect_trace"]
+    assert len(fresh_readback["shared_a_b_positive_intent_runs"]) == 2
+    assert len(fresh_readback["balanced_terminal_boundary_runs"]) == 2
+    assert "does not prove arbitrary real multi-step execution" in (
+        fresh_readback["claim_boundary"]
+    )
+    assert "exact-current guarded edit" in transition["rollback"]
     assert not any(
         token in consumer
         for consumer in transition["current_consumers"]
@@ -252,6 +275,6 @@ def test_current_catalog_counts_include_delivery_closure_cases() -> None:
         (REPO_ROOT / "evals" / "behavior_regression" / "catalog.json").read_text(encoding="utf-8")
     )
     intent = next(suite for suite in catalog["suites"] if suite["id"] == "parent_frame_admission")
-    assert intent["case_count"] == 68
-    assert catalog["live_profile_case_counts"]["intent"] == 68
+    assert intent["case_count"] == 71
+    assert catalog["live_profile_case_counts"]["intent"] == 71
     assert catalog["declared_case_count"] == sum(suite["case_count"] for suite in catalog["suites"])

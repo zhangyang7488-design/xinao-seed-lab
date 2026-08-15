@@ -15,6 +15,23 @@ def test_hot_s_contract_separates_guardian_and_world_continuity() -> None:
     assert "各自显式 runtime root" in agreement
 
 
+def test_hot_s_builder_reenters_parent_frontier_without_conflating_world_wake() -> None:
+    agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "SENTINEL:S_BUILDER_PARENT_FRONTIER_REENTRY_V1" in agreement
+    assert "重建仍存活的父结果与未闭因果关系" in agreement
+    assert "不能把 S 停在报告墙" in agreement
+    assert "不是 Research Sol 的 `WAIT/wake` 生命周期" in agreement
+    assert "不要求常驻 guardian" in agreement
+
+    detailed = (
+        REPO_ROOT / "docs" / "tool_glue" / "S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md"
+    ).read_text(encoding="utf-8")
+    assert "当前 S 建设者的父前沿回入" in detailed
+    assert "RECONCILE PENDING TASK FRONTIER" in detailed
+    assert "Research Sol 的 `WAIT/wake`" in detailed
+    assert "三个不同生命周期层" in detailed
+
+
 def test_detailed_control_tower_contract_preserves_dual_root_operations() -> None:
     contract = (
         REPO_ROOT / "docs" / "tool_glue" / "S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md"

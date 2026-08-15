@@ -365,6 +365,18 @@ if ($needsNativeSubagentWorkspace) {
 }
 if ($needsProductiveActionWorkspace) {
     $environment['XINAO_PRODUCTIVE_ACTION_WORKSPACE'] = $productiveActionWorkspace
+    $productiveActionPythonOutput = @(
+        & uv run --project $repoRoot python -c 'import sys; print(sys.executable)' 2>&1
+    )
+    if ($LASTEXITCODE -ne 0 -or $productiveActionPythonOutput.Count -eq 0) {
+        throw 'Could not resolve the declared S Python for productive-action fixtures.'
+    }
+    $productiveActionPython = [string]$productiveActionPythonOutput[-1]
+    $productiveActionPython = $productiveActionPython.Trim()
+    if (-not (Test-Path -LiteralPath $productiveActionPython -PathType Leaf)) {
+        throw "Declared productive-action Python is not a file: $productiveActionPython"
+    }
+    $environment['XINAO_PRODUCTIVE_ACTION_PYTHON'] = $productiveActionPython
 }
 $previous = @{}
 foreach ($name in $environment.Keys) {

@@ -1,7 +1,7 @@
 # Local behavior regression
 
 This is a bounded S engineering capability, not a research platform, scheduler,
-authority source, or completion gate. The catalog currently inventories 124
+authority source, or completion gate. The catalog currently inventories 129
 declared live and reusable specifications. XINAO domain research and economic evidence
 belong to the live clean-room world at `E:\CODEX_CLEANROOM\workspace`.
 
@@ -14,16 +14,17 @@ The active profiles are:
 
 - `capability`: one fresh Codex app-server capability canary;
 - `smoke`: one parent-frame admission case plus the capability canary;
-- `intent`: sixty-seven generic fresh parent-frame, source-aware utterance-relation, environment-runtime attribution and repair, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition,
+- `intent`: seventy-one generic fresh parent-frame, source-aware utterance-relation, environment-runtime attribution and repair, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition,
   mature-owner, role-separated S control-tower, and cold-native standing exception cases;
 - `core`: intent admission, capability, proactive mature-first, frozen recall,
   thin localization, and deterministic static checks;
 - `deep`: core plus current read-only public-repository recall;
 - `proactive`: the focused mature-first suite;
 - `reuse`: frozen/live recall plus thin localization and static checks;
-- `productivity`: eight disposable-workspace trajectories, including complete
+- `productivity`: nine disposable-workspace trajectories, including post-child
+  parent-frontier execution and complete
   reference-behavior alignment without configuration or health proxies;
-- `surface`: nine natural-language fresh-consumer cases for message authority,
+- `surface`: ten natural-language fresh-consumer cases for message authority,
   object-centered status, real blockers, completion, and non-handback action
   transfers (silent or a concise immediate route); it does not claim the
   underlying action executed;

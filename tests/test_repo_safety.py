@@ -476,7 +476,7 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     assert "ContextEvidenceMode" in runner
 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(encoding="utf-8")
-    assert "currently inventories 124" in readme
+    assert "currently inventories 129" in readme
     assert "-Profile context" in readme
     assert "context_contract_only" in readme
 
@@ -656,6 +656,9 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert "SENTINEL:LOCAL_DOCKER_EXCEPTION_ONLY_V1" in global_agents_text
     assert "默认禁止启动或采用 Docker、Docker Compose 或 Docker 容器" in global_agents_text
     assert "SENTINEL:ROLE_SEPARATED_CONTROL_TOWER_V1" in global_agents_text
+    assert "SENTINEL:POST_CHILD_PARENT_FRONTIER_REENTRY_V1" in global_agents_text
+    assert "RECONCILE PENDING TASK FRONTIER" in global_agents_text
+    assert "等待用户再说“继续”都是需要合法终止谓词" in global_agents_text
     assert "已经被任命为 world-owning Sol 的 branch 自己面对领域现实" in global_agents_text
     assert "S 不再平行形成一份“Owner 正解”" in global_agents_text
     assert "用户可见控制叙述只在状态变化、故障、边界、采用和结算时" in global_agents_text
@@ -1526,25 +1529,25 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 129
+    assert suite_count == catalog["declared_case_count"] == 134
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 9 + 13 + 9 + 6 + 2 + 1 + 2 + 8,
-        "deep": 18 + 1 + 9 + 13 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
-        "intent": 68,
+        "core": 18 + 1 + 9 + 13 + 10 + 6 + 2 + 1 + 2 + 9,
+        "deep": 18 + 1 + 9 + 13 + 10 + 6 + 2 + 1 + 1 + 2 + 9,
+        "intent": 71,
         "external": 9,
         "reconstitution": 13,
-        "surface": 9,
+        "surface": 10,
         "proactive": 6,
         "reuse": 4,
-        "productivity": 8,
+        "productivity": 9,
         "subagent": 1,
         "context": 4,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 68
+    assert intent["case_count"] == 71
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     external_reality = next(
@@ -1565,7 +1568,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         item for item in catalog["suites"] if item["id"] == "parent_continuity_user_surface"
     )
     assert user_surface["kind"] == "promptfoo_live_natural_language"
-    assert user_surface["case_count"] == 9
+    assert user_surface["case_count"] == 10
     assert user_surface["natural_user_surface_claim_allowed"] is True
     assert user_surface["underlying_action_execution_claim_allowed"] is False
     assert user_surface["universal_future_behavior_claim_allowed"] is False

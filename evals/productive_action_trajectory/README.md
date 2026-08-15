@@ -3,7 +3,7 @@
 This disposable-workspace eval observes real Codex tool use rather than grading
 decision labels. It is a witness set, not the behavior definition or a keyword router.
 The unique full generative source is the shared `$productivity` Skill; the global L0 keeps only
-its thin automatic invariant. Eight fixtures exercise transfer, symmetry, classification reversal,
+its thin automatic invariant. Nine fixtures exercise transfer, symmetry, classification reversal,
 and complete reference-behavior alignment:
 
 - a documentation-only change leaves exact artifact evidence valid, so the saved
@@ -19,6 +19,9 @@ and complete reference-behavior alignment:
 - reference-agent alignment rejects startup health, configuration parity, and
   twelve-worker consensus as completion proxies; it aligns the complete working
   kernel through the real consumer while preserving local identity and auth scope.
+- a three-step parent delivery begins after source restoration has already settled;
+  one fresh turn must verify and migrate the consumer through two distinct effects
+  before it may finalize, so silence alone cannot masquerade as continuation.
 
 The scorer requires decision-relevant process visibility in normal agent messages:
 purpose and route before action, material deviation before a state change, and effect

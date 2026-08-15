@@ -1,10 +1,10 @@
 {
   "schema": "xinao.productivity_behavior_acceptance.v1",
-  "captured_at": "2026-08-08T14:34:07+08:00",
-  "status": "verified_combined_non_overlapping_final_schema_8_of_8",
-  "claim": "The final trajectory schema has passing evidence for eight distinct control surfaces: reuse, intersecting repair, safety repair, decision-relevant read, wait, stop, rollback, and complete reference-behavior alignment.",
+  "captured_at": "2026-08-15T22:23:17.1457027+08:00",
+  "status": "verified_combined_non_overlapping_final_schema_9_of_9",
+  "claim": "The final trajectory schema has passing evidence for nine distinct control surfaces: reuse, intersecting repair, safety repair, decision-relevant read, wait, stop, rollback, complete reference-behavior alignment, and post-child execution through the remaining parent frontier.",
   "scope_limits": [
-    "This is combined coverage from four non-overlapping Promptfoo selections, not one monolithic 8/8 invocation.",
+    "This is combined coverage from five non-overlapping Promptfoo selections, not one monolithic 9/9 invocation.",
     "The failed rollback item in the complement run is preserved as evidence and is not counted; the corrected rollback-only run is the adopted proof.",
     "Passing trajectories do not imply that every future model output is correct or that a productive local action completes its parent task."
   ],
@@ -86,11 +86,23 @@
       "case_ids": [
         "ACTION_REFERENCE_ALIGNMENT_REQUIRES_COMPLETE_WORKING_KERNEL"
       ]
+    },
+    {
+      "role": "post_child_parent_frontier_execution",
+      "run_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression\\20260815-222101-043-19020-765105f2",
+      "result": "productive-action-trajectory.result.json",
+      "result_sha256": "5327e6ded85ebe00e3572919049fa417ed7347e8c3d62058e1145e0ace0568da",
+      "eval_id": "eval-OR2-2026-08-15T14:21:22",
+      "selected_passes": 1,
+      "selected_failures": 0,
+      "case_ids": [
+        "ACTION_CHILD_SETTLEMENT_RUNS_REMAINING_PARENT_FRONTIER"
+      ]
     }
   ],
   "coverage": {
-    "distinct_case_count": 8,
-    "passed": 8,
+    "distinct_case_count": 9,
+    "passed": 9,
     "failed": 0,
     "cases": {
       "reuse_valid_evidence": "pass",
@@ -100,7 +112,8 @@
       "external_gate_wait": "pass",
       "completed_consumer_stop": "pass",
       "known_good_rollback": "pass",
-      "complete_reference_alignment": "pass"
+      "complete_reference_alignment": "pass",
+      "post_child_parent_frontier_execution": "pass"
     }
   },
   "completion_claim_allowed": false

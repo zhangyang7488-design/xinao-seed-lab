@@ -4,7 +4,7 @@
   "authority": false,
   "runtime_loaded": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-11T19:37:07+08:00",
+  "evidence_cutoff": "2026-08-15T22:46:50+08:00",
   "purpose": "Recover the complete capability, pain, consumer, and retirement lineage before another architecture migration. This registry prevents carrier deletion from being mistaken for authority cleanup or capability restoration; it never selects a task, domain route, tool, worker, or completion state.",
   "current_runtime_topology": {
     "active_hook_events": [
@@ -295,14 +295,15 @@
     },
     {
       "id": "transition_reanchor_and_exact_continuation",
-      "pain": "Window, compact, child insertion, worker terminal, local completion, or interruption can erase the exact parent slot or manufacture a new task from observed state.",
-      "causal_work": "Rebind at lifecycle and control-transfer events; preserve an exact return point only when one exists; fail open to current words rather than synthesize a task.",
+      "pain": "Window, compact, child insertion, worker terminal, local completion, or interruption can erase the exact parent slot, manufacture a new task from observed state, or turn one settled child into a report wall that waits for the human to say continue.",
+      "causal_work": "Rebind at lifecycle and control-transfer events; after a child settles, settle only that child, reconstruct the exact-current parent and pending causal frontier, then run the next already-authorized task unless Pause, Stop, a real user-only fork, a major boundary, a proved blocker, or verified parent completion applies. Preserve an exact return point only when one exists and fail open to current words rather than synthesize a task. This is an event-bounded reasoning relation, not a daemon, scheduler, fixed RunNext service, or Research Sol wake rule.",
       "historical_carriers": [
         "git:4096f52^:scripts/predecision_intent_guard_v1.ps1",
         "git:4096f52^:evals/context_intent_alignment/cases.yaml"
       ],
       "current_consumers": [
-        "external:A/B AGENTS semantic parent-continuity rule",
+        "external:A/B AGENTS post-child parent-frontier re-entry rule",
+        "AGENTS.md S-builder parent-frontier re-entry projection",
         "services/agent_runtime/codex_situation_hook.py",
         "scripts/manage_current_situation.py",
         "services/agent_runtime/action_resume_receipt.py",
@@ -313,9 +314,27 @@
       "current_state": "PARTIAL_CONSUMER",
       "disposition": "SELECTIVE_CONSUMER_RECOVERY",
       "cost_and_failure_radius": "A resident continuation controller can seize task authority; advisory lifecycle hooks and typed action receipts have smaller radius.",
-      "rollback": "Remove only the failing advisory projection or binding; never restore the retired PreToolUse permission gate or science-bearing predecision injection.",
+      "rollback": "Remove only the isolated POST_CHILD_PARENT_FRONTIER_REENTRY/S_BUILDER_PARENT_FRONTIER_REENTRY projection and its matching cases after exact live-byte readback; retain the preceding source-aware and semantic-fidelity rules. Project rollback is an exact Git revert, while the shared A/B source requires an exact-current guarded edit rather than restoring an older whole-file archive. Never restore the retired PreToolUse permission gate, a resident continuation controller, or science-bearing predecision injection.",
+      "fresh_readback": {
+        "shared_a_b_positive_intent_runs": [
+          "20260815-212914-843-2336-997af25e",
+          "20260815-214801-218-26484-d78ebe72"
+        ],
+        "balanced_terminal_boundary_runs": [
+          "20260815-214300-796-14576-587f7e99",
+          "20260815-214635-683-46732-0c71b62a"
+        ],
+        "natural_surface_no_report_wall_run": "20260815-215348-649-20696-b8475faf",
+        "natural_surface_output": "<NO_USER_MESSAGE>",
+        "post_child_effect_trajectory_run": "20260815-222101-043-19020-765105f2",
+        "post_child_effect_trace": "consumer remaining=2 -> effect verify -> consumer remaining=1 -> effect migrate -> consumer remaining=0 -> final",
+        "external_case_correction_run": "20260815-224206-014-35924-86382ff5",
+        "external_case_correction_fact": "The external answer stayed case evidence; the repair remained S-consumed behavior delivery, ongoing and Research Sol hot cognition were excluded, and the first readback could not close the parent.",
+        "claim_boundary": "Fresh decision and user-surface behavior plus one synthetic disposable-workspace effect trajectory; this does not prove arbitrary real multi-step execution or universal future behavior."
+      },
       "unknowns": [
         "Natural long-horizon compact and arbitrary interruption recurrence remain only partially sampled.",
+        "The fresh surface proves that a settled child does not itself warrant a user-visible report, and the disposable effect trajectory proves one ordered two-effect continuation; only later real long-horizon recurrence can prove that arbitrary S construction episodes consistently execute every remaining parent-frontier task.",
         "The installed SessionStart reader only consumes an explicit exact-session provisional checkpoint; it does not prove autonomous revision or restore the v2-archived lifecycle scripts."
       ],
       "cold_recovery_material": "infra/codex_productivity_recovery/v2/manifest.v2.json"

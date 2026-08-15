@@ -590,6 +590,10 @@ def _initialize_effective_git(effective_root: Path) -> str:
         ["git", "-C", str(effective_root), "config", "core.longpaths", "true"],
         check=True,
     )
+    subprocess.run(
+        ["git", "-C", str(effective_root), "config", "core.autocrlf", "false"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(effective_root), "add", "--all"], check=True)
     subprocess.run(
         [

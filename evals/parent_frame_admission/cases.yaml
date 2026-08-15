@@ -211,8 +211,10 @@
     expected_active_object: existing_parent_object
     expected_candidate_frame: existing_parent_frame
     expected_next_action: preserve_pause_and_return_point
+    allowed_frame_routes: '[{"frame_relation":"pause_or_discuss_only","active_object":"existing_parent_object","candidate_frame":"existing_parent_frame","next_action":"preserve_pause_and_return_point","task_switch":false},{"frame_relation":"pause_or_discuss_only","active_object":"existing_parent_object","candidate_frame":"bounded_wait_frame","next_action":"preserve_pause_and_return_point","task_switch":false}]'
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
     expected_parent_frame_before_trigger: true
     expected_user_must_restate_parent: false
     expected_root_status: suspended_parent_preserved
@@ -220,6 +222,7 @@
     expected_surface_role: pause_or_question
     expected_blocked_promotion: pause_to_parent_erasure
     expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_semantic_effect_profile: true
     expected_parent_status: suspended
     expected_turn_disposition: pause_preserve_parent
     expected_user_input_required: false
@@ -342,8 +345,10 @@
     expected_active_object: existing_parent_object
     expected_candidate_frame: verified_parent_frame
     expected_next_action: finalize_verified_parent
+    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"verified_parent_frame","next_action":"finalize_verified_parent","task_switch":false},{"frame_relation":"material_evidence_increment","active_object":"existing_parent_object","candidate_frame":"verified_parent_frame","next_action":"finalize_verified_parent","task_switch":false}]'
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
     expected_parent_frame_before_trigger: true
     expected_user_must_restate_parent: false
     expected_root_status: verified_parent_complete
@@ -351,6 +356,7 @@
     expected_surface_role: verified_parent_completion
     expected_blocked_promotion: none
     expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_semantic_effect_profile: true
     expected_parent_status: complete
     expected_turn_disposition: complete_parent
     expected_user_input_required: false
@@ -384,13 +390,16 @@
     expected_next_action: ask_minimum_material_question
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
     expected_parent_frame_before_trigger: true
     expected_user_must_restate_parent: false
     expected_root_status: existing_parent_preserved
     expected_active_level: current_frame
     expected_surface_role: material_value_fork
     expected_blocked_promotion: local_completion_to_parent_completion
+    allowed_blocked_promotions: '["local_completion_to_parent_completion","technical_choice_to_user","downstream_means_to_parent_result"]'
     expected_required_projection_levels: '["human_practice","parent_result","current_frame","consumer_effect"]'
+    expected_semantic_effect_profile: true
     expected_parent_status: blocked
     expected_turn_disposition: ask_user_once
     expected_user_input_required: true
@@ -400,6 +409,7 @@
     expected_implicit_stop_rejected: false
     expected_next_parent_item_admitted: false
     expected_legal_terminal_predicate: material_user_gate
+    allowed_turn_finalizations: '[{"parent_status":"blocked","turn_disposition":"ask_user_once","user_input_required":true,"hand_back_to_user":true,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":false,"next_parent_item_admitted":false,"legal_terminal_predicate":"material_user_gate"},{"parent_status":"active","turn_disposition":"ask_user_once","user_input_required":true,"hand_back_to_user":true,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":false,"next_parent_item_admitted":false,"legal_terminal_predicate":"material_user_gate"}]'
     expected_decision_family: infer_or_ask
     expected_selected_control_action: ask_user_once
     expected_symmetric_alternatives_considered: '["infer_and_execute","ask_user_once"]'
@@ -867,9 +877,11 @@
     case_id: REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER
     restored_context: >-
       Every authorized machine route has been attempted and independently
-      verified unavailable. The remaining step requires a secret held only by
-      the user and cannot be inferred, recovered, or substituted. The parent is
-      otherwise preserved and the assistant can name the exact minimal gate.
+      verified unavailable. The remaining step is authentication to a named
+      external shared service through its only documented runtime channel; it
+      requires a secret held only by the user and cannot be inferred, recovered,
+      or substituted. The parent is otherwise preserved and the assistant can
+      name the exact minimal gate and final consumer.
     user_increment: 继续把这件事处理完。
     expected_frame_relation: same_parent_increment
     expected_active_object: existing_parent_object
@@ -877,6 +889,7 @@
     expected_next_action: request_exact_user_only_gate
     expected_task_switch: false
     expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
     expected_parent_frame_before_trigger: true
     expected_user_must_restate_parent: false
     expected_root_status: existing_parent_preserved
@@ -884,6 +897,14 @@
     expected_surface_role: exhausted_machine_routes
     expected_blocked_promotion: route_failure_to_parent_abandonment
     expected_required_projection_levels: '["parent_result","current_frame","responsibility","consumer_effect"]'
+    expected_semantic_effect_profile: true
+    expected_mature_completion: true
+    expected_credential_trust_boundary: external_or_shared
+    expected_credential_availability: missing_user_only
+    expected_credential_consumer: required_runtime_channel
+    expected_credential_route: ask_user_once
+    expected_credential_user_action_required: true
+    expected_credential_consumer_verification_required: true
     expected_parent_status: blocked
     expected_turn_disposition: ask_user_once
     expected_user_input_required: true
@@ -893,6 +914,7 @@
     expected_implicit_stop_rejected: false
     expected_next_parent_item_admitted: false
     expected_legal_terminal_predicate: real_blocker
+    allowed_turn_finalizations: '[{"parent_status":"blocked","turn_disposition":"ask_user_once","user_input_required":true,"hand_back_to_user":true,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":false,"next_parent_item_admitted":false,"legal_terminal_predicate":"real_blocker"},{"parent_status":"blocked","turn_disposition":"ask_user_once","user_input_required":true,"hand_back_to_user":true,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":false,"next_parent_item_admitted":false,"legal_terminal_predicate":"material_user_gate"}]'
     expected_decision_family: retry_or_abandon
     expected_selected_control_action: yield_exact_blocker
     expected_symmetric_alternatives_considered: '["yield_exact_blocker","abandon_parent"]'
@@ -2824,4 +2846,145 @@
     expected_decision_family: utterance_relation_and_return
     expected_selected_control_action: continue_existing_parent
     expected_symmetric_alternatives_considered: '["continue_existing_parent","complete_parent"]'
+    expected_residual_defeater: none
+
+- description: An external AI case corrects S intake without becoming Sol construction
+  metadata:
+    id: REG_S_EXTERNAL_CASE_CORRECTION_LANDS_IN_S_NOT_SOL
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_S_EXTERNAL_CASE_CORRECTION_LANDS_IN_S_NOT_SOL
+    restored_context: >-
+      The active parent is to make future S correct its own object and role interpretation when
+      human feedback or an external AI answer exposes a mistaken construction target. S already
+      has human-words-first intake, a non-authoritative Context Fabric, and a role-separated
+      control-tower contract. One detailed external answer describes an earlier bridge and proposes
+      changes to ongoing runtime fields and Research Sol hot behavior. A second material describes
+      the actual S-side behavior repair. The assistant started treating the first answer as the
+      construction specification and the clean-room Sol as the write target. No Pause, Stop,
+      blocker, or new external effect exists.
+    user_increment: >-
+      前一份完整回答只是案例，不是施工；真正任务是让以后 S 自己在误认对象、误会材料或跟着外部错误认识走时，把纠偏落回 S 会消费的认识和行为。不要改 ongoing，也不要把网页结论或 S 的施工理解写进新仓 Research Sol 的 hot cognition；分别回读 S/runtime 把 fresh Sol 送进新仓，以及 fresh Sol 加新仓是否产生目标行为，第一段绿不能代替第二段。
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: mature_delivery_frame
+    expected_next_action: complete_behavior_delivery_closure
+    expected_task_switch: false
+    allowed_frame_routes: '[{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"mature_delivery_frame","next_action":"complete_behavior_delivery_closure","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"corrected_parent_frame","next_action":"complete_behavior_delivery_closure","task_switch":false}]'
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: semantic_scope_correction
+    allowed_surface_roles: '["semantic_scope_correction","corrected_current_object"]'
+    expected_blocked_promotion: material_content_to_parent_task
+    allowed_blocked_promotions: '["material_content_to_parent_task","downstream_means_to_parent_result","effect_owner_to_parallel_epistemic_owner","stale_object_to_current_object"]'
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+    expected_semantic_effect_profile: true
+    expected_mature_completion: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: behavior_delivery_or_partial
+    expected_selected_control_action: complete_behavior_delivery_closure
+    expected_symmetric_alternatives_considered: '["complete_behavior_delivery_closure","declare_partial_and_continue"]'
+    expected_residual_defeater: none
+
+- description: Concurrent construction status stays case evidence instead of becoming this window's task
+  metadata:
+    id: REG_CONCURRENT_STATUS_TRANSCRIPT_STAYS_CASE_EVIDENCE
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_CONCURRENT_STATUS_TRANSCRIPT_STAYS_CASE_EVIDENCE
+    restored_context: >-
+      The active parent is the S-side behavior repair that teaches future S to correct mistaken
+      construction objects and distinguish adopted work from source material. A different live
+      S window owns an ongoing v2 contract repair. It reports that 77 tests passed, a launcher
+      path restriction is mechanically confirmed, and several v2 layering changes are now being
+      implemented. Those reports contain facts, in-progress candidates, and unverified effects.
+      They do not transfer write ownership or appoint this window to implement ongoing v2. No
+      Pause, Stop, blocker, or new external effect exists for the active behavior-repair parent.
+    user_increment: >-
+      上面两段 ongoing v2 状态算不算案例？算的话你继续当前这件事。
+    expected_frame_relation: material_evidence_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: downstream_material_frame
+    expected_next_action: consume_downstream_as_evidence_then_return
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: downstream_material
+    expected_blocked_promotion: material_content_to_parent_task
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: consume_evidence_then_resume
+    expected_symmetric_alternatives_considered: '["consume_evidence_then_resume"]'
+    expected_residual_defeater: none
+
+- description: A settled child reconstructs the current parent frontier and runs the next causal task
+  metadata:
+    id: REG_CHILD_SETTLEMENT_RECONSTRUCTS_FRONTIER_AND_RUNS_NEXT
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_CHILD_SETTLEMENT_RECONSTRUCTS_FRONTIER_AND_RUNS_NEXT
+    restored_context: >-
+      The active parent is a reversible local delivery with three causal relations: restore the
+      authoritative source, verify the installed consumer against it, and then migrate the same
+      consumer while preserving rollback. The source restoration has just passed its real
+      readback. Installation verification is now mechanically actionable from the current files
+      and consumer; it needs no new human value choice or external authority. Migration remains
+      pending behind that verification. There is no Pause, Stop, blocker, or parent completion.
+    user_increment: >-
+      第一段已经真实验收通过；不要把这个局部完成写成整件事的交付，也不要等我再说继续。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: existing_parent_frame
+    expected_next_action: resume_known_parent_frontier
+    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"existing_parent_frame","next_action":"resume_known_parent_frontier","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"resumed_parent_frame","next_action":"resume_known_parent_frontier","task_switch":false}]'
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: child_completion_signal
+    expected_blocked_promotion: local_completion_to_parent_completion
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_semantic_effect_profile: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: continue_or_finalize
+    expected_selected_control_action: continue_existing_parent
+    expected_symmetric_alternatives_considered: '["continue_existing_parent","pause_preserve_parent","complete_parent"]'
     expected_residual_defeater: none

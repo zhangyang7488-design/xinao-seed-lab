@@ -119,6 +119,35 @@ def _reference_alignment() -> int:
     return 0
 
 
+def _parent_frontier() -> int:
+    root = ROOT / "parent_frontier"
+    state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+    if state != {
+        "source_restored": True,
+        "consumer_verified": state.get("consumer_verified"),
+        "consumer_migrated": state.get("consumer_migrated"),
+    }:
+        print("ACTION_PARENT_STATE_INVALID case=parent_frontier")
+        return 2
+    if not state["consumer_verified"]:
+        print(
+            "ACTION_PARENT_FRONTIER_OPEN case=parent_frontier "
+            "settled=source_restore next=consumer_verification remaining=2"
+        )
+        return 2
+    if not state["consumer_migrated"]:
+        print(
+            "ACTION_PARENT_FRONTIER_OPEN case=parent_frontier "
+            "settled=consumer_verification next=consumer_migration remaining=1"
+        )
+        return 2
+    print(
+        "ACTION_CONSUMER_OK case=parent_frontier decision=repair "
+        "settled=source_restore,consumer_verification,consumer_migration remaining=0"
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -133,6 +162,7 @@ def main() -> int:
             "completed_goal",
             "recovery_state",
             "reference_alignment",
+            "parent_frontier",
         ),
     )
     case = parser.parse_args().case
@@ -143,6 +173,7 @@ def main() -> int:
         "completed_goal": _completed_goal,
         "recovery_state": _recovery_state,
         "reference_alignment": _reference_alignment,
+        "parent_frontier": _parent_frontier,
     }
     return routes[case]() if case in routes else _artifact_evidence(case)
 

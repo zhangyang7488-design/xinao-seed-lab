@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 68
+    assert len(cases) == 71
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -79,6 +79,9 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
         "REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION",
         "REG_WORLD_OWNING_SOL_APPOINTMENT_SUPERSEDES_CODEX_DOMAIN_OWNER",
+        "REG_S_EXTERNAL_CASE_CORRECTION_LANDS_IN_S_NOT_SOL",
+        "REG_CONCURRENT_STATUS_TRANSCRIPT_STAYS_CASE_EVIDENCE",
+        "REG_CHILD_SETTLEMENT_RECONSTRUCTS_FRONTIER_AND_RUNS_NEXT",
         "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
         "REG_CORRECTION_UPDATES_PARENT_NOT_NEW_LOCAL_TASK",
         "REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD",
@@ -262,6 +265,41 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         for route in json.loads(scoped_owner["allowed_control_routes"])
     } == {"supervise_parallel_and_integrate_by_role", "continue_existing_parent"}
 
+    external_case = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"] == "REG_S_EXTERNAL_CASE_CORRECTION_LANDS_IN_S_NOT_SOL"
+    )["vars"]
+    assert external_case["expected_frame_relation"] == "correction_to_existing_parent"
+    assert external_case["expected_candidate_frame"] == "mature_delivery_frame"
+    assert {
+        route["candidate_frame"]
+        for route in json.loads(external_case["allowed_frame_routes"])
+    } == {"mature_delivery_frame", "corrected_parent_frame"}
+    assert external_case["expected_surface_role"] == "semantic_scope_correction"
+    assert set(json.loads(external_case["allowed_blocked_promotions"])) == {
+        "material_content_to_parent_task",
+        "downstream_means_to_parent_result",
+        "effect_owner_to_parallel_epistemic_owner",
+        "stale_object_to_current_object",
+    }
+    assert external_case["expected_next_action"] == "complete_behavior_delivery_closure"
+    assert external_case["expected_mature_completion"] is True
+    assert external_case["expected_selected_control_action"] == (
+        "complete_behavior_delivery_closure"
+    )
+
+    frontier_case = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"]
+        == "REG_CHILD_SETTLEMENT_RECONSTRUCTS_FRONTIER_AND_RUNS_NEXT"
+    )["vars"]
+    assert frontier_case["expected_next_action"] == "resume_known_parent_frontier"
+    assert frontier_case["expected_turn_disposition"] == "continue_existing_parent"
+    assert frontier_case["expected_hand_back_to_user"] is False
+    assert frontier_case["expected_next_parent_item_admitted"] is True
+
     terminal_schema = schema["properties"]["turn_finalization"]
     assert "turn_finalization" in schema["required"]
     assert set(terminal_schema["required"]) == set(terminal_schema["properties"])
@@ -272,6 +310,9 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     }
     new_transition_cases = {
         "REG_WORLD_OWNING_SOL_APPOINTMENT_SUPERSEDES_CODEX_DOMAIN_OWNER",
+        "REG_S_EXTERNAL_CASE_CORRECTION_LANDS_IN_S_NOT_SOL",
+        "REG_CONCURRENT_STATUS_TRANSCRIPT_STAYS_CASE_EVIDENCE",
+        "REG_CHILD_SETTLEMENT_RECONSTRUCTS_FRONTIER_AND_RUNS_NEXT",
         "REG_BOUNDED_EXTERNAL_WAIT_PRESERVES_PARENT",
         "REG_AVAILABLE_ACTION_REJECTS_PREMATURE_DEFER",
         "REG_NO_VALUE_BRANCH_IS_SKIPPED_PARENT_CONTINUES",
@@ -323,6 +364,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_OFFICIAL_ENV_ONLY_CREDENTIAL_CHANNEL_IS_NOT_A_CUSTOM_WRAPPER",
         "REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE",
         "REG_REJECTED_CREDENTIAL_IS_NOT_WORKING_AND_USES_ALTERNATE",
+        "REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER",
     }
     process_visibility_case_ids = {
         "REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS",
@@ -927,6 +969,10 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "execute_child_then_resume_parent",
             "child_to_parent_replacement",
         ),
+        "REG_CONCURRENT_STATUS_TRANSCRIPT_STAYS_CASE_EVIDENCE": (
+            "consume_evidence_then_resume",
+            "material_content_to_parent_task",
+        ),
     }
     for case_id, (selected, blocked) in utterance_relation_cases.items():
         assert closure_cases[case_id]["expected_selected_control_action"] == selected
@@ -1136,6 +1182,9 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert "multi_agent=false" in prompt
     assert "native admission remains dynamic" in prompt
     assert "Do not claim" in prompt and "runtime pass" in prompt
+    assert "After every child settlement or real readback" in prompt
+    assert 'request for the human to say\n"continue" is an effect-bearing terminal action' in prompt
+    assert "not a daemon, scheduler, fixed" in prompt
     assert "decode source and conversational act" in prompt
     assert "Outer `role=user` identifies the transport" in prompt
     assert "work class" in prompt

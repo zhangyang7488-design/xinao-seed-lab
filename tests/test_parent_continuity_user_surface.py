@@ -16,7 +16,7 @@ def _cases() -> list[dict[str, object]]:
 def test_parent_continuity_surface_cases_cover_changed_relations() -> None:
     cases = _cases()
     by_id = {case["vars"]["case_id"]: case["vars"] for case in cases}
-    assert len(cases) == 9
+    assert len(cases) == 10
     assert set(by_id) == {
         "SURFACE_CONTINUOUS_HEARTBEAT_SILENT",
         "SURFACE_AUTORECOVERY_SAME_STATE_SILENT",
@@ -27,6 +27,7 @@ def test_parent_continuity_surface_cases_cover_changed_relations() -> None:
         "SURFACE_START_AFTER_UNDERSTANDING",
         "SURFACE_CORRECTION_RETURNS_TO_PARENT",
         "SURFACE_DISJOINT_SIBLING_CONTINUES",
+        "SURFACE_CHILD_SETTLEMENT_RUNS_NEXT_SILENT",
     }
     assert (
         by_id["SURFACE_AUTORECOVERY_SAME_STATE_SILENT"]["current_event"]
@@ -43,6 +44,7 @@ def test_parent_continuity_surface_cases_cover_changed_relations() -> None:
     assert by_id["SURFACE_START_AFTER_UNDERSTANDING"]["expected_mode"] == "action_transfer"
     assert by_id["SURFACE_CORRECTION_RETURNS_TO_PARENT"]["expected_mode"] == "action_transfer"
     assert by_id["SURFACE_DISJOINT_SIBLING_CONTINUES"]["expected_mode"] == "action_transfer"
+    assert by_id["SURFACE_CHILD_SETTLEMENT_RUNS_NEXT_SILENT"]["expected_mode"] == "silent"
     heartbeat_parent = by_id["SURFACE_CONTINUOUS_HEARTBEAT_SILENT"]["parent_activity"]
     assert "perpetual world-compute runtime" in heartbeat_parent
     assert "each world-owning Sol lineage controls its own cognition" in heartbeat_parent
@@ -95,11 +97,11 @@ def test_parent_continuity_surface_is_registered_as_live_consumer() -> None:
     suite = next(
         item for item in catalog["suites"] if item["id"] == "parent_continuity_user_surface"
     )
-    assert suite["case_count"] == 9
+    assert suite["case_count"] == 10
     assert suite["natural_user_surface_claim_allowed"] is True
     assert suite["underlying_action_execution_claim_allowed"] is False
     assert suite["universal_future_behavior_claim_allowed"] is False
-    assert catalog["live_profile_case_counts"]["surface"] == 9
+    assert catalog["live_profile_case_counts"]["surface"] == 10
 
     registry = json.loads(
         (REPO_ROOT / "evals" / "suite_registry.v1.json").read_text(encoding="utf-8")

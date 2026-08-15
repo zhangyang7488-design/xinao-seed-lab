@@ -19,6 +19,7 @@ providers:
       codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
       cli_env:
         CODEX_HOME: '{{env.CODEX_HOME}}'
+        XINAO_PRODUCTIVE_ACTION_PYTHON: '{{env.XINAO_PRODUCTIVE_ACTION_PYTHON}}'
         PYTHONDONTWRITEBYTECODE: '1'
         HTTP_PROXY: '{{env.HTTP_PROXY}}'
         HTTPS_PROXY: '{{env.HTTPS_PROXY}}'
@@ -190,6 +191,24 @@ tests:
       expected_final_token: ACTION_CONSUMER_OK
       expected_consumer_calls: 2
       expected_repair_calls: 1
+      expected_material_message: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: file://assert_trajectory.js
+
+  - description: A settled child does not stop an open parent delivery frontier
+    vars:
+      case_id: ACTION_CHILD_SETTLEMENT_RUNS_REMAINING_PARENT_FRONTIER
+      fixture_case: parent_frontier
+      user_goal: >-
+        当前本地交付由 source restore、installed-consumer verification、consumer migration 三条已授权因果步骤组成；source restore 已结算。继续完成真实消费者验证和迁移，不要在一个子项、一次回读或一次修复后生成报告墙并等用户再说继续。
+      expected_state_change: bounded_repair
+      expected_control_choice: repair
+      expected_initial_token: ACTION_PARENT_FRONTIER_OPEN
+      expected_final_token: ACTION_CONSUMER_OK
+      expected_consumer_calls: 3
+      expected_repair_calls: 2
       expected_material_message: true
     assert:
       - type: is-json

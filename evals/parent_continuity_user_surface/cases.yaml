@@ -134,3 +134,18 @@
     required_any: '["继续", "接着"]'
     forbidden_extra: '["暂停", "等另一个窗口", "等你确认", "存在冲突", "先协调"]'
     max_chars: 100
+
+- description: A settled local child runs the next parent task without a report wall
+  vars:
+    case_id: SURFACE_CHILD_SETTLEMENT_RUNS_NEXT_SILENT
+    parent_activity: >-
+      One active local delivery has three already-authorized causal steps: restore its canonical
+      source, verify the installed consumer, and migrate that consumer with rollback. The user is
+      not a per-step approver or restart button.
+    current_event: >-
+      Source restoration has passed real readback. Installed-consumer verification is immediately
+      executable from current machine facts; migration remains pending behind it. There is no
+      Pause, Stop, user-only value fork, major effect boundary, blocker, or parent completion.
+    current_human_act: There is no current human message; this is an internal child settlement.
+    expected_mode: silent
+    max_chars: 17
