@@ -276,6 +276,15 @@ def test_v2_run_consumes_compiled_views_and_keeps_raw_trajectory_separate(
         )
 
     monkeypatch.setattr(cell_module, "is_process_alive", lambda pid: pid == 555)
+    monkeypatch.setattr(
+        cell_module,
+        "process_liveness",
+        lambda pid: (
+            cell_module.ProcessLiveness.ALIVE
+            if pid == 555
+            else cell_module.ProcessLiveness.DEAD
+        ),
+    )
     monkeypatch.setattr(cell_module, "_validate_workspace_root", lambda path: path.resolve())
 
     class FakeProcess:
@@ -469,6 +478,15 @@ def test_v2_run_verifies_the_physical_operator_throttle_records(
             encoding="utf-8",
         )
     monkeypatch.setattr(cell_module, "is_process_alive", lambda pid: pid == 555)
+    monkeypatch.setattr(
+        cell_module,
+        "process_liveness",
+        lambda pid: (
+            cell_module.ProcessLiveness.ALIVE
+            if pid == 555
+            else cell_module.ProcessLiveness.DEAD
+        ),
+    )
 
     with pytest.raises(ResearchCellError) as raised:
         run_cell(cell_dir, max_parallel=1)
@@ -503,6 +521,15 @@ def test_v2_partial_batch_reservation_is_released_on_quota_timeout(
             encoding="utf-8",
         )
     monkeypatch.setattr(cell_module, "is_process_alive", lambda pid: pid == 555)
+    monkeypatch.setattr(
+        cell_module,
+        "process_liveness",
+        lambda pid: (
+            cell_module.ProcessLiveness.ALIVE
+            if pid == 555
+            else cell_module.ProcessLiveness.DEAD
+        ),
+    )
     monkeypatch.setattr(cell_module, "_validate_workspace_root", lambda path: path.resolve())
 
     with pytest.raises(ResearchCellError) as raised:
@@ -540,6 +567,15 @@ def test_v2_popen_failure_releases_every_reserved_slot(
             encoding="utf-8",
         )
     monkeypatch.setattr(cell_module, "is_process_alive", lambda pid: pid == 555)
+    monkeypatch.setattr(
+        cell_module,
+        "process_liveness",
+        lambda pid: (
+            cell_module.ProcessLiveness.ALIVE
+            if pid == 555
+            else cell_module.ProcessLiveness.DEAD
+        ),
+    )
     monkeypatch.setattr(cell_module, "_validate_workspace_root", lambda path: path.resolve())
     monkeypatch.setattr(
         cell_module.subprocess,

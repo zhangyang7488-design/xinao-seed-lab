@@ -312,6 +312,173 @@ def test_cli_reports_lock_busy_as_nonzero(
     assert json.loads(capsys.readouterr().out)["outcome"] == "LOCK_BUSY"
 
 
+def test_cli_reconcile_all_orders_both_consumers_and_tolerates_unbound_ongoing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[str] = []
+
+    def reconcile_receipts(_root: Path) -> dict[str, object]:
+        calls.append("receipts")
+        return {"outcome": "RECONCILED", "new_observation_ids": []}
+
+    def reconcile_without_contract(_root: Path) -> dict[str, object]:
+        calls.append("ongoing")
+        raise continuation_cli.OngoingError("CONTRACT_NOT_BOUND", "ongoing contract not bound")
+
+    monkeypatch.setattr(continuation_cli, "reconcile", reconcile_receipts)
+    monkeypatch.setattr(continuation_cli, "reconcile_ongoing", reconcile_without_contract)
+
+    exit_code = continuation_cli.main(
+        ["--runtime-root", str(tmp_path / "runtime"), "reconcile-all"]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert calls == ["receipts", "ongoing"]
+    assert result["receipt_reconcile"]["outcome"] == "RECONCILED"
+    assert result["ongoing_reconcile"]["outcome"] == "NOT_BOUND"
+    assert result["ongoing_reconcile"]["reason_code"] == "CONTRACT_NOT_BOUND"
+
+
+def test_cli_reconcile_all_real_unbound_ongoing_is_a_safe_sensor_noop(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime = tmp_path / "runtime"
+    _initialize(runtime, tmp_path)
+
+    exit_code = continuation_cli.main(
+        ["--runtime-root", str(runtime), "reconcile-all"]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert result["receipt_reconcile"]["outcome"] == "RECONCILED"
+    assert result["ongoing_reconcile"]["outcome"] == "NOT_BOUND"
+    assert result["ongoing_reconcile"]["reason_code"] == "CONTRACT_NOT_BOUND"
+
+
+def test_cli_reconcile_all_skips_ongoing_while_receipt_scan_lock_is_busy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(
+        continuation_cli,
+        "reconcile",
+        lambda _root: {"outcome": "LOCK_BUSY"},
+    )
+    monkeypatch.setattr(
+        continuation_cli,
+        "reconcile_ongoing",
+        lambda _root: calls.append("ongoing"),
+    )
+
+    exit_code = continuation_cli.main(
+        ["--runtime-root", str(tmp_path / "runtime"), "reconcile-all"]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 3
+    assert calls == []
+    assert result["outcome"] == "LOCK_BUSY"
+    assert result["ongoing_reconcile"] == {
+        "outcome": "SKIPPED",
+        "reason_code": "RECEIPT_RECONCILE_LOCK_BUSY",
+        "authority": False,
+        "shared_effect_authorized": False,
+        "completion_claim_allowed": False,
+    }
+
+
+def test_cli_reconcile_all_propagates_non_absence_ongoing_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        continuation_cli,
+        "reconcile",
+        lambda _root: {"outcome": "RECONCILED"},
+    )
+    monkeypatch.setattr(
+        continuation_cli,
+        "reconcile_ongoing",
+        lambda _root: (_ for _ in ()).throw(
+            continuation_cli.OngoingError("ONGOING_STATE_INVALID", "fixture invalid")
+        ),
+    )
+
+    exit_code = continuation_cli.main(
+        ["--runtime-root", str(tmp_path / "runtime"), "reconcile-all"]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert result["outcome"] == "ERROR"
+    assert result["reason_code"] == "ONGOING_STATE_INVALID"
+
+
+def test_cli_exposes_ongoing_initialize_status_and_revision_bound_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime = tmp_path / "runtime"
+    contract_path = tmp_path / "ongoing-contract.json"
+    contract_path.write_text("{}\n", encoding="utf-8")
+    calls: list[tuple[object, ...]] = []
+
+    def initialize(root: Path, path: Path) -> dict[str, object]:
+        calls.append(("initialize", root, path))
+        return {"outcome": "BOUND"}
+
+    def read_status(root: Path) -> dict[str, object]:
+        calls.append(("status", root))
+        return {"outcome": "READABLE"}
+
+    def stop(root: Path, *, expected_revision_id: str) -> dict[str, object]:
+        calls.append(("stop", root, expected_revision_id))
+        return {"outcome": "STOPPED"}
+
+    monkeypatch.setattr(continuation_cli, "initialize_ongoing_contract", initialize)
+    monkeypatch.setattr(continuation_cli, "ongoing_status", read_status)
+    monkeypatch.setattr(continuation_cli, "stop_ongoing_contract", stop)
+
+    assert continuation_cli.main(
+        [
+            "--runtime-root",
+            str(runtime),
+            "initialize-ongoing",
+            "--contract-path",
+            str(contract_path),
+        ]
+    ) == 0
+    assert json.loads(capsys.readouterr().out)["outcome"] == "BOUND"
+    assert continuation_cli.main(
+        ["--runtime-root", str(runtime), "ongoing-status"]
+    ) == 0
+    assert json.loads(capsys.readouterr().out)["outcome"] == "READABLE"
+    assert continuation_cli.main(
+        [
+            "--runtime-root",
+            str(runtime),
+            "stop-ongoing",
+            "--expected-revision-id",
+            "A" * 64,
+        ]
+    ) == 0
+    assert json.loads(capsys.readouterr().out)["outcome"] == "STOPPED"
+    assert calls == [
+        ("initialize", runtime, contract_path.resolve()),
+        ("status", runtime),
+        ("stop", runtime, "a" * 64),
+    ]
+
+
 def test_restart_repairs_observation_seen_and_status_gap_without_duplication(
     tmp_path: Path,
 ) -> None:
@@ -453,7 +620,7 @@ def test_stage0_module_has_no_main_capacity_or_dispatch_effect_surface() -> None
     assert 'dispatch_allowed": False' in source
 
 
-def test_sibling_task_installer_is_stage0_scoped_and_recoverable() -> None:
+def test_sibling_task_installer_is_one_shot_continuity_consumer_and_recoverable() -> None:
     path = (
         Path(__file__).resolve().parents[1]
         / "scripts"
@@ -462,11 +629,32 @@ def test_sibling_task_installer_is_stage0_scoped_and_recoverable() -> None:
     source = path.read_text(encoding="utf-8")
     for required in (
         "XINAO-S-RoR-Continuation-Detect-v0",
+        "XINAO.S.RoR.ContinuityConsumer.v1",
+        "XINAO.S.RoR.ContinuationDetect.v0",
+        "afc31aff0a26100087fb3f6553543b10f0a570033c8ec3e1644e9acd1d08866d",
+        "6118096d19799f9c6917750d6d79dad595820a62b20ec70161cbb3e61b1ab00f",
+        "xinao.s.ror-continuity-consumer-task-bundle.v1",
         "-MultipleInstances IgnoreNew",
         "-StartWhenAvailable",
         "-RepetitionInterval (New-TimeSpan -Minutes 15)",
         "-ExecutionTimeLimit (New-TimeSpan -Minutes 5)",
+        "'PT5M'",
+        "detached runner owns the model timeout",
         "TASK_EXECUTION_TIME_LIMIT_INVALID",
+        "TASK_RESTART_POLICY_INVALID",
+        "TASK_BATTERY_POLICY_INVALID",
+        '"${ErrorPrefix}_CONTENT_ID_MISMATCH',
+        "TASK_UPGRADE_PREDECESSOR_SETTINGS_INVALID",
+        "TASK_UPGRADE_PREDECESSOR_TRIGGER_INVALID",
+        "TASK_UPGRADE_PREDECESSOR_XML_IDENTITY_INVALID",
+        "TASK_UPGRADE_ROLLBACK_READBACK_MISSING",
+        "TASK_UPGRADE_ROLLBACK_IDENTITY_MISMATCH",
+        "TASK_NAME_OVERRIDE_FORBIDDEN",
+        "TASK_CURRENT_INSTANCE_ACTIVE",
+        "TASK_UPGRADE_PRECONDITION_CHANGED",
+        "Assert-ManagedCurrentTask",
+        "Get-NormalizedTaskXmlSha256",
+        "Get-TaskDefinitionIdentitySha256",
         "TASK_PRINCIPAL_INVALID",
         "TASK_LOGON_TYPE_INVALID",
         "TASK_RUN_LEVEL_INVALID",
@@ -475,7 +663,9 @@ def test_sibling_task_installer_is_stage0_scoped_and_recoverable() -> None:
         "Unregister-ScheduledTask",
         "Start-ScheduledTask",
         "scripts/research_of_research_continuation.py",
-        'reconcile"',
+        "services/research_of_research/ongoing.py",
+        "services/research_of_research/windows_job.py",
+        'reconcile-all"',
         "bundle_manifest.json",
         "BUNDLE_FILE_SET_MISMATCH",
         "BUNDLE_RUNTIME_ROOT_MISMATCH",
@@ -484,5 +674,7 @@ def test_sibling_task_installer_is_stage0_scoped_and_recoverable() -> None:
     ):
         assert required in source
     assert "XINAO-S-Context-Rollout-Consumer-v1" not in source
+    assert "$Task.Description.StartsWith(" not in source
+    assert source.count("[void](Assert-ManagedTask -Task $task)") == 1
     assert "main_reentry" not in source.casefold()
     assert "WAITING_FOR_COMPUTE" not in source

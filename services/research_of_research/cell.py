@@ -29,6 +29,7 @@ from typing import Any
 from services.research_of_research.continuation import request_continuation_reconcile
 from services.xinao_perpetual_world_compute.controller import (
     WORLD_TURN_QUOTA_LEASE_SCHEMA,
+    ProcessLiveness,
     _release_byte_lock,
     _try_acquire_byte_lock,
     atomic_write_bytes,
@@ -37,6 +38,7 @@ from services.xinao_perpetual_world_compute.controller import (
     create_world_isolated_launcher,
     is_process_alive,
     now_iso,
+    process_liveness,
     read_json_object,
     sha256_file,
 )
@@ -560,7 +562,9 @@ def _validate_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
         if (
             not isinstance(enabled_tools, list)
             or not enabled_tools
-            or any(not isinstance(item, str) or item not in _LOCAL_MCP_TOOLS for item in enabled_tools)
+            or any(
+                not isinstance(item, str) or item not in _LOCAL_MCP_TOOLS for item in enabled_tools
+            )
             or len(set(enabled_tools)) != len(enabled_tools)
         ):
             _fail("LOCAL_MCP_INVALID", "local MCP enabled_tools are invalid")
@@ -978,6 +982,7 @@ def freeze_cell(spec_path: Path, runtime_root: Path = DEFAULT_RUNTIME_ROOT) -> d
         launcher_receipt = create_world_isolated_launcher(
             _resolve(spec["harness"].get("launcher", DEFAULT_LAUNCHER)),
             launcher_path,
+            network_access=True,
         )
         replay_twin = {
             "schema": REPLAY_TWIN_SCHEMA,
@@ -1120,6 +1125,7 @@ class AccountQuota:
         quota_root: Path,
         limit: int,
         run_id: str,
+        reclaim_bound_leases: bool = True,
     ) -> None:
         if account_slot not in {"A", "C"} or limit < 1:
             _fail("QUOTA_CONFIG_INVALID", "invalid account slot or concurrency limit")
@@ -1127,6 +1133,7 @@ class AccountQuota:
         self.account_root = _resolve(quota_root) / account_slot
         self.limit = limit
         self.run_id = run_id
+        self.reclaim_bound_leases = reclaim_bound_leases
         self.guard_path = self.account_root / "admission.lock"
         self.records = [
             self.account_root / f"world-turn-{index:02d}.json" for index in range(1, limit + 1)
@@ -1144,10 +1151,12 @@ class AccountQuota:
         if not history.exists():
             atomic_write_bytes(history, raw)
 
-    def try_claim(self, *, lineage_id: str, workspace: Path) -> dict[str, Any] | None:
+    def try_claim_outcome(self, *, lineage_id: str, workspace: Path) -> dict[str, Any]:
+        """Try once while preserving lock contention versus real capacity pressure."""
+
         guard = _try_acquire_byte_lock(self.guard_path)
         if guard is None:
-            return None
+            return {"outcome": "LOCK_BUSY"}
         try:
             for slot, path in enumerate(self.records, 1):
                 if path.is_file():
@@ -1159,7 +1168,7 @@ class AccountQuota:
                     ):
                         _fail("QUOTA_RECORD_INVALID", f"quota record identity drift: {path}")
                     status = str(prior.get("status", ""))
-                    if prior.get("operator_throttle") is True:
+                    if prior.get("operator_throttle") is True and status in {"RESERVED", "BOUND"}:
                         # A throttle is an account policy reservation, not a dead
                         # child lease that an experiment may recycle.  Its owner
                         # must explicitly release it.
@@ -1167,11 +1176,27 @@ class AccountQuota:
                     if status == "RESERVED":
                         continue
                     if status == "BOUND":
+                        if not self.reclaim_bound_leases:
+                            continue
                         child_pid = prior.get("child_pid")
                         controller_pid = prior.get("controller_pid")
-                        if isinstance(child_pid, int) and is_process_alive(child_pid):
+                        child_liveness = (
+                            process_liveness(child_pid)
+                            if isinstance(child_pid, int)
+                            and not isinstance(child_pid, bool)
+                            and child_pid > 0
+                            else ProcessLiveness.UNKNOWN
+                        )
+                        if child_liveness != ProcessLiveness.DEAD:
                             continue
-                        if isinstance(controller_pid, int) and is_process_alive(controller_pid):
+                        controller_liveness = (
+                            process_liveness(controller_pid)
+                            if isinstance(controller_pid, int)
+                            and not isinstance(controller_pid, bool)
+                            and controller_pid > 0
+                            else ProcessLiveness.UNKNOWN
+                        )
+                        if controller_liveness != ProcessLiveness.DEAD:
                             continue
                     elif status != "RELEASED":
                         _fail("QUOTA_RECORD_INVALID", f"quota status drift: {path}:{status}")
@@ -1195,10 +1220,16 @@ class AccountQuota:
                     "experiment_candidate_only": True,
                 }
                 atomic_write_json(path, lease)
-                return {**lease, "path": str(path)}
-            return None
+                return {"outcome": "CLAIMED", "lease": {**lease, "path": str(path)}}
+            return {"outcome": "CAPACITY_BUSY"}
         finally:
             _release_byte_lock(guard)
+
+    def try_claim(self, *, lineage_id: str, workspace: Path) -> dict[str, Any] | None:
+        """Compatibility surface for callers that already retry either busy outcome."""
+
+        result = self.try_claim_outcome(lineage_id=lineage_id, workspace=workspace)
+        return dict(result["lease"]) if result["outcome"] == "CLAIMED" else None
 
     def claim(self, *, lineage_id: str, workspace: Path, timeout_seconds: float) -> dict[str, Any]:
         deadline = time.monotonic() + timeout_seconds
@@ -1224,7 +1255,19 @@ class AccountQuota:
                     or current.get("status") != "RESERVED"
                 ):
                     _fail("QUOTA_RESERVATION_DRIFT", f"quota reservation drift: {path}")
-                current.update({"status": "BOUND", "child_pid": child_pid, "bound_at": now_iso()})
+                # The process that performs the bind owns the child and the
+                # release window.  A short admission tick may already have
+                # exited, so retaining its PID would let another controller
+                # recycle this BOUND record after the child exits but before
+                # the real owner seals and releases it.
+                current.update(
+                    {
+                        "status": "BOUND",
+                        "controller_pid": os.getpid(),
+                        "child_pid": child_pid,
+                        "bound_at": now_iso(),
+                    }
+                )
                 atomic_write_json(path, current)
                 return {**current, "path": str(path)}
             finally:
@@ -1239,15 +1282,55 @@ class AccountQuota:
                 time.sleep(0.05)
                 continue
             try:
-                path = _resolve(str(lease["path"]))
-                current = read_json_object(path)
-                if current.get("lease_id") != lease["lease_id"]:
+                try:
+                    slot = lease["slot"]
+                    if type(slot) is not int or not 1 <= slot <= self.limit:
+                        return "OWNERSHIP_DRIFT"
+                    path = _resolve(str(lease["path"]))
+                except (KeyError, TypeError, ValueError):
                     return "OWNERSHIP_DRIFT"
-                if current.get("status") == "RELEASED":
+                expected_path = self.records[slot - 1]
+                if path != expected_path:
+                    return "OWNERSHIP_DRIFT"
+                current = read_json_object(path)
+                immutable_identity = (
+                    "schema",
+                    "lease_id",
+                    "counted",
+                    "account_slot",
+                    "slot",
+                    "limit",
+                    "run_id",
+                    "lineage_id",
+                    "workspace",
+                )
+                if (
+                    lease.get("schema") != WORLD_TURN_QUOTA_LEASE_SCHEMA
+                    or lease.get("counted") is not True
+                    or lease.get("account_slot") != self.account_slot
+                    or lease.get("limit") != self.limit
+                    or lease.get("run_id") != self.run_id
+                    or any(current.get(key) != lease.get(key) for key in immutable_identity)
+                ):
+                    return "OWNERSHIP_DRIFT"
+                status = current.get("status")
+                if status not in {"RESERVED", "BOUND", "RELEASED"}:
+                    return "OWNERSHIP_DRIFT"
+                if status == "RELEASED":
                     return "RELEASED"
                 child_pid = current.get("child_pid")
-                if isinstance(child_pid, int) and is_process_alive(child_pid):
-                    return "CHILD_STILL_ALIVE"
+                if status == "BOUND":
+                    child_liveness = (
+                        process_liveness(child_pid)
+                        if isinstance(child_pid, int)
+                        and not isinstance(child_pid, bool)
+                        and child_pid > 0
+                        else ProcessLiveness.UNKNOWN
+                    )
+                    if child_liveness == ProcessLiveness.ALIVE:
+                        return "CHILD_STILL_ALIVE"
+                    if child_liveness != ProcessLiveness.DEAD:
+                        return "CHILD_LIVENESS_UNKNOWN"
                 current.update({"status": "RELEASED", "released_at": now_iso()})
                 atomic_write_json(path, current)
                 return "RELEASED"
@@ -1356,10 +1439,7 @@ def _observe_cap_policy(
         not isinstance(throttle_slots, list)
         or len(throttle_slots) != expected_throttles
         or any(
-            not isinstance(slot, int)
-            or isinstance(slot, bool)
-            or slot < 1
-            or slot > physical_slots
+            not isinstance(slot, int) or isinstance(slot, bool) or slot < 1 or slot > physical_slots
             for slot in throttle_slots
         )
         or len(set(throttle_slots)) != len(throttle_slots)
@@ -1661,9 +1741,7 @@ def run_cell(
         selected_variant_ids = available_variant_ids
     else:
         selected_variant_ids = list(variant_ids)
-        if not selected_variant_ids or len(set(selected_variant_ids)) != len(
-            selected_variant_ids
-        ):
+        if not selected_variant_ids or len(set(selected_variant_ids)) != len(selected_variant_ids):
             _fail("RUN_VARIANT_INVALID", "variant_ids must be a non-empty unique selection")
         unknown = sorted(set(selected_variant_ids) - set(available_variant_ids))
         if unknown:
@@ -1703,9 +1781,7 @@ def run_cell(
         run_id=run_id,
     )
     cap_throttles_before = (
-        _observe_cap_throttles(quota, cap_policy_before)
-        if cap_policy_before is not None
-        else None
+        _observe_cap_throttles(quota, cap_policy_before) if cap_policy_before is not None else None
     )
     # Reject an invalid live boundary before creating a run identity.  A
     # preflight refusal launches no cognition consumer and is not a run.
@@ -2037,12 +2113,8 @@ def run_cell(
                 if cap_policy_after.get(field) != cap_policy_before.get(field):
                     cap_policy_failures.append(f"{field}_changed")
         if cap_throttles_before is not None and cap_throttles_after is not None:
-            before_throttles = [
-                (row["slot"], row["lease_id"]) for row in cap_throttles_before
-            ]
-            after_throttles = [
-                (row["slot"], row["lease_id"]) for row in cap_throttles_after
-            ]
+            before_throttles = [(row["slot"], row["lease_id"]) for row in cap_throttles_before]
+            after_throttles = [(row["slot"], row["lease_id"]) for row in cap_throttles_after]
             if after_throttles != before_throttles:
                 cap_policy_failures.append("active_throttle_identity_changed")
         contrast = _mechanical_contrast(run_dir, completed)
@@ -2232,10 +2304,7 @@ def verify_cell(cell_dir: Path, *, include_runs: bool = True) -> dict[str, Any]:
                 ("config_path", "config_sha256"),
             ):
                 carrier = workspace_seed_root / _safe_relative(str(local_mcp[path_key]))
-                if (
-                    not carrier.is_file()
-                    or sha256_file(carrier).casefold() != local_mcp[sha_key]
-                ):
+                if not carrier.is_file() or sha256_file(carrier).casefold() != local_mcp[sha_key]:
                     failures.append(f"LOCAL_MCP_CARRIER_DRIFT:{path_key}")
         launcher = source_map["launcher"]
         if sha256_file(_resolve(launcher["path"])).casefold() != str(launcher["sha256"]).casefold():
@@ -2355,9 +2424,9 @@ def verify_cell(cell_dir: Path, *, include_runs: bool = True) -> dict[str, Any]:
                             run_failures.append(f"WORKSPACE_AFTER_MISSING:{job['lineage_id']}")
                         else:
                             live_workspace = _tree_manifest(_resolve(workspace_path))
-                            if live_workspace["tree_sha256"] != job.get(
-                                "workspace_after", {}
-                            ).get("tree_sha256"):
+                            if live_workspace["tree_sha256"] != job.get("workspace_after", {}).get(
+                                "tree_sha256"
+                            ):
                                 run_failures.append(f"WORKSPACE_AFTER_DRIFT:{job['lineage_id']}")
                     expected_prompt = job.get("compiled_prompt_expected_sha256")
                     if expected_prompt and expected_prompt != job.get("prompt_sha256"):

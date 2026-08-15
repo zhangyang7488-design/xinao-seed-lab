@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import csv
 import datetime as dt
+import errno
 import hashlib
 import importlib.util
+import io
 import json
+import locale
 import os
 import re
 import shutil
@@ -17,6 +21,7 @@ import threading
 import time
 import traceback
 import uuid
+from enum import Enum
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Iterator, Mapping, Sequence
@@ -44,6 +49,10 @@ RECOVERY_STATE_COMMIT_SCHEMA = "xinao.cleanroom.world-compute-recovery-state-com
 WORLD_RUNTIME_BINDING_REF_SCHEMA = "xinao.cleanroom.world-runtime-binding-ref.v1"
 REALITY_MIGRATION_PREPARATION_SCHEMA = (
     "xinao.cleanroom.world-compute-reality-migration-preparation.v1"
+)
+CARRIER_JOB_IDENTITY_SCHEMA = "xinao.cleanroom.world-compute-carrier-job-identity.v1"
+STARTUP_TERMINAL_RECONCILIATION_SCHEMA = (
+    "xinao.cleanroom.world-compute-startup-terminal-reconciliation.v1"
 )
 
 LEGACY_RUN_SCHEMA = "xinao.cleanroom-c.perpetual-run.v1"
@@ -120,6 +129,15 @@ DEFAULT_LOGICAL_ROOT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_logi
 FROZEN_LOGICAL_ROOT_SEED_RELATIVE = Path("S_CONTROL_INPUTS") / "XINAO_ROOT_WORLD"
 ACCOUNT_SLOTS = ("A", "C")
 CONTEXT_CONSUMER_TASK_NAME = r"\XINAO-S-Context-Rollout-Consumer-v1"
+LIVE_WORLD_SURFACE_IDS = (
+    "repo",
+    "workspace_overlay",
+    "activity_seed",
+    "contact_trigger",
+    "runtime_reality",
+    "prior_cognition_objects",
+    "external_reality_access",
+)
 
 
 def request_context_consumer_wake(
@@ -258,12 +276,15 @@ _UNSANDBOXED_LAUNCH_LINE = (
     b"& $codexExe --cd $launchWorkdir --dangerously-bypass-approvals-and-sandbox "
     b"@slotSpecificCodexArgs @CodexArgs"
 )
-_WORLD_SANDBOXED_LAUNCH_LINE = (
-    b"& $codexExe --cd $launchWorkdir --sandbox workspace-write "
-    b"-c 'approval_policy=\"never\"' "
-    b"-c 'sandbox_workspace_write.network_access=true' "
-    b"@slotSpecificCodexArgs @CodexArgs"
-)
+def _world_sandboxed_launch_line(*, network_access: bool) -> bytes:
+    value = b"true" if network_access else b"false"
+    return (
+        b"& $codexExe --cd $launchWorkdir --sandbox workspace-write "
+        b"-c 'approval_policy=\"never\"' "
+        b"-c 'sandbox_workspace_write.network_access="
+        + value
+        + b"' @slotSpecificCodexArgs @CodexArgs"
+    )
 _WORLD_RUNTIME_BINDING_PARAM_SEAM = b'    [string]$CodexArgsFile = "",\r\n    [switch]$PrepareOnly,'
 _WORLD_RUNTIME_BINDING_PARAM_REPLACEMENT = (
     b'    [string]$CodexArgsFile = "",\r\n'
@@ -789,6 +810,7 @@ def create_world_isolated_launcher(
     source_launcher: Path,
     destination: Path,
     *,
+    network_access: bool,
     require_runtime_binding: bool = False,
 ) -> dict[str, Any]:
     """Freeze the clean-room launcher with an enforced per-workspace write boundary."""
@@ -800,7 +822,7 @@ def create_world_isolated_launcher(
         raise PerpetualRuntimeError("CLEANROOM_LAUNCHER_UNSANDBOXED_EXEC_SEAM_MISMATCH")
     isolated = raw.replace(
         _UNSANDBOXED_LAUNCH_LINE,
-        _WORLD_SANDBOXED_LAUNCH_LINE,
+        _world_sandboxed_launch_line(network_access=network_access),
         1,
     )
     isolated = isolated.replace(
@@ -839,7 +861,7 @@ def create_world_isolated_launcher(
         "source_sha256": sha256_bytes(raw),
         "sandbox_mode": "workspace-write",
         "approval_policy": "never",
-        "network_access": True,
+        "network_access": bool(network_access),
         "writable_scope": "lineage_workspace_only",
         "additional_writable_roots": [],
         "runtime_binding_supported": binding_support,
@@ -859,11 +881,14 @@ def validate_body_boundary_config(config: Mapping[str, Any]) -> dict[str, Any] |
         return None
     if not isinstance(boundary, Mapping):
         raise PerpetualRuntimeError("WORLD_BODY_BOUNDARY_CONFIG_INVALID")
+    network_access = boundary.get("network_access")
+    if type(network_access) is not bool:
+        raise PerpetualRuntimeError("WORLD_BODY_BOUNDARY_CONFIG_INVALID")
     expected = {
         "schema": WORLD_ISOLATED_LAUNCHER_SCHEMA,
         "sandbox_mode": "workspace-write",
         "approval_policy": "never",
-        "network_access": True,
+        "network_access": network_access,
         "writable_scope": "current_lineage_workspace_only",
         "additional_writable_roots": [],
         "s_repo_writable": False,
@@ -881,7 +906,11 @@ def validate_body_boundary_config(config: Mapping[str, Any]) -> dict[str, Any] |
     if (
         raw.count(_UNSANDBOXED_LAUNCH_LINE) != 0
         or raw.count(b"--sandbox workspace-write") != 1
-        or raw.count(b"sandbox_workspace_write.network_access=true") != 1
+        or raw.count(
+            b"sandbox_workspace_write.network_access="
+            + (b"true" if network_access else b"false")
+        )
+        != 1
     ):
         raise PerpetualRuntimeError("WORLD_BODY_LAUNCHER_SEMANTICS_INVALID")
     if config.get("runtime_binding_required") is True:
@@ -953,10 +982,22 @@ def resolve_path(value: str | Path) -> Path:
     return Path(value).expanduser().resolve(strict=False)
 
 
-def is_process_alive(pid: int | None) -> bool:
-    if not pid or pid <= 0:
-        return False
-    if os.name == "nt":
+class ProcessLiveness(str, Enum):
+    ALIVE = "ALIVE"
+    DEAD = "DEAD"
+    UNKNOWN = "UNKNOWN"
+
+
+_TASKLIST_EXPLICIT_NO_MATCH = frozenset(
+    {
+        "INFO: No tasks are running which match the specified criteria.",
+        "\u4fe1\u606f: \u6ca1\u6709\u8fd0\u884c\u7684\u4efb\u52a1\u5339\u914d\u6307\u5b9a\u6807\u51c6\u3002",
+    }
+)
+
+
+def _windows_process_liveness(pid: int) -> ProcessLiveness:
+    try:
         completed = subprocess.run(
             [
                 "C:\\Windows\\System32\\tasklist.exe",
@@ -968,18 +1009,68 @@ def is_process_alive(pid: int | None) -> bool:
             ],
             capture_output=True,
             text=True,
-            encoding="utf-8",
-            errors="replace",
+            encoding=locale.getpreferredencoding(False),
+            errors="strict",
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             timeout=15,
             check=False,
         )
-        return completed.returncode == 0 and f'"{pid}"' in completed.stdout
+    except Exception:
+        return ProcessLiveness.UNKNOWN
+    if completed.returncode != 0:
+        return ProcessLiveness.UNKNOWN
+    stdout = completed.stdout
+    stderr = completed.stderr
+    if not isinstance(stdout, str) or (isinstance(stderr, str) and stderr.strip()):
+        return ProcessLiveness.UNKNOWN
+    normalized = stdout.strip().lstrip("\ufeff")
+    if normalized in _TASKLIST_EXPLICIT_NO_MATCH:
+        return ProcessLiveness.DEAD
+    if not normalized:
+        return ProcessLiveness.UNKNOWN
+    try:
+        rows = list(csv.reader(io.StringIO(normalized), strict=True))
+    except (csv.Error, UnicodeError):
+        return ProcessLiveness.UNKNOWN
+    if len(rows) != 1:
+        return ProcessLiveness.UNKNOWN
+    row = rows[0]
+    if len(row) != 5 or not row[0] or row[1] != str(pid):
+        return ProcessLiveness.UNKNOWN
+    return ProcessLiveness.ALIVE
+
+
+def _posix_process_liveness(pid: int) -> ProcessLiveness:
     try:
         os.kill(pid, 0)
-    except (OSError, ProcessLookupError):
-        return False
-    return True
+    except ProcessLookupError:
+        return ProcessLiveness.DEAD
+    except PermissionError:
+        # The process exists but this caller cannot signal it.
+        return ProcessLiveness.ALIVE
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return ProcessLiveness.DEAD
+        if exc.errno == errno.EPERM:
+            return ProcessLiveness.ALIVE
+        return ProcessLiveness.UNKNOWN
+    except Exception:
+        return ProcessLiveness.UNKNOWN
+    return ProcessLiveness.ALIVE
+
+
+def process_liveness(pid: int | None) -> ProcessLiveness:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return ProcessLiveness.DEAD
+    if os.name == "nt":
+        return _windows_process_liveness(pid)
+    return _posix_process_liveness(pid)
+
+
+def is_process_alive(pid: int | None) -> bool:
+    """Compatibility wrapper for callers that only consume a boolean."""
+
+    return process_liveness(pid) == ProcessLiveness.ALIVE
 
 
 def run_checked(
@@ -1034,6 +1125,8 @@ def _safe_workspace_relative_path(raw: str) -> Path:
 
 def _deep_evidence_exclusion_reason(relative_path: Path) -> str | None:
     lowered_parts = [part.lower() for part in relative_path.parts]
+    if lowered_parts[:2] in ([".xinao", "carrier"], [".xinao", "opened"]):
+        return "CARRIER_MECHANICS_NOT_RESEARCH_ARTIFACT"
     if lowered_parts[:2] == ["s_control_inputs", "xinao_root_world"]:
         return "FROZEN_LOGICAL_ROOT_INPUT_NOT_CANDIDATE_ARTIFACT"
     if ".xinao-world-runtime" in lowered_parts:
@@ -1083,7 +1176,12 @@ def _is_regular_non_reparse_file(path: Path) -> bool:
     return not (reparse_flag and attributes & reparse_flag)
 
 
-def _snapshot_file_to_blob(source: Path, blob_root: Path) -> dict[str, Any]:
+def _snapshot_file_to_blob(
+    source: Path,
+    blob_root: Path,
+    *,
+    scan_secret_shapes: bool = True,
+) -> dict[str, Any]:
     blob_root.mkdir(parents=True, exist_ok=True)
     for _ in range(3):
         before = source.stat()
@@ -1094,9 +1192,10 @@ def _snapshot_file_to_blob(source: Path, blob_root: Path) -> dict[str, Any]:
             with source.open("rb") as reader, temporary.open("xb") as writer:
                 scan_tail = b""
                 for chunk in iter(lambda: reader.read(1024 * 1024), b""):
-                    rule = _deep_evidence_secret_rule(scan_tail + chunk)
-                    if rule is not None:
-                        raise DeepEvidenceSecretPresent(rule)
+                    if scan_secret_shapes:
+                        rule = _deep_evidence_secret_rule(scan_tail + chunk)
+                        if rule is not None:
+                            raise DeepEvidenceSecretPresent(rule)
                     digest.update(chunk)
                     writer.write(chunk)
                     copied += len(chunk)
@@ -1192,6 +1291,7 @@ def capture_workspace_artifacts(
     turn_number: int,
     attempt_number: int,
     manifest_path: Path,
+    local_arbitrary_objects: bool = False,
 ) -> dict[str, Any]:
     workspace = resolve_path(workspace)
     run_dir = resolve_path(run_dir)
@@ -1226,8 +1326,17 @@ def capture_workspace_artifacts(
         classifications.values(), key=lambda item: str(item[0]).lower()
     ):
         package_path = relative.as_posix()
-        exclusion = _deep_evidence_exclusion_reason(relative)
-        if classification == "IGNORED_MATERIAL" and not _ignored_path_is_material(relative):
+        local_arbitrary = (
+            local_arbitrary_objects
+            and bool(relative.parts)
+            and relative.parts[0].casefold() == "research_objects"
+        )
+        exclusion = None if local_arbitrary else _deep_evidence_exclusion_reason(relative)
+        if (
+            classification == "IGNORED_MATERIAL"
+            and not local_arbitrary
+            and not _ignored_path_is_material(relative)
+        ):
             exclusion = exclusion or "IGNORED_NOT_ADMITTED_AS_RESEARCH_REALITY"
         if exclusion is not None:
             exclusions.append({"relative_path": package_path, "reason": exclusion})
@@ -1248,7 +1357,11 @@ def capture_workspace_artifacts(
                     {"relative_path": package_path, "reason": "NON_REGULAR_OR_REPARSE"}
                 )
                 continue
-            snapshot = _snapshot_file_to_blob(source, blob_root)
+            snapshot = _snapshot_file_to_blob(
+                source,
+                blob_root,
+                scan_secret_shapes=not local_arbitrary,
+            )
             entries.append(
                 {
                     "relative_path": package_path,
@@ -2067,8 +2180,12 @@ def build_codex_command(
     return command
 
 
-def terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+def terminate_process_tree(process: Any) -> None:
     if process.poll() is not None:
+        return
+    terminate_job = getattr(process, "terminate_tree", None)
+    if callable(terminate_job):
+        terminate_job(exit_code=91)
         return
     if os.name == "nt":
         subprocess.run(
@@ -2172,6 +2289,105 @@ def _release_byte_lock(handle: Any) -> None:
 
 
 _RUNTIME_BINDING_MODULE_CACHE: dict[tuple[str, str], ModuleType] = {}
+_FROZEN_COMPONENT_MODULE_CACHE: dict[tuple[str, str], ModuleType] = {}
+
+
+def _load_frozen_component_module(
+    config: Mapping[str, Any],
+    *,
+    path_key: str,
+    sha256_key: str,
+    module_prefix: str,
+    required_attributes: Sequence[str],
+) -> ModuleType:
+    raw_path = config.get(path_key)
+    raw_sha256 = config.get(sha256_key)
+    if not isinstance(raw_path, str) or not isinstance(raw_sha256, str):
+        raise PerpetualRuntimeError(f"FROZEN_COMPONENT_IDENTITY_MISSING:{path_key}")
+    path = resolve_path(raw_path)
+    if not path.is_file():
+        raise PerpetualRuntimeError(f"FROZEN_COMPONENT_MISSING:{path}")
+    observed = sha256_file(path)
+    if observed.casefold() != raw_sha256.casefold():
+        raise PerpetualRuntimeError(f"FROZEN_COMPONENT_BYTES_CHANGED:{path_key}")
+    cache_key = (str(path), observed.casefold())
+    cached = _FROZEN_COMPONENT_MODULE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    module_name = f"{module_prefix}_{observed.casefold()}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise PerpetualRuntimeError(f"FROZEN_COMPONENT_IMPORT_FAILED:{path_key}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    if any(not hasattr(module, name) for name in required_attributes):
+        sys.modules.pop(module_name, None)
+        raise PerpetualRuntimeError(f"FROZEN_COMPONENT_API_MISMATCH:{path_key}")
+    _FROZEN_COMPONENT_MODULE_CACHE[cache_key] = module
+    return module
+
+
+def _load_windows_job_module(config: Mapping[str, Any]) -> ModuleType:
+    return _load_frozen_component_module(
+        config,
+        path_key="windows_job_release_path",
+        sha256_key="windows_job_release_sha256",
+        module_prefix="xinao_frozen_windows_job",
+        required_attributes=(
+            "JobState",
+            "query_named_job",
+            "spawn_windows_job_process",
+            "terminate_named_job",
+        ),
+    )
+
+
+def _load_research_sol_runtime_module(config: Mapping[str, Any]) -> ModuleType:
+    module = _load_frozen_component_module(
+        config,
+        path_key="research_sol_runtime_release_path",
+        sha256_key="research_sol_runtime_release_sha256",
+        module_prefix="xinao_frozen_research_sol_runtime",
+        required_attributes=(
+            "WORLD_LIVE",
+            "build_carrier_envelope",
+            "reconcile_carrier_truth",
+            "seal_cognition_object",
+            "open_cognition_object",
+        ),
+    )
+    if getattr(module, "WORLD_LIVE", None) != "WORLD_LIVE":
+        raise PerpetualRuntimeError("RESEARCH_SOL_RUNTIME_RELEASE_SCHEMA_MISMATCH")
+    return module
+
+
+def build_attempt_job_identity(
+    config: Mapping[str, Any],
+    *,
+    lineage_id: str,
+    turn_number: int,
+    attempt_number: int,
+) -> dict[str, Any]:
+    identity = {
+        "schema": CARRIER_JOB_IDENTITY_SCHEMA,
+        "run_id": str(config["run_id"]),
+        "lineage_id": lineage_id,
+        "turn_number": int(turn_number),
+        "attempt_number": int(attempt_number),
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    identity_id = sha256_bytes(canonical_json_bytes(identity)).casefold()
+    return {
+        **identity,
+        "identity_id": identity_id,
+        "job_name": f"Global\\XINAO-World-{identity_id[:40]}",
+    }
 
 
 def _load_runtime_binding_module(config: Mapping[str, Any]) -> ModuleType:
@@ -2392,6 +2608,11 @@ class PerpetualController:
             "status": "CREATED",
             "lifecycle_state": None,
             "active_pid": None,
+            "turn_phase": None,
+            "carrier_job": None,
+            "carrier_terminal_observation": None,
+            "initial_contact_admitted": False,
+            "last_consumed_wake": None,
             "last_turn_dir": None,
             "last_completed_turn_dir": None,
             "last_error_class": None,
@@ -2425,6 +2646,8 @@ class PerpetualController:
                     "session_id": value.get("session_id"),
                     "turns_completed": value.get("turns_completed"),
                     "active_pid": value.get("active_pid"),
+                    "turn_phase": value.get("turn_phase"),
+                    "carrier_job": value.get("carrier_job"),
                     "lifecycle_state": value.get("lifecycle_state"),
                     "last_error_class": value.get("last_error_class"),
                 }
@@ -2485,23 +2708,58 @@ class PerpetualController:
                 "CLEANROOM_SHARED_CONFIG_SEMANTICS_CHANGED: "
                 f"expected={expected_semantic} observed={identity['semantic_sha256']}"
             )
+        if self.config.get("attempt_job_ownership_required") is True:
+            _load_windows_job_module(self.config)
+            research_runtime = _load_research_sol_runtime_module(self.config)
+            if self.config.get("research_sol_live_primary") is True:
+                if int(self.config.get("branch_width", -1)) != 1:
+                    raise PerpetualRuntimeError("RESEARCH_SOL_LIVE_PRIMARY_WIDTH_INVALID")
+                seed_path = resolve_path(self.config.get("activity_seed_path", ""))
+                seed_sha256 = self.config.get("activity_seed_sha256")
+                if (
+                    not seed_path.is_file()
+                    or not isinstance(seed_sha256, str)
+                    or sha256_file(seed_path).casefold() != seed_sha256.casefold()
+                ):
+                    raise PerpetualRuntimeError("RESEARCH_SOL_ACTIVITY_SEED_DRIFT")
+                research_runtime.validate_carrier_envelope(
+                    self.config.get("research_sol_carrier_envelope", {}),
+                    expected_class=research_runtime.WORLD_LIVE,
+                )
         _validate_frozen_logical_root_identity(self.config)
 
     def reject_live_orphaned_children(self) -> None:
         live: dict[str, int] = {}
+        unknown: dict[str, dict[str, int | str]] = {}
         cleared: list[str] = []
         with self._state_lock:
             for lineage_id, state in self._lineage_states.items():
                 raw_pid = state.get("active_pid")
-                if not isinstance(raw_pid, int) or raw_pid <= 0:
+                if (
+                    not isinstance(raw_pid, int)
+                    or isinstance(raw_pid, bool)
+                    or raw_pid <= 0
+                ):
                     continue
-                if is_process_alive(raw_pid):
+                liveness = process_liveness(raw_pid)
+                if liveness == ProcessLiveness.ALIVE:
                     live[lineage_id] = raw_pid
+                    continue
+                if liveness != ProcessLiveness.DEAD:
+                    unknown[lineage_id] = {
+                        "pid": raw_pid,
+                        "liveness": ProcessLiveness.UNKNOWN.value,
+                    }
                     continue
                 state["active_pid"] = None
                 state["updated_at"] = now_iso()
                 atomic_write_json(self.lineage_state_path(lineage_id), state)
                 cleared.append(lineage_id)
+        if unknown:
+            raise PerpetualRuntimeError(
+                "ORPHAN_CHILD_LIVENESS_UNKNOWN_BEFORE_RECOVERY: "
+                + json.dumps(unknown, ensure_ascii=False, sort_keys=True)
+            )
         if live:
             raise PerpetualRuntimeError(
                 "ORPHAN_CHILDREN_ALIVE_BEFORE_RECOVERY: "
@@ -2510,8 +2768,262 @@ class PerpetualController:
         if cleared:
             self.publish_controller_state("RECOVERED_STALE_CHILD_STATE")
 
+    def _latest_carrier_job(
+        self, spec: Mapping[str, Any], state: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        lineage_id = str(spec["lineage_id"])
+        raw = state.get("carrier_job")
+        candidate_values: list[dict[str, Any]] = []
+        if isinstance(raw, Mapping):
+            candidate_values.append(dict(raw))
+        turn_number = int(state.get("turns_completed", 0)) + 1
+        turn_dir = self.lineage_dir(lineage_id) / "turns" / f"turn-{turn_number:06d}"
+        candidate_values.extend(
+            read_json_object(path) for path in sorted(turn_dir.glob("attempt-*/carrier_job.json"))
+        )
+        if not candidate_values:
+            return None
+        try:
+            candidate = max(
+                candidate_values,
+                key=lambda value: (int(value["turn_number"]), int(value["attempt_number"])),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PerpetualRuntimeError(
+                f"CARRIER_JOB_IDENTITY_INVALID:{lineage_id}"
+            ) from exc
+        try:
+            expected = build_attempt_job_identity(
+                self.config,
+                lineage_id=lineage_id,
+                turn_number=int(candidate["turn_number"]),
+                attempt_number=int(candidate["attempt_number"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PerpetualRuntimeError(
+                f"CARRIER_JOB_IDENTITY_INVALID:{lineage_id}"
+            ) from exc
+        if candidate != expected:
+            raise PerpetualRuntimeError(f"CARRIER_JOB_IDENTITY_DRIFT:{lineage_id}")
+        return candidate
+
+    def _attach_owned_world_turn_leases(self) -> list[str]:
+        guard_path, record_paths = self._world_turn_quota_paths()
+        deadline = time.monotonic() + 30.0
+        while True:
+            guard = _try_acquire_byte_lock(guard_path)
+            if guard is not None:
+                break
+            if time.monotonic() >= deadline:
+                raise PerpetualRuntimeError("WORLD_TURN_QUOTA_RECOVERY_LOCK_TIMEOUT")
+            time.sleep(0.05)
+        attached: list[str] = []
+        valid_lineages = {str(spec["lineage_id"]) for spec in self.branch_specs}
+        try:
+            for record_path in record_paths:
+                if not record_path.is_file():
+                    continue
+                record = read_json_object(record_path)
+                if (
+                    record.get("run_id") != self.config["run_id"]
+                    or record.get("status") not in {"RESERVED", "BOUND"}
+                ):
+                    continue
+                lineage_id = str(record.get("lineage_id", ""))
+                if lineage_id not in valid_lineages or lineage_id in self._world_turn_leases:
+                    raise PerpetualRuntimeError(
+                        f"WORLD_TURN_QUOTA_RECOVERY_IDENTITY_INVALID:{record_path}"
+                    )
+                self._world_turn_leases[lineage_id] = {
+                    **record,
+                    "path": str(record_path),
+                }
+                attached.append(lineage_id)
+        finally:
+            _release_byte_lock(guard)
+        return attached
+
+    def reconcile_startup_terminal_truth(self) -> dict[str, Any] | None:
+        """Adopt exact named Jobs, settle dead attempts, then release exact leases.
+
+        This is the normal controller-start path, not an offline repair-only path.
+        A surviving Job is observed in place and never duplicated.  UNKNOWN or a
+        contradictory Job/PID observation fails closed.
+        """
+
+        if self.config.get("attempt_job_ownership_required") is not True:
+            self.reject_live_orphaned_children()
+            return None
+        jobs = _load_windows_job_module(self.config)
+        truth_module = _load_research_sol_runtime_module(self.config)
+        tracked: dict[str, dict[str, Any]] = {}
+        for spec in [*self.branch_specs, self.root_spec]:
+            lineage_id = str(spec["lineage_id"])
+            state = self._lineage_states[lineage_id]
+            carrier_job = self._latest_carrier_job(spec, state)
+            uncommitted_attempt = bool(
+                carrier_job is not None
+                and int(carrier_job["turn_number"]) > int(state.get("turns_completed", 0))
+            )
+            if carrier_job is not None and (
+                uncommitted_attempt or state.get("turn_phase") != "TERMINAL"
+            ):
+                tracked[lineage_id] = carrier_job
+        observations: list[dict[str, Any]] = []
+        while tracked:
+            remaining: dict[str, dict[str, Any]] = {}
+            for lineage_id, carrier_job in tracked.items():
+                state = self._lineage_states[lineage_id]
+                raw_pid = state.get("active_pid")
+                child = (
+                    process_liveness(raw_pid)
+                    if isinstance(raw_pid, int) and not isinstance(raw_pid, bool) and raw_pid > 0
+                    else ProcessLiveness.DEAD
+                )
+                snapshot = jobs.query_named_job(str(carrier_job["job_name"]))
+                truth = truth_module.reconcile_carrier_truth(
+                    job_state=str(snapshot.state.value),
+                    child_liveness=child.value,
+                    lease_status="BOUND",
+                    turn_phase=(
+                        "TURN_RUNNING"
+                        if int(carrier_job["turn_number"])
+                        > int(state.get("turns_completed", 0))
+                        else str(state.get("turn_phase") or "TURN_RUNNING")
+                    ),
+                    stop_requested=self.stopped(),
+                )
+                observation = {
+                    "lineage_id": lineage_id,
+                    "carrier_job": carrier_job,
+                    "job_state": snapshot.state.value,
+                    "process_ids": list(snapshot.process_ids),
+                    "child_liveness": child.value,
+                    "truth": truth,
+                    "observed_at": now_iso(),
+                }
+                observations.append(observation)
+                action = str(truth["action"])
+                if action == "TERMINATE_EXACT_JOB":
+                    terminated = jobs.terminate_named_job(str(carrier_job["job_name"]), exit_code=91)
+                    if terminated.state.value == "UNKNOWN":
+                        raise PerpetualRuntimeError(
+                            f"CARRIER_JOB_TERMINATION_UNKNOWN:{lineage_id}"
+                        )
+                    remaining[lineage_id] = carrier_job
+                elif action == "WAIT_FOR_CARRIER":
+                    remaining[lineage_id] = carrier_job
+                elif action in {"HOLD_UNKNOWN", "HOLD_CONTRADICTORY"}:
+                    raise PerpetualRuntimeError(
+                        f"CARRIER_TERMINAL_TRUTH_{action}:{lineage_id}"
+                    )
+                else:
+                    self.publish_lineage_state(
+                        lineage_id,
+                        status="TURN_SEALING_RECOVERED",
+                        turn_phase="TURN_SEALING",
+                        active_pid=None,
+                        carrier_job=carrier_job,
+                        carrier_terminal_observation=observation,
+                    )
+            tracked = remaining
+            if tracked:
+                self.publish_controller_state("RECOVERING_ACTIVE_CARRIERS")
+                self._shutdown.wait(0.5)
+
+        recovery_dir = (
+            self.run_dir
+            / "recovery"
+            / ("startup-" + dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+        )
+        recovery_dir.mkdir(parents=True, exist_ok=False)
+        attempt_reconciliation = reconcile_incomplete_attempts(
+            self.config,
+            recovery_dir=recovery_dir,
+        )
+        self._load_lineage_states()
+        attached = self._attach_owned_world_turn_leases()
+        released: list[str] = []
+        by_lineage = {str(spec["lineage_id"]): spec for spec in self.branch_specs}
+        for lineage_id in attached:
+            if not self.release_world_turn_quota(by_lineage[lineage_id]):
+                raise PerpetualRuntimeError(
+                    f"WORLD_TURN_QUOTA_RECOVERY_RELEASE_HELD:{lineage_id}"
+                )
+            released.append(lineage_id)
+            self._lineage_states[lineage_id].pop("world_turn_quota", None)
+            atomic_write_json(
+                self.lineage_state_path(lineage_id),
+                self._lineage_states[lineage_id],
+            )
+        receipt = {
+            "schema": STARTUP_TERMINAL_RECONCILIATION_SCHEMA,
+            "run_id": self.config["run_id"],
+            "controller_release": _controller_release_reference(self.config),
+            "observations": observations,
+            "attempt_reconciliation": attempt_reconciliation,
+            "attached_lease_lineages": attached,
+            "released_lease_lineages": released,
+            "authority": False,
+            "completion_claim_allowed": False,
+        }
+        atomic_write_json(recovery_dir / "startup_terminal_reconciliation.json", receipt)
+        return receipt
+
     def _wake_path(self, lineage_id: str) -> Path:
         return self.wake_root / f"{lineage_id}.json"
+
+    def _wake_receipt_identity(self, lineage_id: str, path: Path) -> dict[str, Any]:
+        path = resolve_path(path)
+        raw = path.read_bytes()
+        try:
+            payload = json.loads(raw.decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PerpetualRuntimeError(f"WAKE_RECEIPT_INVALID_JSON:{path}") from exc
+        if not isinstance(payload, dict):
+            raise PerpetualRuntimeError(f"WAKE_RECEIPT_INVALID_JSON:{path}")
+        if (
+            payload.get("schema") != self.schemas["wake"]
+            or payload.get("lineage_id") != lineage_id
+            or payload.get("account_slot")
+            != validate_account_slot(self.config["account_slot"])
+            or not isinstance(payload.get("requested_at"), str)
+            or not str(payload.get("requested_at", "")).strip()
+            or not isinstance(payload.get("reason"), str)
+            or not str(payload.get("reason", "")).strip()
+        ):
+            raise PerpetualRuntimeError(f"WAKE_RECEIPT_IDENTITY_INVALID:{path}")
+        return {
+            "path": str(path),
+            "sha256": sha256_bytes(raw).casefold(),
+            "payload": payload,
+        }
+
+    def _prepared_contact_wake_digests(self, lineage_id: str) -> set[str]:
+        used: set[str] = set()
+        turns_root = self.lineage_dir(lineage_id) / "turns"
+        for path in turns_root.glob("turn-*/attempt-*/live_contact.json"):
+            value = read_json_object(path)
+            trigger = value.get("contact_trigger")
+            if isinstance(trigger, Mapping) and isinstance(trigger.get("sha256"), str):
+                used.add(str(trigger["sha256"]).casefold())
+        return used
+
+    def _recover_unprojected_wake(self, lineage_id: str) -> dict[str, Any] | None:
+        if self.config.get("research_sol_live_primary") is not True:
+            return None
+        receipt_root = self.lineage_dir(lineage_id) / "wake-receipts"
+        used = self._prepared_contact_wake_digests(lineage_id)
+        observed = [
+            self._wake_receipt_identity(lineage_id, path)
+            for path in sorted(receipt_root.glob("*.json"))
+        ]
+        candidates = [value for value in observed if value["sha256"] not in used]
+        if len(candidates) > 1:
+            raise PerpetualRuntimeError(
+                f"MULTIPLE_UNPROJECTED_WAKE_RECEIPTS:{lineage_id}"
+            )
+        return candidates[0] if candidates else None
 
     def _world_turn_quota_paths(self) -> tuple[Path, list[Path]]:
         limit = int(
@@ -2568,20 +3080,38 @@ class PerpetualController:
                             f"WORLD_TURN_QUOTA_RECORD_INVALID: {record_path}"
                         )
                     status = str(record.get("status", ""))
+                    if (
+                        record.get("operator_throttle") is True
+                        and status in {"RESERVED", "BOUND"}
+                    ):
+                        continue
                     if status == "RESERVED":
                         # A controller may have died after launching but before binding its child.
                         # Only explicit reconciliation may clear this fail-closed reservation.
                         continue
                     if status == "BOUND":
                         child_pid = record.get("child_pid")
-                        if not isinstance(child_pid, int) or child_pid <= 0:
+                        if (
+                            not isinstance(child_pid, int)
+                            or isinstance(child_pid, bool)
+                            or child_pid <= 0
+                        ):
                             raise PerpetualRuntimeError(
                                 f"WORLD_TURN_QUOTA_BOUND_CHILD_INVALID: {record_path}"
                             )
-                        if is_process_alive(child_pid):
+                        if isinstance(record.get("carrier_job"), Mapping):
+                            # Named-Job leases are never recycled by a competing
+                            # claimant.  The owning run must first settle artifacts,
+                            # terminal receipt, lineage state, and exact release.
+                            continue
+                        if process_liveness(child_pid) != ProcessLiveness.DEAD:
                             continue
                         controller_pid = record.get("controller_pid")
-                        if not isinstance(controller_pid, int) or controller_pid <= 0:
+                        if (
+                            not isinstance(controller_pid, int)
+                            or isinstance(controller_pid, bool)
+                            or controller_pid <= 0
+                        ):
                             raise PerpetualRuntimeError(
                                 f"WORLD_TURN_QUOTA_BOUND_CONTROLLER_INVALID: {record_path}"
                             )
@@ -2590,7 +3120,7 @@ class PerpetualController:
                         # recycle that slot during this release window: doing so replaces
                         # the lease record and makes the legitimate owner fail identity
                         # validation while releasing it.
-                        if is_process_alive(controller_pid):
+                        if process_liveness(controller_pid) != ProcessLiveness.DEAD:
                             continue
                     elif status != "RELEASED":
                         raise PerpetualRuntimeError(
@@ -2611,6 +3141,8 @@ class PerpetualController:
                     "workspace": str(resolve_path(spec["workspace"])),
                     "controller_pid": os.getpid(),
                     "child_pid": None,
+                    "carrier_job": None,
+                    "terminal_reconciliation": None,
                     "reserved_at": now_iso(),
                     "bound_at": None,
                     "released_at": None,
@@ -2624,7 +3156,11 @@ class PerpetualController:
             _release_byte_lock(guard)
 
     def bind_world_turn_quota_child(
-        self, spec: Mapping[str, Any], *, child_pid: int
+        self,
+        spec: Mapping[str, Any],
+        *,
+        child_pid: int,
+        carrier_job: Mapping[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """Bind the durable reservation to the actual child before it can be forgotten."""
 
@@ -2659,6 +3195,7 @@ class PerpetualController:
                 {
                     "status": "BOUND",
                     "child_pid": int(child_pid),
+                    "carrier_job": dict(carrier_job) if carrier_job is not None else None,
                     "bound_at": now_iso(),
                 }
             )
@@ -2691,8 +3228,40 @@ class PerpetualController:
             if record.get("lease_id") != lease["lease_id"]:
                 raise PerpetualRuntimeError("WORLD_TURN_QUOTA_RELEASE_IDENTITY_DRIFT")
             child_pid = record.get("child_pid")
-            if isinstance(child_pid, int) and child_pid > 0 and is_process_alive(child_pid):
-                return False
+            if record.get("status") == "BOUND":
+                if (
+                    not isinstance(child_pid, int)
+                    or isinstance(child_pid, bool)
+                    or child_pid <= 0
+                ):
+                    return False
+                child_liveness = process_liveness(child_pid)
+                carrier_job = record.get("carrier_job")
+                if isinstance(carrier_job, Mapping):
+                    job_name = carrier_job.get("job_name")
+                    if not isinstance(job_name, str):
+                        raise PerpetualRuntimeError("WORLD_TURN_QUOTA_CARRIER_JOB_INVALID")
+                    jobs = _load_windows_job_module(self.config)
+                    snapshot = jobs.query_named_job(job_name)
+                    truth_module = _load_research_sol_runtime_module(self.config)
+                    turn_phase = str(
+                        self._lineage_states.get(lineage_id, {}).get(
+                            "turn_phase", "TURN_RUNNING"
+                        )
+                    )
+                    truth = truth_module.reconcile_carrier_truth(
+                        job_state=str(snapshot.state.value),
+                        child_liveness=child_liveness.value,
+                        lease_status="BOUND",
+                        turn_phase=turn_phase,
+                    )
+                    record["terminal_reconciliation"] = truth
+                    if truth.get("release_allowed") is not True:
+                        atomic_write_json(record_path, record)
+                        self._world_turn_leases[lineage_id] = {**record, "path": str(record_path)}
+                        return False
+                elif child_liveness != ProcessLiveness.DEAD:
+                    return False
             record.update({"status": "RELEASED", "released_at": now_iso()})
             atomic_write_json(record_path, record)
             self._world_turn_leases.pop(lineage_id, None)
@@ -2739,7 +3308,15 @@ class PerpetualController:
             yield lease
         finally:
             if lease is not None:
-                self.release_world_turn_quota(spec)
+                released = self.release_world_turn_quota(spec)
+                if not released:
+                    self.publish_lineage_state(
+                        lineage_id,
+                        status="WORLD_TURN_QUOTA_RELEASE_HELD",
+                        last_error_class="CARRIER_TERMINAL_TRUTH_UNRESOLVED",
+                        last_error="exact carrier death was not established; lease remains bound",
+                    )
+                    raise PerpetualRuntimeError("WORLD_TURN_QUOTA_RELEASE_HELD")
                 with self._state_lock:
                     self._lineage_states[lineage_id].pop("world_turn_quota", None)
                     atomic_write_json(
@@ -2753,22 +3330,38 @@ class PerpetualController:
         if status in {"PROVIDER_POLICY_BLOCKED", "ROOT_PROVIDER_POLICY_BLOCKED"}:
             parked_state["lifecycle_state"] = "BLOCKED"
         self.publish_lineage_state(lineage_id, **parked_state)
+        recovered = self._recover_unprojected_wake(lineage_id)
+        if recovered is not None:
+            self.publish_lineage_state(
+                lineage_id,
+                status="WOKEN",
+                lifecycle_state="CONTINUE",
+                last_consumed_wake=recovered,
+                last_error_class=None,
+                last_error=None,
+            )
+            return True
         while not self.stopped():
             if wake_path.exists():
-                consumed = (
-                    self.lineage_dir(lineage_id)
-                    / "wake-receipts"
-                    / (dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f") + ".json")
+                pending = self._wake_receipt_identity(lineage_id, wake_path)
+                consumed = self.lineage_dir(lineage_id) / "wake-receipts" / (
+                    str(pending["sha256"]) + ".json"
                 )
                 consumed.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     os.replace(wake_path, consumed)
                 except FileNotFoundError:
                     continue
+                consumed_identity = self._wake_receipt_identity(lineage_id, consumed)
+                if consumed_identity["sha256"] != pending["sha256"]:
+                    raise PerpetualRuntimeError(
+                        f"WAKE_RECEIPT_CHANGED_DURING_CONSUMPTION:{lineage_id}"
+                    )
                 self.publish_lineage_state(
                     lineage_id,
                     status="WOKEN",
                     lifecycle_state="CONTINUE",
+                    last_consumed_wake=consumed_identity,
                     last_error_class=None,
                     last_error=None,
                 )
@@ -2798,6 +3391,206 @@ class PerpetualController:
             if item_type not in {"agent_message", "reasoning"}:
                 observed["tool_item_count"] += 1
 
+    def _prepare_live_contact(
+        self,
+        *,
+        spec: Mapping[str, Any],
+        attempt_dir: Path,
+        turn_number: int,
+        attempt_number: int,
+    ) -> tuple[str, dict[str, Any]]:
+        module = _load_research_sol_runtime_module(self.config)
+        lineage_id = str(spec["lineage_id"])
+        workspace = resolve_path(spec["workspace"])
+        contact_identity = {
+            "run_id": self.config["run_id"],
+            "lineage_id": lineage_id,
+            "turn_number": turn_number,
+            "attempt_number": attempt_number,
+        }
+        contact_id = sha256_bytes(canonical_json_bytes(contact_identity)).casefold()
+        overlay_path = attempt_dir / "pre_contact_artifact_manifest.json"
+        overlay = capture_workspace_artifacts(
+            workspace=workspace,
+            run_id=str(self.config["run_id"]),
+            source_head=str(self.config["source_head"]),
+            run_dir=self.run_dir,
+            lineage_id=lineage_id,
+            turn_number=turn_number,
+            attempt_number=attempt_number,
+            manifest_path=overlay_path,
+            local_arbitrary_objects=True,
+        )
+        if overlay.get("complete") is not True:
+            raise PerpetualRuntimeError("RESEARCH_SOL_PRECONTACT_OVERLAY_INCOMPLETE")
+
+        carrier_root = workspace / ".xinao" / "carrier"
+        object_root = carrier_root / "object-store"
+        contact_input_root = carrier_root / "contacts" / contact_id
+        object_map_path = contact_input_root / "object-map.json"
+        object_rows = module.list_cognition_objects(object_root)
+        object_map = {
+            "schema": "xinao.research-sol.object-map.v1",
+            "contact_id": contact_id,
+            "objects": object_rows,
+            "listing_is_open": False,
+            "authority": False,
+            "completion_claim_allowed": False,
+        }
+        atomic_write_json(object_map_path, object_map)
+
+        activity_seed_path = resolve_path(self.config["activity_seed_path"])
+        activity_seed_sha256 = str(self.config["activity_seed_sha256"])
+        activity_seed_raw = activity_seed_path.read_bytes()
+        if sha256_bytes(activity_seed_raw).casefold() != activity_seed_sha256.casefold():
+            raise PerpetualRuntimeError("RESEARCH_SOL_ACTIVITY_SEED_DRIFT")
+        try:
+            activity_seed_text = activity_seed_raw.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise PerpetualRuntimeError("RESEARCH_SOL_ACTIVITY_SEED_NOT_UTF8") from exc
+        stored_trigger = self._lineage_states[lineage_id].get("last_consumed_wake")
+        contact_trigger: dict[str, Any] | None = None
+        if isinstance(stored_trigger, Mapping):
+            trigger_path_value = stored_trigger.get("path")
+            if not isinstance(trigger_path_value, str) or not trigger_path_value.strip():
+                raise PerpetualRuntimeError("RESEARCH_SOL_CONTACT_TRIGGER_DRIFT")
+            trigger_path = resolve_path(trigger_path_value)
+            observed_trigger = self._wake_receipt_identity(lineage_id, trigger_path)
+            if dict(stored_trigger) != observed_trigger:
+                raise PerpetualRuntimeError("RESEARCH_SOL_CONTACT_TRIGGER_DRIFT")
+            contact_trigger = observed_trigger
+        runtime_view = self.config.get("runtime_binding_views", {}).get(lineage_id)
+        if isinstance(runtime_view, Mapping):
+            runtime_row: dict[str, Any] = {
+                "surface_id": "runtime_reality",
+                "status": "INCLUDED",
+                "identity": {
+                    "view_sha256": sha256_bytes(canonical_json_bytes(runtime_view)).casefold(),
+                    "migration_id": self.config.get("reality_migration_id"),
+                    "view": dict(runtime_view),
+                },
+            }
+        else:
+            runtime_row = {
+                "surface_id": "runtime_reality",
+                "status": "UNKNOWN",
+                "reason": "no exact runtime-binding view is registered for this lineage",
+            }
+        surface_catalog = [
+            {
+                "surface_id": "activity_seed",
+                "status": "INCLUDED",
+                "identity": {
+                    "path": str(activity_seed_path),
+                    "sha256": activity_seed_sha256,
+                },
+            },
+            runtime_row,
+            {
+                "surface_id": "prior_cognition_objects",
+                "status": "INCLUDED",
+                "identity": {
+                    "path": str(object_map_path),
+                    "sha256": sha256_file(object_map_path).casefold(),
+                    "object_count": len(object_rows),
+                },
+            },
+            {
+                "surface_id": "contact_trigger",
+                "status": "INCLUDED" if contact_trigger is not None else "OMITTED",
+                **(
+                    {"identity": contact_trigger}
+                    if contact_trigger is not None
+                    else {
+                        "reason": (
+                            "initial contact is admitted directly by the "
+                            "human-appointed activity seed"
+                        )
+                    }
+                ),
+            },
+            {
+                "surface_id": "external_reality_access",
+                "status": "INCLUDED",
+                "identity": {
+                    "network_access": True,
+                    "launcher_sha256": self.config["launcher_sha256"],
+                    "tools_are_model_selected": True,
+                },
+            },
+        ]
+        pin = module.build_world_pin(
+            carrier_root,
+            activity_id=str(self.config["activity_id"]),
+            contact_id=contact_id,
+            source_repo=resolve_path(self.config["source_repo"]),
+            source_head=str(self.config["source_head"]),
+            workspace=workspace,
+            overlay_manifest_path=overlay_path,
+            required_surface_ids=LIVE_WORLD_SURFACE_IDS,
+            surface_catalog=surface_catalog,
+            runtime_identity={
+                "run_id": self.config["run_id"],
+                "lineage_id": lineage_id,
+                "account_slot": self.config["account_slot"],
+            },
+        )
+        envelope = module.build_carrier_envelope(
+            module.WORLD_LIVE,
+            network_access=True,
+            fresh_session=True,
+            world_surface="LINEAGE_WORLD",
+            output_contract="MECHANICAL_TERMINAL_AND_ARBITRARY_ARTIFACTS",
+        )
+        open_command = subprocess.list2cmdline(
+            [
+                str(resolve_path(self.config["controller_python"])),
+                str(resolve_path(self.config["research_sol_runtime_release_path"])),
+                "open-object",
+                "--object-root",
+                str(object_root),
+                "--object-id",
+                "<OBJECT_ID>",
+                "--contact-id",
+                contact_id,
+                "--world-pin-id",
+                str(pin["pin_id"]),
+                "--destination-root",
+                str(workspace / ".xinao" / "opened"),
+                "--path",
+                "<EXACT_RELATIVE_PATH>",
+            ]
+        )
+        prompt = module.build_live_contact_prompt(
+            activity_id=str(self.config["activity_id"]),
+            contact_id=contact_id,
+            world_pin=pin,
+            object_map_path=object_map_path,
+            object_open_command=open_command,
+        )
+        prompt += (
+            "\nThe following exact bytes are the current human-appointed activity seed. "
+            "They are instruction input; the carrier receipts above are not.\n\n"
+            + activity_seed_text
+            + "\n\nCross-contact arbitrary bytes intended to survive should be written under "
+            "RESEARCH_OBJECTS/ in this lineage workspace. This path is a byte carrier, "
+            "not a research taxonomy.\n"
+        )
+        live_contact = {
+            "contact_id": contact_id,
+            "contact_identity": contact_identity,
+            "carrier_envelope": envelope,
+            "world_pin": pin,
+            "pre_contact_overlay": overlay,
+            "prior_object_map_path": str(object_map_path),
+            "prior_object_map_sha256": sha256_file(object_map_path).casefold(),
+            "object_root": str(object_root),
+            "open_command": open_command,
+            "contact_trigger": contact_trigger,
+        }
+        atomic_write_json(attempt_dir / "live_contact.json", live_contact)
+        return prompt, live_contact
+
     def _run_attempt(
         self,
         *,
@@ -2816,8 +3609,31 @@ class PerpetualController:
         last_message_path = attempt_dir / "last_message.txt"
         prompt_path = attempt_dir / "prompt.txt"
         arguments_path = attempt_dir / "codex_args.json"
+        carrier_job: dict[str, Any] | None = None
+        windows_job_module: ModuleType | None = None
+        if self.config.get("attempt_job_ownership_required") is True:
+            windows_job_module = _load_windows_job_module(self.config)
+            carrier_job = build_attempt_job_identity(
+                self.config,
+                lineage_id=lineage_id,
+                turn_number=turn_number,
+                attempt_number=attempt_number,
+            )
+            atomic_write_json(attempt_dir / "carrier_job.json", carrier_job)
+        live_contact: dict[str, Any] | None = None
+        if self.config.get("research_sol_live_primary") is True:
+            prompt, live_contact = self._prepare_live_contact(
+                spec=spec,
+                attempt_dir=attempt_dir,
+                turn_number=turn_number,
+                attempt_number=attempt_number,
+            )
         atomic_write_text(prompt_path, prompt)
-        session_id = state.get("session_id")
+        session_id = (
+            None
+            if self.config.get("research_sol_live_primary") is True
+            else state.get("session_id")
+        )
         codex_arguments = build_codex_arguments(
             self.config,
             last_message_path=last_message_path,
@@ -2892,6 +3708,8 @@ class PerpetualController:
                     if runtime_binding is not None
                     else None
                 ),
+                "carrier_job": carrier_job,
+                "live_contact": live_contact,
             },
         )
         observed: dict[str, Any] = {
@@ -2905,6 +3723,7 @@ class PerpetualController:
         started_monotonic = time.monotonic()
         stopped = False
         timed_out = False
+        carrier_terminal_observation: dict[str, Any] | None = None
         parsed_offset = 0
         pending = b""
         if (
@@ -2917,19 +3736,32 @@ class PerpetualController:
             stdout_path.open("ab", buffering=0) as stdout_stream,
             stderr_path.open("ab", buffering=0) as stderr_stream,
         ):
-            process = subprocess.Popen(
-                command,
-                cwd=resolve_path(spec["workspace"]),
-                stdin=subprocess.PIPE,
-                stdout=stdout_stream,
-                stderr=stderr_stream,
-                shell=False,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
+            if windows_job_module is not None and carrier_job is not None:
+                process = windows_job_module.spawn_windows_job_process(
+                    command,
+                    job_name=str(carrier_job["job_name"]),
+                    cwd=resolve_path(spec["workspace"]),
+                    stdin=subprocess.PIPE,
+                    stdout=stdout_stream,
+                    stderr=stderr_stream,
+                    env=os.environ,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            else:
+                process = subprocess.Popen(
+                    command,
+                    cwd=resolve_path(spec["workspace"]),
+                    stdin=subprocess.PIPE,
+                    stdout=stdout_stream,
+                    stderr=stderr_stream,
+                    shell=False,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
             try:
                 bound_quota = self.bind_world_turn_quota_child(
                     spec,
                     child_pid=process.pid,
+                    carrier_job=carrier_job,
                 )
             except BaseException:
                 terminate_process_tree(process)
@@ -2943,6 +3775,8 @@ class PerpetualController:
                 attempts_started=int(state.get("attempts_started", 0)) + 1,
                 last_turn_dir=str(turn_dir),
                 world_turn_quota=bound_quota,
+                turn_phase="TURN_RUNNING",
+                carrier_job=carrier_job,
             )
             assert process.stdin is not None
             try:
@@ -2989,8 +3823,30 @@ class PerpetualController:
                     event = parse_event_line(line)
                     if event is not None:
                         self._event_update(lineage_id, event, observed)
+            if carrier_job is not None:
+                snapshot = process.job_snapshot()
+                carrier_terminal_observation = {
+                    "job_name": snapshot.job_name,
+                    "state": snapshot.state.value,
+                    "process_ids": list(snapshot.process_ids),
+                    "winerror": snapshot.winerror,
+                    "error_message": snapshot.error_message,
+                    "observed_at": now_iso(),
+                }
+                atomic_write_json(
+                    attempt_dir / "carrier_terminal_observation.json",
+                    carrier_terminal_observation,
+                )
         with self._state_lock:
             self._active_processes.pop(lineage_id, None)
+        self.publish_lineage_state(
+            lineage_id,
+            status="TURN_SEALING",
+            turn_phase="TURN_SEALING",
+            active_pid=None,
+            carrier_job=carrier_job,
+            carrier_terminal_observation=carrier_terminal_observation,
+        )
         runtime_binding_reference: dict[str, Any] | None = None
         runtime_binding_error: str | None = None
         if binding_required:
@@ -3060,14 +3916,16 @@ class PerpetualController:
             error_class = "EVIDENCE_INCIDENT"
         elif exit_code != 0 or observed["turn_status"] != "turn.completed":
             error_class = classify_failure(stdout_tail, stderr_tail)
-        elif lifecycle is None:
+        elif lifecycle is None and self.config.get("research_sol_live_primary") is not True:
             error_class = "MISSING_LIFECYCLE_RECEIPT"
         ended_at = now_iso()
         deep_evidence: dict[str, Any] = {
             "status": "NOT_CAPTURED_FAILED_ATTEMPT",
             "captured_at": ended_at,
         }
-        if error_class is None:
+        # Carrier death is the capture boundary even when the model/runtime failed.
+        # Failure artifacts are part of terminal settlement, not disposable debris.
+        if exit_code is not None:
             evidence_errors: list[str] = []
             trajectory: dict[str, Any] | None = None
             artifacts: dict[str, Any] | None = None
@@ -3087,6 +3945,9 @@ class PerpetualController:
                     turn_number=turn_number,
                     attempt_number=attempt_number,
                     manifest_path=attempt_dir / "artifact_manifest.json",
+                    local_arbitrary_objects=(
+                        self.config.get("research_sol_live_primary") is True
+                    ),
                 )
             except (FileNotFoundError, PermissionError, OSError, PerpetualRuntimeError) as exc:
                 evidence_errors.append(f"ARTIFACT_MANIFEST:{type(exc).__name__}")
@@ -3109,10 +3970,32 @@ class PerpetualController:
                     "errors": evidence_errors,
                 }
             if (
-                self.config.get("deep_evidence_required") is True
+                error_class is None
+                and self.config.get("deep_evidence_required") is True
                 and deep_evidence.get("status") != "AVAILABLE"
             ):
                 error_class = "EVIDENCE_INCIDENT"
+        cognition_object: dict[str, Any] | None = None
+        cognition_object_error: str | None = None
+        if (
+            live_contact is not None
+            and artifacts is not None
+            and artifacts.get("complete") is True
+        ):
+            try:
+                research_runtime = _load_research_sol_runtime_module(self.config)
+                cognition_object = research_runtime.seal_cognition_object(
+                    resolve_path(live_contact["object_root"]),
+                    artifact_manifest_path=resolve_path(artifacts["path"]),
+                    contact_id=str(live_contact["contact_id"]),
+                    world_pin_id=str(live_contact["world_pin"]["pin_id"]),
+                    lineage_id=lineage_id,
+                    turn_id=f"turn-{turn_number:06d}-attempt-{attempt_number:02d}",
+                )
+            except Exception as exc:
+                cognition_object_error = getattr(exc, "reason_code", type(exc).__name__)
+                if error_class is None:
+                    error_class = "EVIDENCE_INCIDENT"
         receipt = {
             "schema": self.schemas["turn"],
             "run_id": self.config["run_id"],
@@ -3146,8 +4029,22 @@ class PerpetualController:
             "body_incident": body_incident,
             "deep_evidence": deep_evidence,
             "runtime_binding": runtime_binding_reference,
+            "carrier_job": carrier_job,
+            "carrier_terminal_observation": carrier_terminal_observation,
+            "live_contact": live_contact,
+            "cognition_object": cognition_object,
+            "cognition_object_error": cognition_object_error,
         }
         atomic_write_json(attempt_dir / "receipt.json", receipt)
+        self.publish_lineage_state(
+            lineage_id,
+            status="TURN_TERMINAL_SEALED",
+            turn_phase="TERMINAL",
+            active_pid=None,
+        )
+        close_process = getattr(process, "close", None)
+        if callable(close_process):
+            close_process()
         if observed["thread_id"]:
             self.publish_lineage_state(lineage_id, session_id=observed["thread_id"])
         return {
@@ -3214,7 +4111,7 @@ class PerpetualController:
             receipt = result["receipt"]
             error_class = receipt["error_class"]
             if error_class is None:
-                lifecycle = str(receipt["lifecycle_state"])
+                lifecycle = receipt["lifecycle_state"]
                 self.publish_lineage_state(
                     lineage_id,
                     status="TURN_COMPLETED",
@@ -3260,9 +4157,12 @@ class PerpetualController:
     def branch_loop(self, spec: Mapping[str, Any]) -> None:
         lineage_id = str(spec["lineage_id"])
         try:
+            live_primary = self.config.get("research_sol_live_primary") is True
             recovered_state = self._lineage_states[lineage_id]
             recovered_lifecycle = recovered_state.get("lifecycle_state")
             if (
+                not live_primary
+                and
                 recovered_state.get("session_id")
                 and recovered_lifecycle in PARKED_LIFECYCLE_STATES
                 and not self._wait_parked(lineage_id, f"PARKED_{recovered_lifecycle}")
@@ -3270,7 +4170,19 @@ class PerpetualController:
                 return
             while not self.stopped():
                 state = self._lineage_states[lineage_id]
-                if not state.get("session_id"):
+                if (
+                    live_primary
+                    and state.get("initial_contact_admitted") is True
+                    and state.get("status") != "WOKEN"
+                    and not self._wait_parked(lineage_id, "PARKED_FOR_EXTERNAL_WAKE")
+                ):
+                    break
+                state = self._lineage_states[lineage_id]
+                if live_primary:
+                    prompt = resolve_path(self.config["activity_seed_path"]).read_text(
+                        encoding="utf-8"
+                    )
+                elif not state.get("session_id"):
                     prompt = (self.lineage_dir(lineage_id) / "initial_prompt.txt").read_text(
                         encoding="utf-8"
                     )
@@ -3279,6 +4191,12 @@ class PerpetualController:
                 with self.world_turn_quota_lease(spec) as quota_lease:
                     if quota_lease is None:
                         break
+                    if live_primary and state.get("initial_contact_admitted") is not True:
+                        self.publish_lineage_state(
+                            lineage_id,
+                            status="INITIAL_CONTACT_ADMITTED",
+                            initial_contact_admitted=True,
+                        )
                     result = self.execute_turn(spec=spec, prompt=prompt)
                 if result["outcome"] == "STOPPED":
                     break
@@ -3295,6 +4213,8 @@ class PerpetualController:
                     )
                     if not self._wait_parked(lineage_id, parked_status):
                         break
+                    continue
+                if live_primary:
                     continue
                 lifecycle = result["lifecycle_state"]
                 if lifecycle == "CONTINUE":
@@ -3728,8 +4648,8 @@ class PerpetualController:
         with exclusive_lock(self.run_dir / "controller.lock"):
             try:
                 self.verify_runtime_identity()
-                self.reject_live_orphaned_children()
                 self.publish_controller_state("STARTING")
+                self.reconcile_startup_terminal_truth()
                 threads = [
                     threading.Thread(
                         target=self.branch_loop,
@@ -3739,13 +4659,14 @@ class PerpetualController:
                     )
                     for spec in self.branch_specs
                 ]
-                threads.append(
-                    threading.Thread(
-                        target=self.fusion_loop,
-                        name="root-late-fusion",
-                        daemon=False,
+                if self.config.get("research_sol_live_primary") is not True:
+                    threads.append(
+                        threading.Thread(
+                            target=self.fusion_loop,
+                            name="root-late-fusion",
+                            daemon=False,
+                        )
                     )
-                )
                 for thread in threads:
                     thread.start()
                 self.publish_controller_state("RUNNING")
@@ -3838,10 +4759,48 @@ def ensure_no_active_controller(runtime_root: Path) -> None:
     value = read_json_object(pointer)
     state_path = resolve_path(value.get("run_dir", "")) / "controller_state.json"
     state = read_json_object(state_path) if state_path.is_file() else None
-    pid = state.get("pid") if state else value.get("controller_pid")
-    if isinstance(pid, int) and is_process_alive(pid):
+    candidates = {
+        "pointer.controller": value.get("controller_pid"),
+        "state.controller": state.get("pid") if state else None,
+    }
+    observed_by_pid: dict[int, ProcessLiveness] = {}
+    evidence: dict[str, dict[str, int | str]] = {}
+    for label, raw_pid in candidates.items():
+        if (
+            not isinstance(raw_pid, int)
+            or isinstance(raw_pid, bool)
+            or raw_pid <= 0
+        ):
+            continue
+        if raw_pid not in observed_by_pid:
+            observed_by_pid[raw_pid] = process_liveness(raw_pid)
+        evidence[label] = {
+            "pid": raw_pid,
+            "liveness": observed_by_pid[raw_pid].value,
+        }
+    unknown = {
+        label: item
+        for label, item in evidence.items()
+        if item["liveness"] == ProcessLiveness.UNKNOWN.value
+    }
+    if unknown:
         raise PerpetualRuntimeError(
-            f"ACTIVE_CONTROLLER_ALREADY_EXISTS: run_id={value.get('run_id')} pid={pid}"
+            "CONTROLLER_LIVENESS_UNKNOWN_START_BLOCKED: "
+            + json.dumps(
+                {"run_id": value.get("run_id"), "processes": unknown},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+    alive = [
+        item
+        for item in evidence.values()
+        if item["liveness"] == ProcessLiveness.ALIVE.value
+    ]
+    if alive:
+        raise PerpetualRuntimeError(
+            "ACTIVE_CONTROLLER_ALREADY_EXISTS: "
+            f"run_id={value.get('run_id')} pid={alive[0]['pid']}"
         )
 
 
@@ -3899,17 +4858,21 @@ def validate_recovery_identity(config: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def find_live_runtime_processes(
+def find_runtime_process_liveness(
     pointer: Mapping[str, Any],
     state: Mapping[str, Any] | None,
     config: Mapping[str, Any],
-) -> dict[str, int]:
-    """Return every recorded controller/child PID that is still alive."""
+) -> dict[str, dict[str, int | str]]:
+    """Return typed liveness evidence for every valid recorded runtime PID."""
 
     candidates: dict[str, int] = {}
 
     def remember(label: str, raw_pid: object) -> None:
-        if isinstance(raw_pid, int) and raw_pid > 0:
+        if (
+            isinstance(raw_pid, int)
+            and not isinstance(raw_pid, bool)
+            and raw_pid > 0
+        ):
             candidates[label] = raw_pid
 
     remember("pointer.controller", pointer.get("controller_pid"))
@@ -3926,7 +4889,28 @@ def find_live_runtime_processes(
     for record in world_turn_quota_records_for_run(config):
         if record.get("status") == "BOUND":
             remember(f"quota.child.{record['lineage_id']}", record.get("child_pid"))
-    return {label: pid for label, pid in candidates.items() if is_process_alive(pid)}
+    observed_by_pid: dict[int, ProcessLiveness] = {}
+    evidence: dict[str, dict[str, int | str]] = {}
+    for label, pid in candidates.items():
+        if pid not in observed_by_pid:
+            observed_by_pid[pid] = process_liveness(pid)
+        liveness = observed_by_pid[pid]
+        evidence[label] = {"pid": pid, "liveness": liveness.value}
+    return evidence
+
+
+def find_live_runtime_processes(
+    pointer: Mapping[str, Any],
+    state: Mapping[str, Any] | None,
+    config: Mapping[str, Any],
+) -> dict[str, int]:
+    """Compatibility view containing only positively ALIVE recorded PIDs."""
+
+    return {
+        label: int(item["pid"])
+        for label, item in find_runtime_process_liveness(pointer, state, config).items()
+        if item["liveness"] == ProcessLiveness.ALIVE.value
+    }
 
 
 def prepare_reality_migration(args: argparse.Namespace) -> dict[str, Any]:
@@ -3973,7 +4957,22 @@ def prepare_reality_migration(args: argparse.Namespace) -> dict[str, Any]:
             account_slot = validate_recovery_account_slot(
                 config, expected=getattr(args, "expected_account_slot", None)
             )
-            live = find_live_runtime_processes(pointer, state, config)
+            process_evidence = find_runtime_process_liveness(pointer, state, config)
+            unknown = {
+                label: item
+                for label, item in process_evidence.items()
+                if item["liveness"] == ProcessLiveness.UNKNOWN.value
+            }
+            if unknown:
+                raise PerpetualRuntimeError(
+                    "REALITY_MIGRATION_REFUSED_PROCESS_LIVENESS_UNKNOWN: "
+                    + json.dumps(unknown, ensure_ascii=False, sort_keys=True)
+                )
+            live = {
+                label: int(item["pid"])
+                for label, item in process_evidence.items()
+                if item["liveness"] == ProcessLiveness.ALIVE.value
+            }
             if live:
                 raise PerpetualRuntimeError(
                     "REALITY_MIGRATION_REFUSED_LIVE_PROCESSES: "
@@ -4368,6 +5367,25 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     runtime_root = select_runtime_root(args.runtime_root, require_current=False)
     clone_root = resolve_path(args.clone_root)
     account_slot = validate_account_slot(args.account_slot)
+    live_primary = bool(getattr(args, "live_primary", False))
+    activity_seed_source: Path | None = None
+    activity_seed_raw: bytes | None = None
+    activity_seed_text: str | None = None
+    if live_primary:
+        if getattr(args, "activity_seed", None) is None:
+            raise PerpetualRuntimeError("RESEARCH_SOL_ACTIVITY_SEED_REQUIRED")
+        if int(args.width) not in {1, DEFAULT_WIDTH}:
+            raise PerpetualRuntimeError("RESEARCH_SOL_LIVE_PRIMARY_WIDTH_IS_ONE")
+        activity_seed_source = resolve_path(args.activity_seed)
+        if not activity_seed_source.is_file():
+            raise PerpetualRuntimeError(
+                f"RESEARCH_SOL_ACTIVITY_SEED_MISSING:{activity_seed_source}"
+            )
+        activity_seed_raw = activity_seed_source.read_bytes()
+        try:
+            activity_seed_text = activity_seed_raw.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise PerpetualRuntimeError("RESEARCH_SOL_ACTIVITY_SEED_NOT_UTF8") from exc
     if not launcher.is_file():
         raise PerpetualRuntimeError(f"CLEANROOM_LAUNCHER_MISSING: {launcher}")
     if not powershell.is_file():
@@ -4400,6 +5418,11 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     run_dir.mkdir(parents=True)
     clone_run_root.mkdir(parents=True)
     atomic_write_text(run_dir / "cleanroom_prepare_receipt.txt", prepare_receipt)
+    activity_seed_path: Path | None = None
+    activity_seed_sha256: str | None = None
+    if live_primary and activity_seed_raw is not None:
+        activity_seed_path = run_dir / "activity_seed.txt"
+        activity_seed_sha256 = atomic_write_bytes(activity_seed_path, activity_seed_raw)
     source_file = Path(__file__).resolve()
     release_path = run_dir / "controller_release.py"
     shutil.copyfile(source_file, release_path)
@@ -4411,7 +5434,8 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     world_launcher_path = run_dir / "Open-Codex-World-Isolated.ps1"
     branch_specs: list[dict[str, Any]] = []
     setup_receipts: list[dict[str, Any]] = []
-    for index in range(1, int(args.width) + 1):
+    effective_width = 1 if live_primary else int(args.width)
+    for index in range(1, effective_width + 1):
         lineage_id = f"world-{index:02d}"
         workspace = clone_run_root / lineage_id
         clone_receipt = clone_isolated_repo(source_repo, workspace, source["head"])
@@ -4433,8 +5457,12 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     )
     for spec in branch_specs:
         lineage_id = str(spec["lineage_id"])
-        prompt = build_branch_initial_prompt(
-            lineage_id=lineage_id, run_id=run_id, source_head=source["head"]
+        prompt = (
+            activity_seed_text
+            if live_primary and activity_seed_text is not None
+            else build_branch_initial_prompt(
+                lineage_id=lineage_id, run_id=run_id, source_head=source["head"]
+            )
         )
         atomic_write_text(run_dir / "lineages" / lineage_id / "initial_prompt.txt", prompt)
     source_after = validate_source_repo(source_repo)
@@ -4481,12 +5509,28 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     world_launcher = create_world_isolated_launcher(
         launcher,
         world_launcher_path,
+        network_access=True,
         require_runtime_binding=True,
     )
     runtime_binding_release_path = run_dir / "runtime_binding_release.py"
     runtime_binding_release_sha256 = atomic_write_bytes(
         runtime_binding_release_path,
         runtime_binding_source.read_bytes(),
+    )
+    services_root = source_file.parent.parent
+    windows_job_source = services_root / "research_of_research" / "windows_job.py"
+    research_sol_runtime_source = services_root / "research_sol" / "runtime.py"
+    if not windows_job_source.is_file() or not research_sol_runtime_source.is_file():
+        raise PerpetualRuntimeError("RESEARCH_SOL_CARRIER_COMPONENT_MISSING")
+    windows_job_release_path = run_dir / "windows_job_release.py"
+    windows_job_release_sha256 = atomic_write_bytes(
+        windows_job_release_path,
+        windows_job_source.read_bytes(),
+    )
+    research_sol_runtime_release_path = run_dir / "research_sol_runtime_release.py"
+    research_sol_runtime_release_sha256 = atomic_write_bytes(
+        research_sol_runtime_release_path,
+        research_sol_runtime_source.read_bytes(),
     )
     config = {
         "schema": RUN_SCHEMA,
@@ -4515,7 +5559,7 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         "account_slot": account_slot,
         "model": str(args.model),
         "model_reasoning_effort": str(args.model_reasoning_effort),
-        "branch_width": int(args.width),
+        "branch_width": effective_width,
         "branch_lineages": branch_specs,
         "root_lineage": root_spec,
         "watchdog_seconds": int(args.watchdog_seconds),
@@ -4536,6 +5580,22 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         },
         "runtime_binding_release_path": str(runtime_binding_release_path),
         "runtime_binding_release_sha256": runtime_binding_release_sha256,
+        "attempt_job_ownership_required": True,
+        "windows_job_release_path": str(windows_job_release_path),
+        "windows_job_release_sha256": windows_job_release_sha256,
+        "research_sol_runtime_release_path": str(research_sol_runtime_release_path),
+        "research_sol_runtime_release_sha256": research_sol_runtime_release_sha256,
+        "research_sol_live_primary": live_primary,
+        "activity_id": (
+            str(getattr(args, "activity_id", "") or f"research-sol-{run_id}")
+            if live_primary
+            else None
+        ),
+        "activity_seed_source_path": (
+            str(activity_seed_source) if activity_seed_source is not None else None
+        ),
+        "activity_seed_path": str(activity_seed_path) if activity_seed_path is not None else None,
+        "activity_seed_sha256": activity_seed_sha256,
         "reality_migration_manifest_path": migration_result["manifest_path"],
         "reality_migration_manifest_sha256": migration_result["manifest_sha256"],
         "reality_migration_id": migration_result["migration_id"],
@@ -4562,10 +5622,20 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
             "shared_repo_writes_allowed": False,
             "external_capital_or_publication_allowed": False,
             "s_content_steering_allowed": False,
-            "late_fusion_owner": "root-main",
+            "late_fusion_owner": None if live_primary else "root-main",
+            "automatic_model_self_wake_allowed": False if live_primary else None,
             "turn_end_closes_parent": False,
         },
     }
+    if live_primary:
+        runtime_module = _load_research_sol_runtime_module(config)
+        config["research_sol_carrier_envelope"] = runtime_module.build_carrier_envelope(
+            runtime_module.WORLD_LIVE,
+            network_access=True,
+            fresh_session=True,
+            world_surface="LINEAGE_WORLD",
+            output_contract="MECHANICAL_TERMINAL_AND_ARBITRARY_ARTIFACTS",
+        )
     migration_adoption = _compile_runtime_binding_views(
         config=config,
         manifest_path=resolve_path(migration_result["manifest_path"]),
@@ -5758,17 +6828,26 @@ def _validate_attempt_receipt_sources(
         and receipt.get("turn_status") == "turn.completed"
         and receipt.get("exit_code") == 0
     )
+    live_primary = bool(
+        config.get("research_sol_live_primary") is True
+        and str(spec.get("role")) == "independent_world"
+    )
     recovered_success = (
         receipt_error is None
         and receipt.get("recovered_from_incomplete_attempt") is True
         and receipt.get("process_exit_code_observed") is False
         and receipt.get("exit_code") is None
         and receipt.get("inferred_process_success") is True
-        and receipt.get("completion_basis") == "RECOVERED_TURN_COMPLETED_EVENT_AND_LIFECYCLE"
+        and receipt.get("completion_basis")
+        == (
+            "RECOVERED_WORLD_LIVE_TURN_COMPLETED_EVENT"
+            if live_primary
+            else "RECOVERED_TURN_COMPLETED_EVENT_AND_LIFECYCLE"
+        )
         and receipt.get("turn_status") == "turn.completed"
     )
     if normal_success or recovered_success:
-        if lifecycle is None:
+        if lifecycle is None and not live_primary:
             raise PerpetualRuntimeError(
                 f"RECOVERY_TURN_RECEIPT_SUCCESS_WITHOUT_LIFECYCLE: {receipt_path}"
             )
@@ -5785,6 +6864,32 @@ def _validate_attempt_receipt_sources(
                 attempt_number=attempt_number,
                 receipt=receipt,
             )
+        if live_primary:
+            deep_evidence = receipt.get("deep_evidence")
+            artifacts = (
+                deep_evidence.get("artifacts")
+                if isinstance(deep_evidence, Mapping)
+                else None
+            )
+            if not isinstance(artifacts, Mapping):
+                raise PerpetualRuntimeError(
+                    f"RECOVERY_WORLD_LIVE_ARTIFACTS_MISSING: {receipt_path}"
+                )
+            observed_contact, observed_object = _recover_live_contact_cognition_object(
+                config=config,
+                spec=spec,
+                attempt_dir=attempt_dir,
+                turn_number=turn_number,
+                attempt_number=attempt_number,
+                artifacts=artifacts,
+            )
+            if (
+                receipt.get("live_contact") != observed_contact
+                or receipt.get("cognition_object") != observed_object
+            ):
+                raise PerpetualRuntimeError(
+                    f"RECOVERY_WORLD_LIVE_COGNITION_OBJECT_DRIFT: {receipt_path}"
+                )
         if _turn_requires_runtime_binding(
             config,
             lineage_id=str(spec["lineage_id"]),
@@ -5933,6 +7038,7 @@ def _commit_receipt_bearing_attempt_to_state(
     sealed_commits = [*sealed_commits, seal]
     common = {
         "active_pid": None,
+        "turn_phase": "TERMINAL",
         "last_turn_dir": str(turn_dir),
         "recovery_state_commits": sealed_commits,
         "recovery_state_commit_receipt_path": verified["receipt_path"],
@@ -6031,6 +7137,68 @@ def _commit_receipt_bearing_attempt_to_state(
     }
 
 
+def _recover_live_contact_cognition_object(
+    *,
+    config: Mapping[str, Any],
+    spec: Mapping[str, Any],
+    attempt_dir: Path,
+    turn_number: int,
+    attempt_number: int,
+    artifacts: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate the prepared LIVE birth pin and seal the recovered exact tree."""
+
+    lineage_id = str(spec["lineage_id"])
+    live_contact_path = attempt_dir / "live_contact.json"
+    if not live_contact_path.is_file():
+        raise PerpetualRuntimeError("RESEARCH_SOL_LIVE_CONTACT_RECEIPT_MISSING")
+    live_contact = read_json_object(live_contact_path)
+    contact_identity = {
+        "run_id": config["run_id"],
+        "lineage_id": lineage_id,
+        "turn_number": turn_number,
+        "attempt_number": attempt_number,
+    }
+    contact_id = sha256_bytes(canonical_json_bytes(contact_identity)).casefold()
+    if (
+        live_contact.get("contact_id") != contact_id
+        or live_contact.get("contact_identity") != contact_identity
+    ):
+        raise PerpetualRuntimeError("RESEARCH_SOL_LIVE_CONTACT_IDENTITY_DRIFT")
+    module = _load_research_sol_runtime_module(config)
+    module.validate_carrier_envelope(
+        live_contact.get("carrier_envelope", {}),
+        expected_class=module.WORLD_LIVE,
+    )
+    workspace = resolve_path(spec["workspace"])
+    carrier_root = workspace / ".xinao" / "carrier"
+    object_root = carrier_root / "object-store"
+    object_root_value = live_contact.get("object_root")
+    if (
+        not isinstance(object_root_value, str)
+        or resolve_path(object_root_value) != object_root.resolve(strict=False)
+    ):
+        raise PerpetualRuntimeError("RESEARCH_SOL_OBJECT_STORE_IDENTITY_DRIFT")
+    embedded_pin = live_contact.get("world_pin")
+    if not isinstance(embedded_pin, Mapping) or not isinstance(embedded_pin.get("pin_id"), str):
+        raise PerpetualRuntimeError("RESEARCH_SOL_WORLD_PIN_IDENTITY_INVALID")
+    observed_pin = module.validate_world_pin(
+        carrier_root,
+        pin_id=str(embedded_pin["pin_id"]),
+    )
+    if dict(embedded_pin) != observed_pin or observed_pin.get("contact_id") != contact_id:
+        raise PerpetualRuntimeError("RESEARCH_SOL_WORLD_PIN_IDENTITY_DRIFT")
+    cognition_object = module.seal_cognition_object(
+        object_root,
+        artifact_manifest_path=resolve_path(artifacts["path"]),
+        contact_id=contact_id,
+        world_pin_id=str(observed_pin["pin_id"]),
+        lineage_id=lineage_id,
+        turn_id=f"turn-{turn_number:06d}-attempt-{attempt_number:02d}",
+    )
+    return live_contact, cognition_object
+
+
 def reconcile_incomplete_attempts(
     config: Mapping[str, Any], *, recovery_dir: Path
 ) -> dict[str, Any]:
@@ -6043,6 +7211,10 @@ def reconcile_incomplete_attempts(
     quarantined: list[dict[str, Any]] = []
     for spec in [*config["branch_lineages"], config["root_lineage"]]:
         lineage_id = str(spec["lineage_id"])
+        live_primary = bool(
+            config.get("research_sol_live_primary") is True
+            and str(spec.get("role")) == "independent_world"
+        )
         lineage_dir = run_dir / "lineages" / lineage_id
         state_path = lineage_dir / "state.json"
         state = read_json_object(state_path)
@@ -6118,11 +7290,12 @@ def reconcile_incomplete_attempts(
         )
         mechanically_complete = (
             terminal_events == ["turn.completed"]
-            and lifecycle is not None
+            and (lifecycle is not None or live_primary)
             and message_path.is_file()
             and all(path.is_file() for path in required)
             and source_identity["stdout_ends_newline"] is True
             and not body_incidents
+            and (not live_primary or (attempt_dir / "live_contact.json").is_file())
         )
         attempt_number_match = re.fullmatch(r"attempt-(\d+)", attempt_dir.name)
         if attempt_number_match is None:
@@ -6141,47 +7314,70 @@ def reconcile_incomplete_attempts(
         trajectory: dict[str, Any] | None = None
         artifacts: dict[str, Any] | None = None
         runtime_binding_reference: dict[str, Any] | None = None
+        live_contact: dict[str, Any] | None = None
+        cognition_object: dict[str, Any] | None = None
         evidence_errors: list[str] = []
-        if mechanically_complete:
+        if stdout_path.is_file():
             try:
                 trajectory = build_trajectory_index(
                     stdout_path, attempt_dir / "trajectory_index.jsonl"
                 )
             except (FileNotFoundError, PermissionError, OSError, PerpetualRuntimeError) as exc:
                 evidence_errors.append(f"TRAJECTORY_INDEX:{type(exc).__name__}")
-            if evidence_required:
-                try:
-                    artifacts = capture_workspace_artifacts(
-                        workspace=resolve_path(spec["workspace"]),
-                        run_id=str(config["run_id"]),
-                        source_head=str(config["source_head"]),
-                        run_dir=run_dir,
-                        lineage_id=lineage_id,
-                        turn_number=turn_number,
-                        attempt_number=attempt_number,
-                        manifest_path=attempt_dir / "artifact_manifest.json",
-                    )
-                    if artifacts.get("complete") is not True:
-                        evidence_errors.append("ARTIFACT_MANIFEST:INCOMPLETE")
-                except (
-                    FileNotFoundError,
-                    PermissionError,
-                    OSError,
-                    PerpetualRuntimeError,
-                ) as exc:
-                    evidence_errors.append(f"ARTIFACT_MANIFEST:{type(exc).__name__}")
-            if runtime_binding_required:
-                try:
-                    runtime_binding_reference = _validate_attempt_runtime_binding(
-                        config=config,
-                        spec=spec,
-                        attempt_dir=attempt_dir,
-                        turn_number=turn_number,
-                        attempt_number=attempt_number,
-                        receipt=None,
-                    )
-                except PerpetualRuntimeError as exc:
-                    evidence_errors.append("RUNTIME_BINDING:" + str(exc).split(":", 1)[0])
+        if evidence_required or config.get("attempt_job_ownership_required") is True:
+            try:
+                artifacts = capture_workspace_artifacts(
+                    workspace=resolve_path(spec["workspace"]),
+                    run_id=str(config["run_id"]),
+                    source_head=str(config["source_head"]),
+                    run_dir=run_dir,
+                    lineage_id=lineage_id,
+                    turn_number=turn_number,
+                    attempt_number=attempt_number,
+                    manifest_path=attempt_dir / "artifact_manifest.json",
+                    local_arbitrary_objects=(
+                        config.get("research_sol_live_primary") is True
+                    ),
+                )
+                if artifacts.get("complete") is not True:
+                    evidence_errors.append("ARTIFACT_MANIFEST:INCOMPLETE")
+            except (
+                FileNotFoundError,
+                PermissionError,
+                OSError,
+                PerpetualRuntimeError,
+            ) as exc:
+                evidence_errors.append(f"ARTIFACT_MANIFEST:{type(exc).__name__}")
+        if mechanically_complete and runtime_binding_required:
+            try:
+                runtime_binding_reference = _validate_attempt_runtime_binding(
+                    config=config,
+                    spec=spec,
+                    attempt_dir=attempt_dir,
+                    turn_number=turn_number,
+                    attempt_number=attempt_number,
+                    receipt=None,
+                )
+            except PerpetualRuntimeError as exc:
+                evidence_errors.append("RUNTIME_BINDING:" + str(exc).split(":", 1)[0])
+        if (
+            mechanically_complete
+            and live_primary
+            and artifacts is not None
+            and artifacts.get("complete") is True
+        ):
+            try:
+                live_contact, cognition_object = _recover_live_contact_cognition_object(
+                    config=config,
+                    spec=spec,
+                    attempt_dir=attempt_dir,
+                    turn_number=turn_number,
+                    attempt_number=attempt_number,
+                    artifacts=artifacts,
+                )
+            except Exception as exc:
+                code = getattr(exc, "reason_code", type(exc).__name__)
+                evidence_errors.append(f"COGNITION_OBJECT:{code}")
         evidence_available = (
             trajectory is not None
             and artifacts is not None
@@ -6193,6 +7389,7 @@ def reconcile_incomplete_attempts(
             and trajectory is not None
             and (not evidence_required or evidence_available)
             and (not runtime_binding_required or runtime_binding_reference is not None)
+            and (not live_primary or cognition_object is not None)
         )
         if can_finalize:
             command = (
@@ -6220,7 +7417,11 @@ def reconcile_incomplete_attempts(
                 "exit_code": None,
                 "process_exit_code_observed": False,
                 "inferred_process_success": True,
-                "completion_basis": "RECOVERED_TURN_COMPLETED_EVENT_AND_LIFECYCLE",
+                "completion_basis": (
+                    "RECOVERED_WORLD_LIVE_TURN_COMPLETED_EVENT"
+                    if live_primary
+                    else "RECOVERED_TURN_COMPLETED_EVENT_AND_LIFECYCLE"
+                ),
                 "stopped": False,
                 "timed_out": False,
                 "session_id_before": command.get("resume_session_id"),
@@ -6244,10 +7445,24 @@ def reconcile_incomplete_attempts(
                     "trajectory": trajectory,
                     "artifacts": artifacts,
                     "errors": (
-                        [] if evidence_available else ["ARTIFACT_MANIFEST:LEGACY_TURN_NOT_REQUIRED"]
+                        []
+                        if evidence_available
+                        else (
+                            evidence_errors
+                            or ["ARTIFACT_MANIFEST:LEGACY_TURN_NOT_REQUIRED"]
+                        )
                     ),
                 },
                 "runtime_binding": runtime_binding_reference,
+                "carrier_job": (
+                    read_json_object(attempt_dir / "carrier_job.json")
+                    if (attempt_dir / "carrier_job.json").is_file()
+                    else state.get("carrier_job")
+                ),
+                "carrier_terminal_observation": state.get("carrier_terminal_observation"),
+                "live_contact": live_contact,
+                "cognition_object": cognition_object,
+                "cognition_object_error": None,
                 "recovered_from_incomplete_attempt": True,
                 "recovery_source_identity": source_identity,
             }
@@ -6255,6 +7470,7 @@ def reconcile_incomplete_attempts(
             state.update(
                 {
                     "status": "TURN_COMPLETED_RECOVERED",
+                    "turn_phase": "TERMINAL",
                     "turns_completed": turn_number,
                     "lifecycle_state": lifecycle,
                     "session_id": receipt["session_id_observed"],
@@ -6316,6 +7532,10 @@ def reconcile_incomplete_attempts(
             "evidence_required": evidence_required,
             "runtime_binding_required": runtime_binding_required,
             "evidence_errors": evidence_errors,
+            "terminal_evidence": {
+                "trajectory": trajectory,
+                "artifacts": artifacts,
+            },
             "observed_at": now_iso(),
         }
         disposition_path = attempt_dir / "recovery_disposition.json"
@@ -6338,6 +7558,7 @@ def reconcile_incomplete_attempts(
                 "evidence_required",
                 "runtime_binding_required",
                 "evidence_errors",
+                "terminal_evidence",
             )
             if any(
                 existing_disposition.get(field) != disposition.get(field)
@@ -6353,6 +7574,7 @@ def reconcile_incomplete_attempts(
         state.update(
             {
                 "status": parked_status,
+                "turn_phase": "TERMINAL",
                 "active_pid": None,
                 "last_error_class": last_error_class,
                 "last_error": reason,
@@ -6577,6 +7799,7 @@ def _seal_repaired_controller_release(
     isolated_launcher = create_world_isolated_launcher(
         launcher_source,
         isolated_launcher_path,
+        network_access=True,
         require_runtime_binding=runtime_binding_required,
     )
     runtime_binding_release_path: Path | None = None
@@ -6601,6 +7824,31 @@ def _seal_repaired_controller_release(
                 )
         else:
             atomic_write_bytes(runtime_binding_release_path, runtime_binding_raw)
+    services_root = current_source.parent.parent
+    frozen_components: dict[str, tuple[Path, str]] = {}
+    for component_name, component_source in (
+        ("windows-job", services_root / "research_of_research" / "windows_job.py"),
+        ("research-sol-runtime", services_root / "research_sol" / "runtime.py"),
+    ):
+        if not component_source.is_file():
+            raise PerpetualRuntimeError(f"RESEARCH_SOL_CARRIER_COMPONENT_MISSING:{component_name}")
+        component_raw = component_source.read_bytes()
+        component_sha256 = sha256_bytes(component_raw)
+        component_path = (
+            release_dir
+            / f"recovery-{generation:06d}-{component_name}-{component_sha256[:12].lower()}.py"
+        )
+        if component_path.exists():
+            if (
+                not component_path.is_file()
+                or sha256_file(component_path) != component_sha256
+            ):
+                raise PerpetualRuntimeError(
+                    f"RESEARCH_SOL_CARRIER_COMPONENT_COLLISION:{component_path}"
+                )
+        else:
+            atomic_write_bytes(component_path, component_raw)
+        frozen_components[component_name] = (component_path, component_sha256)
     raw_history = config.get("controller_release_history")
     if raw_history is None:
         history: list[dict[str, Any]] = [
@@ -6688,6 +7936,15 @@ def _seal_repaired_controller_release(
             ),
             "world_turn_concurrency_limit": DEFAULT_WORLD_TURN_CONCURRENCY_LIMIT,
             "world_turn_quota_root": str(DEFAULT_WORLD_TURN_QUOTA_ROOT),
+            "attempt_job_ownership_required": True,
+            "windows_job_release_path": str(frozen_components["windows-job"][0]),
+            "windows_job_release_sha256": frozen_components["windows-job"][1],
+            "research_sol_runtime_release_path": str(
+                frozen_components["research-sol-runtime"][0]
+            ),
+            "research_sol_runtime_release_sha256": frozen_components[
+                "research-sol-runtime"
+            ][1],
             "body_boundary": {
                 "schema": WORLD_ISOLATED_LAUNCHER_SCHEMA,
                 "sandbox_mode": "workspace-write",
@@ -6775,7 +8032,22 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
                 config,
                 expected=getattr(args, "expected_account_slot", None),
             )
-            live = find_live_runtime_processes(pointer, state, config)
+            process_evidence = find_runtime_process_liveness(pointer, state, config)
+            unknown = {
+                label: item
+                for label, item in process_evidence.items()
+                if item["liveness"] == ProcessLiveness.UNKNOWN.value
+            }
+            if unknown:
+                raise PerpetualRuntimeError(
+                    "RECOVERY_REFUSED_PROCESS_LIVENESS_UNKNOWN: "
+                    + json.dumps(unknown, ensure_ascii=False, sort_keys=True)
+                )
+            live = {
+                label: int(item["pid"])
+                for label, item in process_evidence.items()
+                if item["liveness"] == ProcessLiveness.ALIVE.value
+            }
             if live:
                 raise PerpetualRuntimeError(
                     "RECOVERY_REFUSED_LIVE_PROCESSES: "
@@ -6954,9 +8226,15 @@ def status_runtime(args: argparse.Namespace) -> dict[str, Any]:
     runtime_root = select_runtime_root(args.runtime_root, require_current=True)
     pointer, state = load_current(runtime_root)
     pid = state.get("pid") if state else pointer.get("controller_pid")
+    liveness = process_liveness(
+        pid
+        if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+        else None
+    )
     return {
         "pointer": pointer,
-        "controller_alive": is_process_alive(pid if isinstance(pid, int) else None),
+        "controller_alive": liveness == ProcessLiveness.ALIVE,
+        "controller_liveness": liveness.value,
         "controller_state": state,
     }
 
@@ -6980,23 +8258,61 @@ def stop_runtime(args: argparse.Namespace) -> dict[str, Any]:
                 "account_slot": account_slot,
             },
         )
-    pid = state.get("pid") if state else pointer.get("controller_pid")
+    raw_pid = state.get("pid") if state else pointer.get("controller_pid")
+    pid = (
+        raw_pid
+        if isinstance(raw_pid, int) and not isinstance(raw_pid, bool) and raw_pid > 0
+        else None
+    )
     deadline = time.monotonic() + float(args.wait_seconds)
-    while isinstance(pid, int) and is_process_alive(pid) and time.monotonic() < deadline:
+    controller_liveness = process_liveness(pid)
+    while (
+        pid is not None
+        and controller_liveness != ProcessLiveness.DEAD
+        and time.monotonic() < deadline
+    ):
         time.sleep(0.5)
+        controller_liveness = process_liveness(pid)
     state_path = run_dir / "controller_state.json"
     final_state = read_json_object(state_path) if state_path.is_file() else state
-    controller_alive = is_process_alive(pid if isinstance(pid, int) else None)
-    active_children = {
-        str(lineage_id): int(child_pid)
-        for lineage_id, child_pid in dict((final_state or {}).get("active_processes", {})).items()
-        if isinstance(child_pid, int) and is_process_alive(child_pid)
+    process_evidence = find_runtime_process_liveness(pointer, final_state, config)
+    unknown = {
+        label: item
+        for label, item in process_evidence.items()
+        if item["liveness"] == ProcessLiveness.UNKNOWN.value
     }
-    if controller_alive or active_children:
+    live_evidence = {
+        label: item
+        for label, item in process_evidence.items()
+        if item["liveness"] == ProcessLiveness.ALIVE.value
+    }
+    if unknown:
+        raise PerpetualRuntimeError(
+            "STOP_PROCESS_LIVENESS_UNKNOWN: "
+            + json.dumps(
+                {"unknown": unknown, "alive": live_evidence},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+    if live_evidence:
+        controller_pids = [
+            int(item["pid"])
+            for label, item in live_evidence.items()
+            if label in {"pointer.controller", "state.controller"}
+        ]
+        active_children = {
+            label: int(item["pid"])
+            for label, item in live_evidence.items()
+            if label not in {"pointer.controller", "state.controller"}
+        }
         raise PerpetualRuntimeError(
             "STOP_INCOMPLETE_ACTIVE_PROCESSES: "
             + json.dumps(
-                {"controller_pid": pid if controller_alive else None, "children": active_children},
+                {
+                    "controller_pid": controller_pids[0] if controller_pids else None,
+                    "children": active_children,
+                },
                 ensure_ascii=False,
                 sort_keys=True,
             )
@@ -7005,6 +8321,8 @@ def stop_runtime(args: argparse.Namespace) -> dict[str, Any]:
         "run_id": pointer.get("run_id"),
         "stop_request": str(stop_path),
         "controller_alive": False,
+        "controller_liveness": ProcessLiveness.DEAD.value,
+        "process_liveness": process_evidence,
         "previous_state": state,
         "final_state": final_state,
     }
@@ -7065,6 +8383,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_XINAO_WORLD_COMPUTE_ROOT,
     )
     start.add_argument("--run-id")
+    start.add_argument(
+        "--live-primary",
+        action="store_true",
+        help=(
+            "run one fresh-session Research Sol contact in one persistent lineage; "
+            "later contacts require an explicit wake"
+        ),
+    )
+    start.add_argument(
+        "--activity-seed",
+        type=Path,
+        help="exact current human-appointed activity bytes for --live-primary",
+    )
+    start.add_argument("--activity-id", help="stable activity identity for --live-primary")
     start.add_argument("--width", type=int, default=DEFAULT_WIDTH, choices=range(1, 9))
     start.add_argument("--model", default=DEFAULT_MODEL)
     start.add_argument("--model-reasoning-effort", default=DEFAULT_REASONING_EFFORT)

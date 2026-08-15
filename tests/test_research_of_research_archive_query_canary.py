@@ -680,6 +680,15 @@ def test_builder_freeze_run_prepare_and_assess_instrument_pilot(
             },
         )
     monkeypatch.setattr(cell_module, "is_process_alive", lambda pid: pid == 555)
+    monkeypatch.setattr(
+        cell_module,
+        "process_liveness",
+        lambda pid: (
+            cell_module.ProcessLiveness.ALIVE
+            if pid == 555
+            else cell_module.ProcessLiveness.DEAD
+        ),
+    )
     monkeypatch.setattr(cell_module, "_validate_workspace_root", lambda path: path.resolve())
 
     class FakeProcess:

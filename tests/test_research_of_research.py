@@ -14,6 +14,7 @@ from services.research_of_research.cell import (
     validate_runtime_root,
     verify_cell,
 )
+from services.xinao_perpetual_world_compute.controller import ProcessLiveness
 
 
 def _write_spec(tmp_path: Path, *, sentinel: str = "withheld-only-phrase") -> Path:
@@ -190,7 +191,11 @@ def test_runtime_root_rejects_unlisted_perpetual_runtime() -> None:
 def test_account_quota_claim_bind_release_is_schema_compatible(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cell_module, "is_process_alive", lambda _pid: False)
+    monkeypatch.setattr(
+        cell_module,
+        "process_liveness",
+        lambda _pid: ProcessLiveness.DEAD,
+    )
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     quota = AccountQuota(

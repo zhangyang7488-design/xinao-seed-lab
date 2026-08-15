@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from services.research_sol import runtime as research_sol_runtime
 from services.xinao_perpetual_world_compute.controller import (
     LEGACY_PACKET_SCHEMA,
     LEGACY_RUN_SCHEMA,
@@ -20,6 +21,7 @@ from services.xinao_perpetual_world_compute.controller import (
     WAKE_SCHEMA,
     PerpetualController,
     PerpetualRuntimeError,
+    ProcessLiveness,
     _build_attempt_runtime_binding,
     _compile_runtime_binding_views,
     _deep_evidence_exclusion_reason,
@@ -30,6 +32,7 @@ from services.xinao_perpetual_world_compute.controller import (
     _validate_existing_runtime_binding_identity,
     _validate_frozen_logical_root_identity,
     _validate_recovery_pointer,
+    build_attempt_job_identity,
     build_branch_initial_prompt,
     build_codex_arguments,
     build_codex_command,
@@ -926,7 +929,7 @@ def test_world_launcher_enforces_workspace_write_without_changing_shared_launche
     source.write_bytes(original)
     destination = tmp_path / "run" / "Open-Codex-World-Isolated.ps1"
 
-    receipt = create_world_isolated_launcher(source, destination)
+    receipt = create_world_isolated_launcher(source, destination, network_access=True)
 
     assert source.read_bytes() == original
     isolated = destination.read_text(encoding="utf-8")
@@ -947,7 +950,7 @@ def test_frozen_world_launcher_does_not_depend_on_later_source_launcher_bytes(
     )
     run_dir = tmp_path / "run"
     destination = run_dir / "Open-Codex-World-Isolated.ps1"
-    receipt = create_world_isolated_launcher(source, destination)
+    receipt = create_world_isolated_launcher(source, destination, network_access=True)
     config = {
         "run_dir": str(run_dir),
         "launcher_path": str(destination),
@@ -986,7 +989,7 @@ def test_live_cleanroom_launcher_freezes_to_valid_world_isolated_powershell(
     if not source.is_file() or not powershell.is_file():
         pytest.skip("live Windows clean-room launcher is not present")
     destination = tmp_path / "Open-Codex-World-Isolated.ps1"
-    create_world_isolated_launcher(source, destination)
+    create_world_isolated_launcher(source, destination, network_access=True)
     quoted_destination = str(destination).replace("'", "''")
     parser_command = (
         "$t=$null;$e=$null;"
@@ -1024,6 +1027,7 @@ def test_live_cleanroom_launcher_freezes_mandatory_runtime_binding_surface(
     receipt = create_world_isolated_launcher(
         source,
         destination,
+        network_access=True,
         require_runtime_binding=True,
     )
     raw = destination.read_bytes()
@@ -1143,6 +1147,7 @@ def test_windows_powershell_runtime_binding_reloads_codex_args_as_flat_array(
     generated = create_world_isolated_launcher(
         Path(r"E:\CODEX_CLEANROOM\Open-Codex-Cleanroom.ps1"),
         tmp_path / "Open-Codex-World-Bound.ps1",
+        network_access=True,
         require_runtime_binding=True,
     )
     assert generated["runtime_binding_required"] is True
@@ -2128,6 +2133,121 @@ def test_provider_policy_park_sets_blocked_lifecycle(
     assert controller._lineage_states[lineage_id]["lifecycle_state"] == "BLOCKED"
 
 
+def test_wait_parked_consumes_and_projects_exact_wake_receipt(tmp_path: Path) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    lineage_id = "world-01"
+    wake_path = controller._wake_path(lineage_id)
+    wake_path.parent.mkdir(parents=True, exist_ok=True)
+    wake_path.write_text(
+        json.dumps(
+            {
+                "schema": controller.schemas["wake"],
+                "requested_at": "2026-08-15T09:00:00+00:00",
+                "lineage_id": lineage_id,
+                "reason": "new external reality",
+                "account_slot": controller.config["account_slot"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert controller._wait_parked(lineage_id, "PARKED_FOR_EXTERNAL_WAKE") is True
+    trigger = controller._lineage_states[lineage_id]["last_consumed_wake"]
+    assert trigger["sha256"] == sha256_file(Path(trigger["path"])).casefold()
+    assert trigger["payload"]["reason"] == "new external reality"
+    assert not wake_path.exists()
+
+
+def test_prepared_contact_wake_is_not_replayed_after_restart(tmp_path: Path) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    controller.config["research_sol_live_primary"] = True
+    lineage_id = "world-01"
+    receipt = controller.lineage_dir(lineage_id) / "wake-receipts" / "wake.json"
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema": controller.schemas["wake"],
+                "requested_at": "2026-08-15T09:00:00+00:00",
+                "lineage_id": lineage_id,
+                "reason": "new external reality",
+                "account_slot": controller.config["account_slot"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    identity = controller._wake_receipt_identity(lineage_id, receipt)
+    live_contact_path = (
+        controller.lineage_dir(lineage_id)
+        / "turns"
+        / "turn-000001"
+        / "attempt-01"
+        / "live_contact.json"
+    )
+    live_contact_path.parent.mkdir(parents=True, exist_ok=True)
+    live_contact_path.write_text(
+        json.dumps({"contact_trigger": identity}), encoding="utf-8"
+    )
+    controller._shutdown.set()
+
+    assert controller._wait_parked(lineage_id, "PARKED_FOR_EXTERNAL_WAKE") is False
+    assert controller._lineage_states[lineage_id]["status"] == "PARKED_FOR_EXTERNAL_WAKE"
+
+
+def test_live_primary_recovers_wake_moved_before_state_projection(tmp_path: Path) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    controller.config["research_sol_live_primary"] = True
+    lineage_id = "world-01"
+    receipt = controller.lineage_dir(lineage_id) / "wake-receipts" / "wake.json"
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema": controller.schemas["wake"],
+                "requested_at": "2026-08-15T09:00:00+00:00",
+                "lineage_id": lineage_id,
+                "reason": "new external reality",
+                "account_slot": controller.config["account_slot"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert controller._wait_parked(lineage_id, "PARKED_FOR_EXTERNAL_WAKE") is True
+    state = controller._lineage_states[lineage_id]
+    assert state["status"] == "WOKEN"
+    assert state["last_consumed_wake"]["path"] == str(receipt.resolve())
+
+
+def test_live_primary_restart_requires_wake_after_initial_contact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    controller.config["research_sol_live_primary"] = True
+    controller._lineage_states["world-01"].update(
+        {
+            "initial_contact_admitted": True,
+            "status": "TURN_COMPLETED",
+            "turns_completed": 1,
+        }
+    )
+    parked: list[tuple[str, str]] = []
+
+    def fake_wait(lineage_id: str, status: str) -> bool:
+        parked.append((lineage_id, status))
+        return False
+
+    monkeypatch.setattr(controller, "_wait_parked", fake_wait)
+    monkeypatch.setattr(
+        controller,
+        "execute_turn",
+        lambda **_kwargs: pytest.fail("restart without a wake must not start cognition"),
+    )
+
+    controller.branch_loop(branches[0])
+    assert parked == [("world-01", "PARKED_FOR_EXTERNAL_WAKE")]
+
+
 @pytest.mark.parametrize("error_class", ["BODY_INCIDENT", "EVIDENCE_INCIDENT"])
 def test_root_recovery_preserves_incident_class_while_parked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_class: str
@@ -2201,13 +2321,21 @@ def test_recovery_rejects_live_recorded_children_and_clears_dead_ones(
     controller, _, _ = make_test_controller(tmp_path, branch_count=1)
     controller._lineage_states["world-01"]["active_pid"] = 12345
     controller_module = __import__(
-        "services.xinao_perpetual_world_compute.controller", fromlist=["is_process_alive"]
+        "services.xinao_perpetual_world_compute.controller", fromlist=["process_liveness"]
     )
-    monkeypatch.setattr(controller_module, "is_process_alive", lambda pid: pid == 12345)
+    monkeypatch.setattr(
+        controller_module,
+        "process_liveness",
+        lambda pid: ProcessLiveness.ALIVE if pid == 12345 else ProcessLiveness.DEAD,
+    )
     with pytest.raises(PerpetualRuntimeError, match="ORPHAN_CHILDREN_ALIVE_BEFORE_RECOVERY"):
         controller.reject_live_orphaned_children()
 
-    monkeypatch.setattr(controller_module, "is_process_alive", lambda _pid: False)
+    monkeypatch.setattr(
+        controller_module,
+        "process_liveness",
+        lambda _pid: ProcessLiveness.DEAD,
+    )
     controller.reject_live_orphaned_children()
     assert controller._lineage_states["world-01"]["active_pid"] is None
     persisted = json.loads(controller.lineage_state_path("world-01").read_text(encoding="utf-8"))
@@ -2297,6 +2425,122 @@ def test_reconcile_incomplete_attempts_finalizes_only_unambiguous_completed_turn
     assert state["turns_completed"] == 1
     assert state["session_id"] == "session-recovered"
     assert state["lifecycle_state"] == "WAIT"
+
+
+def test_world_live_recovery_without_lifecycle_seals_exact_cognition_object(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    git(source, "init")
+    git(source, "config", "user.email", "live-recovery@example.invalid")
+    git(source, "config", "user.name", "Live Recovery")
+    (source / "AGENTS.md").write_text("Recover the exact live world.\n", encoding="utf-8")
+    git(source, "add", "AGENTS.md")
+    git(source, "commit", "-m", "seed")
+    head = git(source, "rev-parse", "HEAD")
+    workspace = tmp_path / "world-01"
+    subprocess.run(
+        ["git", "clone", "--quiet", "--no-local", str(source), str(workspace)],
+        check=True,
+    )
+    git(workspace, "remote", "remove", "origin")
+    root_workspace = tmp_path / "root-main"
+    root_workspace.mkdir()
+    run_dir = tmp_path / "run"
+    activity_seed = run_dir / "activity_seed.txt"
+    activity_seed.parent.mkdir(parents=True)
+    activity_seed.write_text("Continue the exact current activity.\n", encoding="utf-8")
+    runtime_path = Path("services/research_sol/runtime.py").resolve()
+    branch = {
+        "lineage_id": "world-01",
+        "role": "independent_world",
+        "workspace": str(workspace),
+    }
+    config = {
+        "schema": RUN_SCHEMA,
+        "account_slot": "C",
+        "run_id": "world-live-recovery",
+        "run_dir": str(run_dir),
+        "source_repo": str(source),
+        "source_head": head,
+        "branch_lineages": [branch],
+        "root_lineage": {
+            "lineage_id": "root-main",
+            "role": "late_fusion_root",
+            "workspace": str(root_workspace),
+        },
+        "controller_python": sys.executable,
+        "launcher_sha256": "a" * 64,
+        "research_sol_live_primary": True,
+        "activity_id": "activity-live-recovery",
+        "activity_seed_path": str(activity_seed),
+        "activity_seed_sha256": sha256_file(activity_seed),
+        "runtime_binding_views": {"world-01": {"private_live_root": "fixture"}},
+        "reality_migration_id": "migration-fixture",
+        "attempt_job_ownership_required": True,
+        "deep_evidence_required": True,
+        "deep_evidence_required_from_turn": {"world-01": 1},
+        "research_sol_runtime_release_path": str(runtime_path),
+        "research_sol_runtime_release_sha256": sha256_file(runtime_path),
+        "world_turn_quota_root": str(tmp_path / "quota"),
+        "continuation_delay_seconds": 0,
+        "park_poll_seconds": 0,
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    controller = PerpetualController(config_path)
+    attempt = controller.lineage_dir("world-01") / "turns" / "turn-000001" / "attempt-01"
+    attempt.mkdir(parents=True)
+    prompt, _contact = controller._prepare_live_contact(
+        spec=branch,
+        attempt_dir=attempt,
+        turn_number=1,
+        attempt_number=1,
+    )
+    research_objects = workspace / "RESEARCH_OBJECTS"
+    research_objects.mkdir()
+    (research_objects / "relation.bin").write_bytes(b"recovered\x00exact\xfftree")
+    (attempt / "prompt.txt").write_text(prompt, encoding="utf-8")
+    (attempt / "exec_stderr.txt").write_text("", encoding="utf-8")
+    (attempt / "last_message.txt").write_text(
+        "world contact ended without a lifecycle command\n", encoding="utf-8"
+    )
+    (attempt / "command.json").write_text(
+        json.dumps({"resume_session_id": None}), encoding="utf-8"
+    )
+    (attempt / "exec_stdout.jsonl").write_text(
+        json.dumps({"type": "thread.started", "thread_id": "fresh-recovered"})
+        + "\n"
+        + json.dumps({"type": "turn.completed", "usage": {}})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    first = reconcile_incomplete_attempts(
+        config,
+        recovery_dir=run_dir / "recovery" / "first",
+    )
+    second = reconcile_incomplete_attempts(
+        config,
+        recovery_dir=run_dir / "recovery" / "second",
+    )
+
+    assert len(first["completed"]) == 1
+    assert second["completed"] == []
+    receipt = json.loads((attempt / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["completion_basis"] == "RECOVERED_WORLD_LIVE_TURN_COMPLETED_EVENT"
+    assert receipt["lifecycle_state"] is None
+    assert receipt["cognition_object"]["file_count"] == 1
+    opened = research_sol_runtime.open_cognition_object(
+        workspace / ".xinao" / "carrier" / "object-store",
+        object_id=receipt["cognition_object"]["object_id"],
+        contact_id="later-contact",
+        world_pin_id="later-pin",
+        requested_paths=["RESEARCH_OBJECTS/relation.bin"],
+        destination_root=tmp_path / "opened",
+    )
+    assert Path(opened["opened"][0]["destination"]).read_bytes() == b"recovered\x00exact\xfftree"
 
 
 def test_reconcile_incomplete_attempts_quarantines_failed_turn_in_place(
@@ -2586,10 +2830,14 @@ def test_world_turn_quota_remains_bound_when_controller_dies_but_child_lives(
         controller.config["world_turn_quota_root"] = str(quota_root)
     controller_module = __import__(
         "services.xinao_perpetual_world_compute.controller",
-        fromlist=["is_process_alive"],
+        fromlist=["process_liveness"],
     )
     live_pids = {4242}
-    monkeypatch.setattr(controller_module, "is_process_alive", lambda pid: pid in live_pids)
+    monkeypatch.setattr(
+        controller_module,
+        "process_liveness",
+        lambda pid: ProcessLiveness.ALIVE if pid in live_pids else ProcessLiveness.DEAD,
+    )
 
     lease = first.try_reserve_world_turn_quota(first_branches[0])
     assert lease is not None
@@ -2625,8 +2873,12 @@ def test_world_turn_quota_is_not_recycled_while_owner_is_releasing_dead_child(
     assert lease is not None
     first.bind_world_turn_quota_child(first_branches[0], child_pid=4242)
     monkeypatch.setattr(
-        "services.xinao_perpetual_world_compute.controller.is_process_alive",
-        lambda pid: pid == lease["controller_pid"],
+        "services.xinao_perpetual_world_compute.controller.process_liveness",
+        lambda pid: (
+            ProcessLiveness.ALIVE
+            if pid == lease["controller_pid"]
+            else ProcessLiveness.DEAD
+        ),
     )
 
     # The child has exited, but the owner is still alive and has not run its
@@ -2645,8 +2897,8 @@ def test_recovery_liveness_reads_bound_child_from_durable_quota_record(
     controller.config["world_turn_concurrency_limit"] = 1
     controller.config["world_turn_quota_root"] = str(tmp_path / "quota")
     monkeypatch.setattr(
-        "services.xinao_perpetual_world_compute.controller.is_process_alive",
-        lambda pid: pid == 4242,
+        "services.xinao_perpetual_world_compute.controller.process_liveness",
+        lambda pid: ProcessLiveness.ALIVE if pid == 4242 else ProcessLiveness.DEAD,
     )
 
     lease = controller.try_reserve_world_turn_quota(branches[0])
@@ -3483,7 +3735,7 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     monkeypatch.setattr(
         controller_module, "validate_recovery_identity", lambda _config: {"ok": True}
     )
-    monkeypatch.setattr(controller_module, "find_live_runtime_processes", lambda *_args: {})
+    monkeypatch.setattr(controller_module, "find_runtime_process_liveness", lambda *_args: {})
     fake_process = SimpleNamespace(pid=4321, poll=lambda: None)
     monkeypatch.setattr(
         controller_module,
@@ -3666,7 +3918,7 @@ def test_prepare_reality_migration_is_offline_per_run_and_preserves_control_stat
         "services.xinao_perpetual_world_compute.controller",
         fromlist=["prepare_reality_migration"],
     )
-    monkeypatch.setattr(controller_module, "find_live_runtime_processes", lambda *_args: {})
+    monkeypatch.setattr(controller_module, "find_runtime_process_liveness", lambda *_args: {})
     monkeypatch.setattr(
         controller_module,
         "validate_pinned_source_commit",
@@ -3766,8 +4018,13 @@ def test_prepare_reality_migration_rejects_live_child_before_copy(
     )
     monkeypatch.setattr(
         controller_module,
-        "find_live_runtime_processes",
-        lambda *_args: {"lineage.child.world-01": 4455},
+        "find_runtime_process_liveness",
+        lambda *_args: {
+            "lineage.child.world-01": {
+                "pid": 4455,
+                "liveness": ProcessLiveness.ALIVE.value,
+            }
+        },
     )
     world_compute_base = tmp_path / "world-compute"
 
@@ -3820,9 +4077,15 @@ def test_stop_runtime_fails_closed_when_controller_or_child_survives(
         encoding="utf-8",
     )
     controller_module = __import__(
-        "services.xinao_perpetual_world_compute.controller", fromlist=["is_process_alive"]
+        "services.xinao_perpetual_world_compute.controller", fromlist=["process_liveness"]
     )
-    monkeypatch.setattr(controller_module, "is_process_alive", lambda pid: pid in {111, 222})
+    monkeypatch.setattr(
+        controller_module,
+        "process_liveness",
+        lambda pid: (
+            ProcessLiveness.ALIVE if pid in {111, 222} else ProcessLiveness.DEAD
+        ),
+    )
     args = SimpleNamespace(runtime_root=runtime_root, reason="test", wait_seconds=0)
     with pytest.raises(PerpetualRuntimeError, match="STOP_INCOMPLETE_ACTIVE_PROCESSES"):
         stop_runtime(args)
@@ -3927,3 +4190,550 @@ def test_execute_turn_streams_session_and_accepts_explicit_continue(
     assert state["session_id"] == "session-live"
     assert state["turns_completed"] == 1
     assert state["status"] == "TURN_COMPLETED"
+
+
+def test_attempt_job_identity_is_deterministic_and_attempt_scoped(tmp_path: Path) -> None:
+    controller, _branches, _root = make_test_controller(tmp_path)
+    first = build_attempt_job_identity(
+        controller.config,
+        lineage_id="world-01",
+        turn_number=3,
+        attempt_number=2,
+    )
+    repeated = build_attempt_job_identity(
+        controller.config,
+        lineage_id="world-01",
+        turn_number=3,
+        attempt_number=2,
+    )
+    next_attempt = build_attempt_job_identity(
+        controller.config,
+        lineage_id="world-01",
+        turn_number=3,
+        attempt_number=3,
+    )
+    assert repeated == first
+    assert first["job_name"].startswith("Global\\XINAO-World-")
+    assert next_attempt["job_name"] != first["job_name"]
+    assert first["authority"] is False
+
+
+def test_job_bound_quota_is_never_recycled_by_a_competing_claimant(tmp_path: Path) -> None:
+    controller, branches, _root = make_test_controller(tmp_path, branch_count=1)
+    controller.config["world_turn_concurrency_limit"] = 2
+    _guard, records = controller._world_turn_quota_paths()
+    records[0].parent.mkdir(parents=True, exist_ok=True)
+    records[0].write_text(
+        json.dumps(
+            {
+                "schema": "xinao.cleanroom.world-turn-quota-lease.v1",
+                "lease_id": "owned-by-dead-controller",
+                "counted": True,
+                "status": "BOUND",
+                "account_slot": "C",
+                "slot": 1,
+                "limit": 2,
+                "run_id": "other-run",
+                "lineage_id": "world-01",
+                "workspace": branches[0]["workspace"],
+                "controller_pid": 111,
+                "child_pid": 222,
+                "carrier_job": {"job_name": "Global\\XINAO-World-existing"},
+                "reserved_at": "2026-08-15T00:00:00+00:00",
+                "bound_at": "2026-08-15T00:00:01+00:00",
+                "released_at": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    lease = controller.try_reserve_world_turn_quota(branches[0])
+
+    assert lease is not None
+    assert lease["slot"] == 2
+    assert json.loads(records[0].read_text(encoding="utf-8"))["status"] == "BOUND"
+
+
+def _install_fake_job_truth(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    job_state: str,
+    child_liveness: ProcessLiveness,
+) -> None:
+    fake_jobs = SimpleNamespace(
+        query_named_job=lambda _name: SimpleNamespace(
+            state=SimpleNamespace(value=job_state),
+            process_ids=(),
+        )
+    )
+    module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["_load_windows_job_module"],
+    )
+    monkeypatch.setattr(module, "_load_windows_job_module", lambda _config: fake_jobs)
+    monkeypatch.setattr(
+        module,
+        "_load_research_sol_runtime_module",
+        lambda _config: research_sol_runtime,
+    )
+    monkeypatch.setattr(module, "process_liveness", lambda _pid: child_liveness)
+
+
+def _bound_job_lease_fixture(
+    controller: PerpetualController,
+    branch: dict[str, str],
+) -> tuple[dict[str, object], Path]:
+    controller.config["world_turn_concurrency_limit"] = 1
+    controller.config["attempt_job_ownership_required"] = True
+    carrier_job = build_attempt_job_identity(
+        controller.config,
+        lineage_id="world-01",
+        turn_number=1,
+        attempt_number=1,
+    )
+    _guard, records = controller._world_turn_quota_paths()
+    record: dict[str, object] = {
+        "schema": "xinao.cleanroom.world-turn-quota-lease.v1",
+        "lease_id": "lease-1",
+        "counted": True,
+        "status": "BOUND",
+        "account_slot": "C",
+        "slot": 1,
+        "limit": 1,
+        "run_id": controller.config["run_id"],
+        "lineage_id": "world-01",
+        "workspace": branch["workspace"],
+        "controller_pid": 111,
+        "child_pid": 222,
+        "carrier_job": carrier_job,
+        "reserved_at": "2026-08-15T00:00:00+00:00",
+        "bound_at": "2026-08-15T00:00:01+00:00",
+        "released_at": None,
+    }
+    records[0].parent.mkdir(parents=True, exist_ok=True)
+    records[0].write_text(json.dumps(record), encoding="utf-8")
+    controller._world_turn_leases["world-01"] = {**record, "path": str(records[0])}
+    return record, records[0]
+
+
+def test_exact_job_and_pid_contradiction_holds_bound_quota(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, branches, _root = make_test_controller(tmp_path, branch_count=1)
+    _record, record_path = _bound_job_lease_fixture(controller, branches[0])
+    controller._lineage_states["world-01"]["turn_phase"] = "TERMINAL"
+    _install_fake_job_truth(
+        monkeypatch,
+        job_state="ABSENT",
+        child_liveness=ProcessLiveness.ALIVE,
+    )
+
+    assert controller.release_world_turn_quota(branches[0]) is False
+    persisted = json.loads(record_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == "BOUND"
+    assert persisted["terminal_reconciliation"]["action"] == "HOLD_CONTRADICTORY"
+
+
+def test_quota_release_waits_for_terminal_receipt_after_job_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, branches, _root = make_test_controller(tmp_path, branch_count=1)
+    _record, record_path = _bound_job_lease_fixture(controller, branches[0])
+    _install_fake_job_truth(
+        monkeypatch,
+        job_state="PRESENT_EMPTY",
+        child_liveness=ProcessLiveness.DEAD,
+    )
+
+    controller._lineage_states["world-01"]["turn_phase"] = "TURN_SEALING"
+    assert controller.release_world_turn_quota(branches[0]) is False
+    controller._lineage_states["world-01"]["turn_phase"] = "TERMINAL"
+    assert controller.release_world_turn_quota(branches[0]) is True
+    assert json.loads(record_path.read_text(encoding="utf-8"))["status"] == "RELEASED"
+
+
+def test_normal_startup_adopts_live_job_then_settles_without_duplicate_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _branches, _root = make_test_controller(tmp_path, branch_count=1)
+    controller.config["attempt_job_ownership_required"] = True
+    carrier_job = build_attempt_job_identity(
+        controller.config,
+        lineage_id="world-01",
+        turn_number=1,
+        attempt_number=1,
+    )
+    state = controller._lineage_states["world-01"]
+    state.update(
+        {
+            "turn_phase": "TURN_RUNNING",
+            "active_pid": 222,
+            "carrier_job": carrier_job,
+        }
+    )
+    controller.lineage_state_path("world-01").write_text(json.dumps(state), encoding="utf-8")
+    states = iter(["PRESENT_NONEMPTY", "PRESENT_EMPTY"])
+    observed: list[str] = []
+
+    def query(_name: str) -> SimpleNamespace:
+        value = next(states)
+        observed.append(value)
+        return SimpleNamespace(
+            state=SimpleNamespace(value=value),
+            process_ids=(222,) if value == "PRESENT_NONEMPTY" else (),
+        )
+
+    fake_jobs = SimpleNamespace(query_named_job=query, terminate_named_job=lambda *_a, **_k: None)
+    module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["reconcile_incomplete_attempts"],
+    )
+    monkeypatch.setattr(module, "_load_windows_job_module", lambda _config: fake_jobs)
+    monkeypatch.setattr(
+        module,
+        "_load_research_sol_runtime_module",
+        lambda _config: research_sol_runtime,
+    )
+    monkeypatch.setattr(module, "process_liveness", lambda _pid: ProcessLiveness.DEAD)
+
+    def settle(_config: object, *, recovery_dir: Path) -> dict[str, object]:
+        persisted = json.loads(
+            controller.lineage_state_path("world-01").read_text(encoding="utf-8")
+        )
+        persisted.update({"turn_phase": "TERMINAL", "status": "RECOVERY_QUARANTINED"})
+        controller.lineage_state_path("world-01").write_text(
+            json.dumps(persisted), encoding="utf-8"
+        )
+        return {"completed": [], "quarantined": ["world-01"]}
+
+    monkeypatch.setattr(module, "reconcile_incomplete_attempts", settle)
+    monkeypatch.setattr(controller, "_attach_owned_world_turn_leases", lambda: [])
+
+    receipt = controller.reconcile_startup_terminal_truth()
+
+    assert receipt is not None
+    assert observed == ["PRESENT_NONEMPTY", "PRESENT_EMPTY"]
+    assert controller._lineage_states["world-01"]["turn_phase"] == "TERMINAL"
+    assert receipt["released_lease_lineages"] == []
+
+
+def test_startup_finds_job_intent_written_before_lineage_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _branches, _root = make_test_controller(tmp_path, branch_count=1)
+    controller.config["attempt_job_ownership_required"] = True
+    state = controller._lineage_states["world-01"]
+    state.update({"turns_completed": 1, "turn_phase": "TERMINAL", "active_pid": None})
+    prior = build_attempt_job_identity(
+        controller.config,
+        lineage_id="world-01",
+        turn_number=1,
+        attempt_number=1,
+    )
+    state["carrier_job"] = prior
+    controller.lineage_state_path("world-01").write_text(json.dumps(state), encoding="utf-8")
+    next_job = build_attempt_job_identity(
+        controller.config,
+        lineage_id="world-01",
+        turn_number=2,
+        attempt_number=1,
+    )
+    attempt_dir = controller.lineage_dir("world-01") / "turns" / "turn-000002" / "attempt-01"
+    attempt_dir.mkdir(parents=True)
+    (attempt_dir / "carrier_job.json").write_text(json.dumps(next_job), encoding="utf-8")
+    fake_jobs = SimpleNamespace(
+        query_named_job=lambda _name: SimpleNamespace(
+            state=SimpleNamespace(value="ABSENT"), process_ids=()
+        ),
+        terminate_named_job=lambda *_a, **_k: None,
+    )
+    module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["reconcile_incomplete_attempts"],
+    )
+    monkeypatch.setattr(module, "_load_windows_job_module", lambda _config: fake_jobs)
+    monkeypatch.setattr(
+        module,
+        "_load_research_sol_runtime_module",
+        lambda _config: research_sol_runtime,
+    )
+    monkeypatch.setattr(module, "process_liveness", lambda _pid: ProcessLiveness.DEAD)
+
+    def settle(_config: object, *, recovery_dir: Path) -> dict[str, object]:
+        persisted = json.loads(
+            controller.lineage_state_path("world-01").read_text(encoding="utf-8")
+        )
+        persisted.update({"turn_phase": "TERMINAL", "status": "RECOVERY_QUARANTINED"})
+        controller.lineage_state_path("world-01").write_text(
+            json.dumps(persisted), encoding="utf-8"
+        )
+        return {"completed": [], "quarantined": ["world-01"]}
+
+    monkeypatch.setattr(module, "reconcile_incomplete_attempts", settle)
+    monkeypatch.setattr(controller, "_attach_owned_world_turn_leases", lambda: [])
+
+    receipt = controller.reconcile_startup_terminal_truth()
+
+    assert receipt is not None
+    assert receipt["observations"][0]["carrier_job"] == next_job
+    assert receipt["observations"][0]["truth"]["action"] == "SEAL_AND_RELEASE"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Job Object carrier canary")
+def test_real_attempt_job_seals_terminal_before_exact_quota_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir = tmp_path / "run"
+    workspace = tmp_path / "world-01"
+    root_workspace = tmp_path / "root-main"
+    workspace.mkdir()
+    root_workspace.mkdir()
+    branch = {
+        "lineage_id": "world-01",
+        "role": "independent_world",
+        "workspace": str(workspace),
+    }
+    windows_job_path = Path("services/research_of_research/windows_job.py").resolve()
+    research_sol_path = Path("services/research_sol/runtime.py").resolve()
+    config = {
+        "schema": RUN_SCHEMA,
+        "account_slot": "C",
+        "run_id": "real-job-test",
+        "run_dir": str(run_dir),
+        "source_head": "b" * 40,
+        "branch_lineages": [branch],
+        "root_lineage": {
+            "lineage_id": "root-main",
+            "role": "late_fusion_root",
+            "workspace": str(root_workspace),
+        },
+        "powershell_path": "unused",
+        "launcher_path": "unused",
+        "model": "gpt-5.6-sol",
+        "model_reasoning_effort": "max",
+        "watchdog_seconds": 30,
+        "retry_delays_seconds": [],
+        "continuation_delay_seconds": 0,
+        "park_poll_seconds": 1,
+        "world_turn_concurrency_limit": 1,
+        "world_turn_quota_root": str(tmp_path / "quota"),
+        "attempt_job_ownership_required": True,
+        "windows_job_release_path": str(windows_job_path),
+        "windows_job_release_sha256": sha256_file(windows_job_path),
+        "research_sol_runtime_release_path": str(research_sol_path),
+        "research_sol_runtime_release_sha256": sha256_file(research_sol_path),
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    controller = PerpetualController(config_path)
+    monkeypatch.setattr(controller, "verify_control_body", lambda: None)
+
+    def fake_command(_config, *, workspace, arguments_path):
+        del _config, workspace
+        code = (
+            "import json,pathlib,sys\n"
+            "args=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))\n"
+            "last=pathlib.Path(args[args.index('-o')+1])\n"
+            "print(json.dumps({'type':'thread.started','thread_id':'fresh-job-session'}),flush=True)\n"
+            "last.write_text('settled\\nXINAO_LINEAGE_STATE: WAIT\\n',encoding='utf-8')\n"
+            "print(json.dumps({'type':'turn.completed','usage':{}}),flush=True)\n"
+        )
+        return [sys.executable, "-c", code, str(arguments_path)]
+
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["build_codex_command"],
+    )
+    monkeypatch.setattr(controller_module, "build_codex_command", fake_command)
+
+    with controller.world_turn_quota_lease(branch) as lease:
+        assert lease is not None
+        result = controller.execute_turn(spec=branch, prompt="research")
+
+    assert result["outcome"] == "COMPLETED"
+    receipt = result["receipt"]
+    assert receipt["carrier_job"]["job_name"].startswith("Global\\XINAO-World-")
+    assert receipt["carrier_terminal_observation"]["state"] == "PRESENT_EMPTY"
+    state = controller._lineage_states["world-01"]
+    assert state["turn_phase"] == "TERMINAL"
+    _guard, records = controller._world_turn_quota_paths()
+    quota = json.loads(records[0].read_text(encoding="utf-8"))
+    assert quota["status"] == "RELEASED"
+    assert quota["terminal_reconciliation"]["release_allowed"] is True
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows fresh-contact carrier canary")
+def test_fresh_live_contacts_seal_arbitrary_tree_then_verified_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    git(source, "init")
+    git(source, "config", "user.email", "live-contact@example.invalid")
+    git(source, "config", "user.name", "Live Contact")
+    (source / "AGENTS.md").write_text("Work from the whole current world.\n", encoding="utf-8")
+    git(source, "add", "AGENTS.md")
+    git(source, "commit", "-m", "seed")
+    head = git(source, "rev-parse", "HEAD")
+    workspace = tmp_path / "world-01"
+    subprocess.run(
+        ["git", "clone", "--quiet", "--no-local", str(source), str(workspace)],
+        check=True,
+    )
+    git(workspace, "remote", "remove", "origin")
+    root_workspace = tmp_path / "root-main"
+    root_workspace.mkdir()
+    run_dir = tmp_path / "run"
+    activity_seed = run_dir / "activity_seed.txt"
+    activity_seed.parent.mkdir(parents=True)
+    activity_seed.write_text(
+        "Directly continue the current XINAO research from this whole live world.\n",
+        encoding="utf-8",
+    )
+    branch = {
+        "lineage_id": "world-01",
+        "role": "independent_world",
+        "workspace": str(workspace),
+    }
+    windows_job_path = Path("services/research_of_research/windows_job.py").resolve()
+    research_sol_path = Path("services/research_sol/runtime.py").resolve()
+    config = {
+        "schema": RUN_SCHEMA,
+        "account_slot": "C",
+        "run_id": "fresh-live-test",
+        "run_dir": str(run_dir),
+        "source_repo": str(source),
+        "source_head": head,
+        "branch_width": 1,
+        "branch_lineages": [branch],
+        "root_lineage": {
+            "lineage_id": "root-main",
+            "role": "late_fusion_root",
+            "workspace": str(root_workspace),
+        },
+        "powershell_path": "unused",
+        "launcher_path": "unused",
+        "launcher_sha256": "a" * 64,
+        "model": "gpt-5.6-sol",
+        "model_reasoning_effort": "max",
+        "watchdog_seconds": 30,
+        "retry_delays_seconds": [],
+        "continuation_delay_seconds": 0,
+        "park_poll_seconds": 1,
+        "controller_python": sys.executable,
+        "research_sol_live_primary": True,
+        "activity_id": "activity-live-1",
+        "activity_seed_path": str(activity_seed),
+        "activity_seed_sha256": sha256_file(activity_seed),
+        "runtime_binding_views": {"world-01": {"private_live_root": "fixture-live-root"}},
+        "reality_migration_id": "migration-fixture",
+        "attempt_job_ownership_required": True,
+        "windows_job_release_path": str(windows_job_path),
+        "windows_job_release_sha256": sha256_file(windows_job_path),
+        "research_sol_runtime_release_path": str(research_sol_path),
+        "research_sol_runtime_release_sha256": sha256_file(research_sol_path),
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    controller = PerpetualController(config_path)
+    monkeypatch.setattr(controller, "verify_control_body", lambda: None)
+
+    def fake_command(_config, *, workspace, arguments_path):
+        del _config
+        code = (
+            "import json,pathlib,re,subprocess,sys\n"
+            "args=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))\n"
+            "workspace=pathlib.Path(sys.argv[2]); runtime=pathlib.Path(sys.argv[3])\n"
+            "prompt=sys.stdin.read()\n"
+            "map_path=pathlib.Path(re.search(r'Prior cognition-object map: (.+)',prompt).group(1).strip())\n"
+            "pin_id=re.search(r'World pin identity: (.+)',prompt).group(1).strip()\n"
+            "contact_id=re.search(r'Contact identity: (.+)',prompt).group(1).strip()\n"
+            "objects=json.loads(map_path.read_text(encoding='utf-8'))['objects']\n"
+            "research=workspace/'RESEARCH_OBJECTS'; research.mkdir(exist_ok=True)\n"
+            "if not objects:\n"
+            " (research/'relation.txt').write_text('cross-contact relation',encoding='utf-8')\n"
+            " (research/'private.pem').write_bytes(b'-----BEGIN PRIVATE KEY-----\\nlocal-only-bytes\\n')\n"
+            "else:\n"
+            " object_id=objects[-1]['object_id']\n"
+            " command=[sys.executable,str(runtime),'open-object','--object-root',"
+            "str(workspace/'.xinao'/'carrier'/'object-store'),'--object-id',object_id,"
+            "'--contact-id',contact_id,'--world-pin-id',pin_id,'--destination-root',"
+            "str(workspace/'.xinao'/'opened'),'--path','RESEARCH_OBJECTS/relation.txt']\n"
+            " completed=subprocess.run(command,capture_output=True,text=True,check=False)\n"
+            " assert completed.returncode==0,(completed.stdout,completed.stderr)\n"
+            " (research/'second-contact.txt').write_text('opened prior exact tree',encoding='utf-8')\n"
+            "last=pathlib.Path(args[args.index('-o')+1])\n"
+            "last.write_text('contact mechanically terminal',encoding='utf-8')\n"
+            "print(json.dumps({'type':'thread.started','thread_id':'fresh-'+contact_id[:12]}),flush=True)\n"
+            "print(json.dumps({'type':'turn.completed','usage':{}}),flush=True)\n"
+        )
+        return [
+            sys.executable,
+            "-c",
+            code,
+            str(arguments_path),
+            str(workspace),
+            str(research_sol_path),
+        ]
+
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["build_codex_command"],
+    )
+    monkeypatch.setattr(controller_module, "build_codex_command", fake_command)
+
+    first = controller.execute_turn(spec=branch, prompt="unused seed projection")
+    wake_path = controller._wake_path("world-01")
+    wake_path.parent.mkdir(parents=True, exist_ok=True)
+    wake_path.write_text(
+        json.dumps(
+            {
+                "schema": controller.schemas["wake"],
+                "requested_at": "2026-08-15T09:00:00+00:00",
+                "lineage_id": "world-01",
+                "reason": "held-out reality arrived",
+                "account_slot": "C",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert controller._wait_parked("world-01", "PARKED_FOR_EXTERNAL_WAKE") is True
+    second = controller.execute_turn(spec=branch, prompt="unused seed projection")
+
+    assert first["outcome"] == "COMPLETED"
+    assert second["outcome"] == "COMPLETED"
+    first_receipt = first["receipt"]
+    second_receipt = second["receipt"]
+    assert first_receipt["session_id_before"] is None
+    assert second_receipt["session_id_before"] is None
+    assert first_receipt["cognition_object"]["file_count"] == 2
+    assert second_receipt["cognition_object"]["file_count"] == 3
+    assert (
+        first_receipt["live_contact"]["contact_id"]
+        != second_receipt["live_contact"]["contact_id"]
+    )
+    second_trigger = second_receipt["live_contact"]["contact_trigger"]
+    assert second_trigger["payload"]["reason"] == "held-out reality arrived"
+    included_surfaces = {
+        row["surface_id"]: row
+        for row in second_receipt["live_contact"]["world_pin"]["coverage"]["included"]
+    }
+    assert included_surfaces["contact_trigger"]["identity"] == second_trigger
+    second_map = json.loads(
+        Path(second_receipt["live_contact"]["prior_object_map_path"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(second_map["objects"]) == 1
+    open_receipts = list((workspace / ".xinao" / "carrier" / "object-store" / "opens").rglob("*.json"))
+    assert len(open_receipts) == 1
+    opened = workspace / ".xinao" / "opened" / str(first_receipt["cognition_object"]["object_id"])
+    assert (opened / "RESEARCH_OBJECTS" / "relation.txt").read_text(encoding="utf-8") == (
+        "cross-contact relation"
+    )
