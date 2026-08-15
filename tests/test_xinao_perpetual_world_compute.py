@@ -3876,6 +3876,7 @@ def _make_reality_migration_preparation_runtime(
         "run_dir": str(run_dir),
         "source_repo": str(source_repo),
         "source_head": "a" * 40,
+        "retired_canonical_repo_path": str(source_repo),
         "clone_run_root": str(clone_root),
         "branch_lineages": [
             {
@@ -4030,6 +4031,7 @@ def test_prepare_reality_migration_is_offline_per_run_and_preserves_control_stat
     assert call["retired_canonical_live_current_path"] == (
         controller_module.DEFAULT_XINAO_MIXED_LIVE_RETIREMENT_CURRENT.resolve()
     )
+    assert call["retired_canonical_repo_path"] == source_repo.resolve()
     assert result["source"] == {
         "root": str(source_repo.resolve()),
         "current_head": "f" * 40,

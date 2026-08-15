@@ -1273,6 +1273,36 @@ def test_retired_canonical_live_absence_builds_empty_legacy_compatibility_layer(
     )
 
 
+def test_retired_canonical_absence_can_seed_an_isolated_source_worktree(
+    tmp_path: Path,
+) -> None:
+    retired_repo, current_path, _current = _make_retired_live_absence_fixture(
+        tmp_path / "retired"
+    )
+    source_worktree = tmp_path / "candidate-worktree"
+    source_worktree.mkdir()
+    workspace = tmp_path / "workspaces" / "world-01"
+    workspace.mkdir(parents=True)
+
+    result = migrate_live_reality_copy_first(
+        source_worktree,
+        live_reality_root=tmp_path / "runtime" / "live",
+        world_compute_root=tmp_path / "runtime" / "compute",
+        workspace_roots={"world-01": workspace},
+        retired_canonical_live_current_path=current_path,
+        retired_canonical_repo_path=retired_repo,
+    )
+    manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
+
+    assert result["mode"] == "copy_first_retired_canonical_live_absent"
+    assert result["retired_canonical_live_absence"]["canonical_repo"] == str(
+        retired_repo.resolve()
+    )
+    assert Path(manifest["canonical_repo"]).resolve() == source_worktree.resolve()
+    assert manifest["canonical_inventory"]["exists"] is False
+    assert not (source_worktree / "xinao" / "reality" / "live").exists()
+
+
 def test_retired_canonical_live_rejects_drifted_current_projection_before_copy(
     tmp_path: Path,
 ) -> None:

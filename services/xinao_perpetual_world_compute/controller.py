@@ -5038,8 +5038,12 @@ def prepare_reality_migration(args: argparse.Namespace) -> dict[str, Any]:
                 reality_module = importlib.util.module_from_spec(reality_spec)
                 reality_spec.loader.exec_module(reality_module)
                 retired_current_path = None
+                retired_canonical_repo_path = None
                 if not (source_repo / "xinao" / "reality" / "live").exists():
                     retired_current_path = resolve_path(DEFAULT_XINAO_MIXED_LIVE_RETIREMENT_CURRENT)
+                    retired_canonical_repo_path = resolve_path(
+                        config.get("retired_canonical_repo_path") or DEFAULT_SOURCE_REPO
+                    )
                 migration = reality_module.migrate_live_reality_copy_first(
                     source_repo,
                     live_reality_root=live_reality_root,
@@ -5047,6 +5051,7 @@ def prepare_reality_migration(args: argparse.Namespace) -> dict[str, Any]:
                     workspace_roots=workspace_roots,
                     active_child_pids=live,
                     retired_canonical_live_current_path=retired_current_path,
+                    retired_canonical_repo_path=retired_canonical_repo_path,
                 )
             except Exception as exc:
                 raise PerpetualRuntimeError(
@@ -5497,8 +5502,12 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     world_compute_root = resolve_path(args.world_compute_root) / run_id
     try:
         retired_current_path = None
+        retired_canonical_repo_path = None
         if not (source_repo / "xinao" / "reality" / "live").exists():
             retired_current_path = resolve_path(DEFAULT_XINAO_MIXED_LIVE_RETIREMENT_CURRENT)
+            retired_canonical_repo_path = resolve_path(
+                getattr(args, "retired_canonical_repo", DEFAULT_SOURCE_REPO)
+            )
         migration_result = reality_module.migrate_live_reality_copy_first(
             source_repo,
             live_reality_root=live_reality_root,
@@ -5509,6 +5518,7 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
             },
             active_child_pids=(),
             retired_canonical_live_current_path=retired_current_path,
+            retired_canonical_repo_path=retired_canonical_repo_path,
         )
     except Exception as exc:
         raise PerpetualRuntimeError(
@@ -5608,6 +5618,11 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         "reality_migration_manifest_sha256": migration_result["manifest_sha256"],
         "reality_migration_id": migration_result["migration_id"],
         "reality_migration_mode": migration_result["mode"],
+        "retired_canonical_repo_path": (
+            str(retired_canonical_repo_path)
+            if retired_canonical_repo_path is not None
+            else None
+        ),
         "reality_migration_retired_canonical_live_absence": migration_result[
             "retired_canonical_live_absence"
         ],
@@ -8376,6 +8391,15 @@ def build_parser() -> argparse.ArgumentParser:
     start = subparsers.add_parser("start")
     start.add_argument("--account-slot", required=True, choices=ACCOUNT_SLOTS)
     start.add_argument("--source-repo", type=Path, default=DEFAULT_SOURCE_REPO)
+    start.add_argument(
+        "--retired-canonical-repo",
+        type=Path,
+        default=DEFAULT_SOURCE_REPO,
+        help=(
+            "exact repository named by the mixed-live retirement receipt when "
+            "--source-repo is an isolated worktree without xinao/reality/live"
+        ),
+    )
     start.add_argument("--launcher", type=Path, default=DEFAULT_LAUNCHER)
     start.add_argument("--powershell", type=Path, default=DEFAULT_POWERSHELL)
     start.add_argument("--runtime-root", type=Path)

@@ -1103,6 +1103,7 @@ def migrate_live_reality_copy_first(
     active_child_pids: Mapping[str, int | None] | Iterable[int | None] = (),
     expected_source_tree_sha256: str | None = None,
     retired_canonical_live_current_path: Path | None = None,
+    retired_canonical_repo_path: Path | None = None,
 ) -> dict[str, Any]:
     """Copy and verify a mixed live tree without ever deleting its source.
 
@@ -1113,7 +1114,10 @@ def migrate_live_reality_copy_first(
     state is initialized at ``<workspace>/.xinao-world-runtime/live-reality`` and
     never reuses ``xinao/reality/live``. The caller-provided PID view is treated
     as authoritative: any positive PID rejects the migration before a target is
-    created.
+    created. When ``canonical_repo`` is an isolated Git worktree created after
+    the mixed-live donor was retired, ``retired_canonical_repo_path`` identifies
+    the exact repository named by that retirement receipt; it proves donor
+    absence without pretending the candidate worktree was the retired donor.
     """
 
     assert_no_active_child_pids(active_child_pids)
@@ -1125,8 +1129,16 @@ def migrate_live_reality_copy_first(
         canonical_inventory = _inventory_live_root(canonical_live, required=True)
         migration_mode = "copy_first_source_preserving"
     else:
+        retirement_repo = (
+            _resolve_existing_directory(
+                retired_canonical_repo_path,
+                label="retired canonical repository",
+            )
+            if retired_canonical_repo_path is not None
+            else repo
+        )
         retired_canonical_live_absence = validate_retired_mixed_live_absence(
-            repo,
+            retirement_repo,
             current_pointer_path=retired_canonical_live_current_path,
         )
         canonical_live = canonical_live.resolve(strict=False)
@@ -2216,7 +2228,7 @@ def readback_live_reality_migration(
             if not isinstance(retired_absence, Mapping):
                 raise RealityMigrationError("retired canonical live absence proof is missing")
             current_proof = validate_retired_mixed_live_absence(
-                Path(str(manifest["canonical_repo"])),
+                Path(str(retired_absence["canonical_repo"])),
                 current_pointer_path=Path(str(retired_absence["current_pointer_path"])),
             )
             if current_proof != dict(retired_absence):
