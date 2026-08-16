@@ -6,6 +6,8 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +19,7 @@ from services.xinao_perpetual_world_compute.controller import (
     LEGACY_STOP_SCHEMA,
     PACKET_SCHEMA,
     PARKED_LIFECYCLE_STATES,
+    QUIESCE_SCHEMA,
     RUN_SCHEMA,
     TURN_SCHEMA,
     WAKE_SCHEMA,
@@ -55,6 +58,7 @@ from services.xinao_perpetual_world_compute.controller import (
     parse_lifecycle_state,
     prepare_reality_migration,
     quarantine_incomplete_fusion_packet,
+    quiesce_runtime,
     read_startup_state,
     reconcile_incomplete_attempts,
     recover_runtime,
@@ -65,6 +69,7 @@ from services.xinao_perpetual_world_compute.controller import (
     validate_account_slot,
     validate_lineage_runtime_repo,
     validate_recovery_account_slot,
+    wait_for_exclusive_lock,
     wake_runtime,
     world_turn_quota_records_for_run,
 )
@@ -2510,6 +2515,164 @@ def test_live_primary_restart_requires_wake_after_initial_contact(
     assert parked == [("world-01", "PARKED_FOR_EXTERNAL_WAKE")]
 
 
+def test_quiesce_request_exits_controller_without_stop_or_cognition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    controller.config["research_sol_live_primary"] = True
+    controller._lineage_states["world-01"].update(
+        {
+            "initial_contact_admitted": True,
+            "status": "TURN_COMPLETED",
+            "turns_completed": 1,
+        }
+    )
+    monkeypatch.setattr(controller, "verify_runtime_identity", lambda: None)
+    monkeypatch.setattr(controller, "reconcile_startup_terminal_truth", lambda: None)
+    controller.quiesce_path.write_text(
+        json.dumps(
+            {
+                "schema": QUIESCE_SCHEMA,
+                "run_id": controller.config["run_id"],
+                "requested_at": "2026-08-16T00:00:00+08:00",
+                "reason": "body upgrade",
+                "account_slot": controller.config["account_slot"],
+                "controller_pid": os.getpid(),
+                "scope": "controller_body_only",
+                "preserve_parent_activity": True,
+                "cognition_wake_authority": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert controller.run() == 0
+
+    terminal = json.loads(controller.controller_state_path.read_text(encoding="utf-8"))
+    assert terminal["status"] == "QUIESCED_FOR_RECOVERY"
+    assert terminal["quiesce_requested"] is True
+    assert terminal["stop_requested"] is False
+    assert not controller.stop_path.exists()
+
+
+def test_invalid_quiesce_request_does_not_stop_live_controller(tmp_path: Path) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    controller.config["research_sol_live_primary"] = True
+    controller.quiesce_path.write_text(
+        json.dumps(
+            {
+                "schema": QUIESCE_SCHEMA,
+                "run_id": controller.config["run_id"],
+                "requested_at": "2026-08-16T00:00:00+08:00",
+                "reason": "wrong process",
+                "account_slot": controller.config["account_slot"],
+                "controller_pid": os.getpid() + 1,
+                "scope": "controller_body_only",
+                "preserve_parent_activity": True,
+                "cognition_wake_authority": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert controller._accept_quiesce_request() is False
+    assert controller.stopped() is False
+    assert controller._accepted_quiesce_request is None
+
+
+def test_stop_request_has_terminal_precedence_over_quiesce(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller, _, _ = make_test_controller(tmp_path, branch_count=1)
+    controller.config["research_sol_live_primary"] = True
+    controller._lineage_states["world-01"].update(
+        {
+            "initial_contact_admitted": True,
+            "status": "TURN_COMPLETED",
+            "turns_completed": 1,
+        }
+    )
+    monkeypatch.setattr(controller, "verify_runtime_identity", lambda: None)
+    monkeypatch.setattr(controller, "reconcile_startup_terminal_truth", lambda: None)
+    controller.quiesce_path.write_text(
+        json.dumps(
+            {
+                "schema": QUIESCE_SCHEMA,
+                "run_id": controller.config["run_id"],
+                "requested_at": "2026-08-16T00:00:00+08:00",
+                "reason": "body upgrade",
+                "account_slot": controller.config["account_slot"],
+                "controller_pid": os.getpid(),
+                "scope": "controller_body_only",
+                "preserve_parent_activity": True,
+                "cognition_wake_authority": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    controller.stop_path.write_text("{}", encoding="utf-8")
+
+    assert controller.run() == 0
+
+    terminal = json.loads(controller.controller_state_path.read_text(encoding="utf-8"))
+    assert terminal["status"] == "STOPPED"
+    assert terminal["stop_requested"] is True
+    assert terminal["quiesce_requested"] is False
+
+
+def test_parked_loop_accepts_quiesce_without_consuming_wake_or_running_cognition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    controller.config["research_sol_live_primary"] = True
+    controller.config["park_poll_seconds"] = 0.01
+    lineage_id = branches[0]["lineage_id"]
+    controller._lineage_states[lineage_id].update(
+        {
+            "initial_contact_admitted": True,
+            "status": "TURN_COMPLETED",
+            "turns_completed": 1,
+            "last_consumed_wake": None,
+        }
+    )
+    monkeypatch.setattr(
+        controller,
+        "execute_turn",
+        lambda **_kwargs: pytest.fail("quiesce must not create cognition"),
+    )
+    thread = threading.Thread(target=controller.branch_loop, args=(branches[0],), daemon=False)
+    thread.start()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        state = json.loads(controller.lineage_state_path(lineage_id).read_text(encoding="utf-8"))
+        if state.get("status") == "PARKED_FOR_EXTERNAL_WAKE":
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("branch did not enter parked state")
+    request = {
+        "schema": QUIESCE_SCHEMA,
+        "run_id": controller.config["run_id"],
+        "requested_at": "2026-08-16T00:00:00+08:00",
+        "reason": "body upgrade",
+        "account_slot": controller.config["account_slot"],
+        "controller_pid": os.getpid(),
+        "scope": "controller_body_only",
+        "preserve_parent_activity": True,
+        "cognition_wake_authority": False,
+    }
+    with wait_for_exclusive_lock(controller.external_event_lock_path):
+        controller.quiesce_path.write_text(json.dumps(request), encoding="utf-8")
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    final = json.loads(controller.lineage_state_path(lineage_id).read_text(encoding="utf-8"))
+    assert final["status"] == "PARKED_FOR_EXTERNAL_WAKE"
+    assert final.get("last_consumed_wake") is None
+    assert not controller._wake_path(lineage_id).exists()
+    assert controller._accepted_quiesce_request == request
+
+
 @pytest.mark.parametrize("error_class", ["BODY_INCIDENT", "EVIDENCE_INCIDENT"])
 def test_root_recovery_preserves_incident_class_while_parked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_class: str
@@ -3906,10 +4069,72 @@ def test_exclusive_lock_preserves_body_oserror(tmp_path: Path) -> None:
             raise OSError("body failure")
 
 
+def test_wait_for_exclusive_lock_retries_cross_process_contention(tmp_path: Path) -> None:
+    lock_path = tmp_path / "event.lock"
+    holder_code = """
+import os
+import sys
+import time
+
+path = sys.argv[1]
+handle = open(path, "a+b")
+handle.seek(0, os.SEEK_END)
+if handle.tell() == 0:
+    handle.write(b"0")
+    handle.flush()
+handle.seek(0)
+if os.name == "nt":
+    import msvcrt
+    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("LOCKED", flush=True)
+time.sleep(0.35)
+handle.seek(0)
+if os.name == "nt":
+    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+handle.close()
+"""
+    holder = subprocess.Popen(
+        [sys.executable, "-c", holder_code, str(lock_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout is not None
+        assert holder.stdout.readline().strip() == "LOCKED"
+        with pytest.raises(PerpetualRuntimeError, match="SERIALIZATION_LOCK_TIMEOUT"):
+            with wait_for_exclusive_lock(
+                lock_path,
+                wait_seconds=0.05,
+                poll_seconds=0.01,
+            ):
+                pytest.fail("contended lock must not be acquired before the holder releases it")
+        with wait_for_exclusive_lock(lock_path, wait_seconds=2.0, poll_seconds=0.01):
+            pass
+        assert holder.wait(timeout=2) == 0
+    finally:
+        if holder.poll() is None:
+            holder.kill()
+            holder.wait(timeout=2)
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="recover_runtime is a Windows-only effect")
 @pytest.mark.parametrize("run_schema", [RUN_SCHEMA, LEGACY_RUN_SCHEMA])
+@pytest.mark.parametrize(
+    ("live_primary", "with_quiesce"),
+    [(False, False), (True, False), (True, True)],
+)
 def test_recover_adopts_repaired_release_without_replacing_lineages(
-    tmp_path: Path, monkeypatch, run_schema: str
+    tmp_path: Path,
+    monkeypatch,
+    run_schema: str,
+    live_primary: bool,
+    with_quiesce: bool,
 ) -> None:
     runtime_root = tmp_path / "runtime"
     run_dir = runtime_root / "runs" / "run-1"
@@ -3947,6 +4172,7 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
         "shared_config_sha256": "config-sha",
         "controller_release_path": str(old_release),
         "controller_release_sha256": sha256_file(old_release),
+        "research_sol_live_primary": live_primary,
         "branch_lineages": [
             {
                 "lineage_id": "world-01",
@@ -3962,22 +4188,38 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     }
     config_path = run_dir / "run_config.json"
     config_path.write_text(json.dumps(config), encoding="utf-8")
+    lineage_state_bytes_before: dict[str, bytes] = {}
     for lineage_id, role in (("world-01", "independent_world"), ("root-main", "late_fusion_root")):
         lineage_dir = run_dir / "lineages" / lineage_id
         lineage_dir.mkdir(parents=True)
-        (lineage_dir / "state.json").write_text(
+        state_path = lineage_dir / "state.json"
+        state_path.write_text(
             json.dumps(
                 {
                     "schema": "lineage",
                     "run_id": "run-1",
                     "lineage_id": lineage_id,
                     "role": role,
-                    "turns_completed": 0,
+                    "session_id": "session-world-01" if lineage_id == "world-01" else None,
+                    "turns_completed": 3 if lineage_id == "world-01" else 0,
                     "active_pid": None,
+                    "status": (
+                        "PARKED_FOR_EXTERNAL_WAKE" if lineage_id == "world-01" else "CREATED"
+                    ),
+                    "last_consumed_wake": (
+                        {
+                            "path": "wake-receipts/continuity.json",
+                            "sha256": "a" * 64,
+                            "payload": {"reason": "preserve exact wake identity"},
+                        }
+                        if lineage_id == "world-01"
+                        else None
+                    ),
                 }
             ),
             encoding="utf-8",
         )
+        lineage_state_bytes_before[lineage_id] = state_path.read_bytes()
     pointer = {
         "schema": run_schema,
         "run_id": "run-1",
@@ -3989,9 +4231,34 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     runtime_root.mkdir(exist_ok=True)
     (runtime_root / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
     (run_dir / "controller_state.json").write_text(
-        json.dumps({"schema": "controller", "run_id": "run-1", "pid": 111, "status": "FAILED"}),
+        json.dumps(
+            {
+                "schema": "controller",
+                "run_id": "run-1",
+                "pid": 111,
+                "status": "QUIESCED_FOR_RECOVERY" if with_quiesce else "FAILED",
+            }
+        ),
         encoding="utf-8",
     )
+    quiesce_path = run_dir / "QUIESCE_FOR_RECOVERY.json"
+    if with_quiesce:
+        quiesce_path.write_text(
+            json.dumps(
+                {
+                    "schema": QUIESCE_SCHEMA,
+                    "run_id": "run-1",
+                    "requested_at": "2026-08-16T00:00:00+08:00",
+                    "reason": "body upgrade",
+                    "account_slot": "C",
+                    "controller_pid": 111,
+                    "scope": "controller_body_only",
+                    "preserve_parent_activity": True,
+                    "cognition_wake_authority": False,
+                }
+            ),
+            encoding="utf-8",
+        )
 
     controller_module = __import__(
         "services.xinao_perpetual_world_compute.controller",
@@ -4066,10 +4333,25 @@ def test_recover_adopts_repaired_release_without_replacing_lineages(
     assert result["release_adoption"]["launcher_source_sha256"] == sha256_file(launcher)
     assert updated["deep_evidence_required_from_turn"] == {
         "root-main": 1,
-        "world-01": 1,
+        "world-01": 4,
     }
     assert result["controller_state"]["status"] == "RUNNING"
     assert result["pointer"]["controller_pid"] == 4321
+    assert not quiesce_path.exists()
+    if with_quiesce:
+        assert result["quiesce_archive"]["payload"]["controller_pid"] == 111
+        assert Path(result["quiesce_archive"]["path"]).read_text(encoding="utf-8")
+    else:
+        assert result["quiesce_archive"] is None
+    for lineage_id, before in lineage_state_bytes_before.items():
+        state_path = run_dir / "lineages" / lineage_id / "state.json"
+        assert state_path.read_bytes() == before
+    preserved_world = json.loads(
+        (run_dir / "lineages" / "world-01" / "state.json").read_text(encoding="utf-8")
+    )
+    assert preserved_world["session_id"] == "session-world-01"
+    assert preserved_world["turns_completed"] == 3
+    assert preserved_world["last_consumed_wake"]["sha256"] == "a" * 64
     assert result["quarantined_incomplete_packet"]["reason"] == "PACKET_MANIFEST_MISSING"
     assert not partial_packet.exists()
 
@@ -4315,6 +4597,136 @@ def test_prepare_reality_migration_rejects_live_child_before_copy(
 
     assert not world_compute_base.exists()
     assert not (run_dir / "reality-migration-preparation" / "receipt.json").exists()
+
+
+def test_quiesce_runtime_requires_parked_live_primary_and_preserves_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller, branches, _ = make_test_controller(tmp_path, branch_count=1)
+    run_dir = controller.run_dir
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    controller.config["research_sol_live_primary"] = True
+    config_path = run_dir / "run_config.json"
+    config_path.write_text(json.dumps(controller.config), encoding="utf-8")
+    lineage_id = branches[0]["lineage_id"]
+    lineage_state = controller._lineage_states[lineage_id]
+    lineage_state.update(
+        {
+            "status": "PARKED_FOR_EXTERNAL_WAKE",
+            "initial_contact_admitted": True,
+            "active_pid": None,
+        }
+    )
+    controller.lineage_state_path(lineage_id).write_text(
+        json.dumps(lineage_state), encoding="utf-8"
+    )
+    pointer = {
+        "schema": RUN_SCHEMA,
+        "run_id": controller.config["run_id"],
+        "run_dir": str(run_dir),
+        "controller_pid": 444,
+        "account_slot": "C",
+    }
+    (runtime_root / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+    running_state = {
+        "schema": controller.schemas["controller"],
+        "run_id": controller.config["run_id"],
+        "pid": 444,
+        "status": "RUNNING",
+        "active_processes": {},
+    }
+    controller.controller_state_path.write_text(json.dumps(running_state), encoding="utf-8")
+    controller_module = __import__(
+        "services.xinao_perpetual_world_compute.controller",
+        fromlist=["find_runtime_process_liveness"],
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "find_runtime_process_liveness",
+        lambda *_args: {
+            "pointer.controller": {"pid": 444, "liveness": ProcessLiveness.ALIVE.value},
+            "state.controller": {"pid": 444, "liveness": ProcessLiveness.ALIVE.value},
+        },
+    )
+
+    def fake_liveness(pid: int | None) -> ProcessLiveness:
+        assert pid == 444
+        if controller.quiesce_path.exists():
+            terminal = {
+                **running_state,
+                "status": "QUIESCED_FOR_RECOVERY",
+                "quiesce_requested": True,
+                "stop_requested": False,
+            }
+            controller.controller_state_path.write_text(json.dumps(terminal), encoding="utf-8")
+            return ProcessLiveness.DEAD
+        return ProcessLiveness.ALIVE
+
+    monkeypatch.setattr(controller_module, "process_liveness", fake_liveness)
+
+    wake_args = SimpleNamespace(
+        runtime_root=runtime_root,
+        lineage_id=lineage_id,
+        reason="named new reality",
+    )
+    wake_runtime(wake_args)
+    with pytest.raises(PerpetualRuntimeError, match="QUIESCE_REFUSED_PENDING_WAKE"):
+        quiesce_runtime(
+            SimpleNamespace(
+                runtime_root=runtime_root,
+                expected_account_slot="C",
+                reason="must lose to admitted wake",
+                wait_seconds=1,
+            )
+        )
+    controller._wake_path(lineage_id).unlink()
+
+    receipt_root = controller.lineage_dir(lineage_id) / "wake-receipts"
+    receipt_root.mkdir(parents=True, exist_ok=True)
+    unprojected_receipt = receipt_root / "unprojected.json"
+    unprojected_receipt.write_text(
+        json.dumps(
+            {
+                "schema": WAKE_SCHEMA,
+                "requested_at": "2026-08-16T00:00:00+08:00",
+                "lineage_id": lineage_id,
+                "reason": "wake moved before projection",
+                "account_slot": "C",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(PerpetualRuntimeError, match="QUIESCE_REFUSED_UNPROJECTED_WAKE"):
+        quiesce_runtime(
+            SimpleNamespace(
+                runtime_root=runtime_root,
+                expected_account_slot="C",
+                reason="must preserve incomplete wake",
+                wait_seconds=1,
+            )
+        )
+    unprojected_receipt.unlink()
+
+    result = quiesce_runtime(
+        SimpleNamespace(
+            runtime_root=runtime_root,
+            expected_account_slot="C",
+            reason="adopt verified body",
+            wait_seconds=1,
+        )
+    )
+
+    request = json.loads(controller.quiesce_path.read_text(encoding="utf-8"))
+    assert request["schema"] == QUIESCE_SCHEMA
+    assert request["preserve_parent_activity"] is True
+    assert request["cognition_wake_authority"] is False
+    assert result["controller_liveness"] == ProcessLiveness.DEAD.value
+    assert result["final_state"]["status"] == "QUIESCED_FOR_RECOVERY"
+    assert not controller.stop_path.exists()
+    assert not controller._wake_path(lineage_id).exists()
+    with pytest.raises(PerpetualRuntimeError, match="WAKE_REFUSED_DURING_QUIESCE"):
+        wake_runtime(wake_args)
 
 
 def test_stop_runtime_fails_closed_when_controller_or_child_survives(

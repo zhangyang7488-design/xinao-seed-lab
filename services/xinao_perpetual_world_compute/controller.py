@@ -34,6 +34,7 @@ PACKET_SCHEMA = "xinao.cleanroom.perpetual-world-compute-late-fusion-packet.v2"
 STOP_SCHEMA = "xinao.cleanroom.perpetual-world-compute-stop-request.v2"
 WAKE_SCHEMA = "xinao.cleanroom.perpetual-world-compute-wake-request.v2"
 RECOVERY_SCHEMA = "xinao.cleanroom.world-compute-controller-recovery.v1"
+QUIESCE_SCHEMA = "xinao.cleanroom.world-compute-quiesce-for-recovery.v1"
 ATTEMPT_RECOVERY_SCHEMA = "xinao.cleanroom.world-compute-attempt-recovery.v1"
 DEEP_EVIDENCE_REF_SCHEMA = "xinao.cleanroom.world-compute-deep-evidence-ref.v1"
 DEEP_EVIDENCE_TRAJECTORY_INDEX_SCHEMA = "xinao.cleanroom.world-compute-trajectory-index.v1"
@@ -2373,6 +2374,60 @@ def exclusive_lock(path: Path) -> Iterator[None]:
         handle.close()
 
 
+@contextlib.contextmanager
+def wait_for_exclusive_lock(
+    path: Path,
+    *,
+    wait_seconds: float = 180.0,
+    poll_seconds: float = 0.025,
+) -> Iterator[None]:
+    """Wait for a serialization lock instead of treating normal contention as failure."""
+
+    if wait_seconds <= 0 or poll_seconds <= 0:
+        raise ValueError("WAIT_LOCK_INTERVAL_MUST_BE_POSITIVE")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+b")
+    acquired = False
+    deadline = time.monotonic() + wait_seconds
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        while True:
+            handle.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise PerpetualRuntimeError(
+                        f"SERIALIZATION_LOCK_TIMEOUT: {path}"
+                    ) from exc
+                time.sleep(poll_seconds)
+        yield
+    finally:
+        if acquired:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        handle.close()
+
+
 def _try_acquire_byte_lock(path: Path) -> Any | None:
     """Acquire one crash-released file slot without waiting."""
 
@@ -2687,6 +2742,52 @@ def _validate_attempt_runtime_binding(
     return reference
 
 
+def _wake_receipt_identity_for_config(
+    config: Mapping[str, Any], lineage_id: str, path: Path
+) -> dict[str, Any]:
+    path = resolve_path(path)
+    raw = path.read_bytes()
+    try:
+        payload = json.loads(raw.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PerpetualRuntimeError(f"WAKE_RECEIPT_INVALID_JSON:{path}") from exc
+    schemas = schema_family(config.get("schema"))
+    if not isinstance(payload, dict) or (
+        payload.get("schema") != schemas["wake"]
+        or payload.get("lineage_id") != lineage_id
+        or payload.get("account_slot") != validate_account_slot(config["account_slot"])
+        or not isinstance(payload.get("requested_at"), str)
+        or not str(payload.get("requested_at", "")).strip()
+        or not isinstance(payload.get("reason"), str)
+        or not str(payload.get("reason", "")).strip()
+    ):
+        raise PerpetualRuntimeError(f"WAKE_RECEIPT_IDENTITY_INVALID:{path}")
+    return {
+        "path": str(path),
+        "sha256": sha256_bytes(raw).casefold(),
+        "payload": payload,
+    }
+
+
+def _unprojected_wake_receipts_for_config(
+    config: Mapping[str, Any], lineage_id: str
+) -> list[dict[str, Any]]:
+    if config.get("research_sol_live_primary") is not True:
+        return []
+    lineage_dir = resolve_path(config["run_dir"]) / "lineages" / lineage_id
+    used: set[str] = set()
+    for path in (lineage_dir / "turns").glob("turn-*/attempt-*/live_contact.json"):
+        value = read_json_object(path)
+        trigger = value.get("contact_trigger")
+        if isinstance(trigger, Mapping) and isinstance(trigger.get("sha256"), str):
+            used.add(str(trigger["sha256"]).casefold())
+    observed = [
+        _wake_receipt_identity_for_config(config, lineage_id, path)
+        for path in sorted((lineage_dir / "wake-receipts").glob("*.json"))
+    ]
+    return [value for value in observed if value["sha256"] not in used]
+
+
 class PerpetualController:
     def __init__(self, config_path: Path) -> None:
         self.config_path = resolve_path(config_path)
@@ -2694,6 +2795,8 @@ class PerpetualController:
         self.schemas = schema_family(self.config.get("schema"))
         self.run_dir = resolve_path(self.config["run_dir"])
         self.stop_path = self.run_dir / "STOP.json"
+        self.quiesce_path = self.run_dir / "QUIESCE_FOR_RECOVERY.json"
+        self.external_event_lock_path = self.run_dir / "external_event_admission.lock"
         self.wake_root = self.run_dir / "wake"
         self.controller_state_path = self.run_dir / "controller_state.json"
         self._state_lock = threading.RLock()
@@ -2702,6 +2805,8 @@ class PerpetualController:
         self._thread_errors: dict[str, str] = {}
         self._started_at = now_iso()
         self._shutdown = threading.Event()
+        self._quiescing = threading.Event()
+        self._accepted_quiesce_request: dict[str, Any] | None = None
         self._lineage_states: dict[str, dict[str, Any]] = {}
         self._load_lineage_states()
 
@@ -2762,6 +2867,24 @@ class PerpetualController:
     def stopped(self) -> bool:
         return self.stop_path.exists() or self._shutdown.is_set()
 
+    def _accept_quiesce_request(self) -> bool:
+        if self._accepted_quiesce_request is not None:
+            return True
+        if not self.quiesce_path.is_file():
+            return False
+        try:
+            request = _validate_quiesce_request(
+                read_json_object(self.quiesce_path),
+                config=self.config,
+                controller_pid=os.getpid(),
+            )
+        except (OSError, PerpetualRuntimeError):
+            return False
+        self._accepted_quiesce_request = request
+        self._quiescing.set()
+        self._shutdown.set()
+        return True
+
     def publish_controller_state(self, status: str) -> None:
         with self._state_lock:
             lineages = {
@@ -2786,6 +2909,7 @@ class PerpetualController:
                 "started_at": self._started_at,
                 "updated_at": now_iso(),
                 "stop_requested": self.stop_path.exists(),
+                "quiesce_requested": self._quiescing.is_set(),
                 "active_processes": dict(sorted(self._active_processes.items())),
                 "thread_errors": dict(sorted(self._thread_errors.items())),
                 "lineages": lineages,
@@ -3099,51 +3223,12 @@ class PerpetualController:
         return self.wake_root / f"{lineage_id}.json"
 
     def _wake_receipt_identity(self, lineage_id: str, path: Path) -> dict[str, Any]:
-        path = resolve_path(path)
-        raw = path.read_bytes()
-        try:
-            payload = json.loads(raw.decode("utf-8", errors="strict"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise PerpetualRuntimeError(f"WAKE_RECEIPT_INVALID_JSON:{path}") from exc
-        if not isinstance(payload, dict):
-            raise PerpetualRuntimeError(f"WAKE_RECEIPT_INVALID_JSON:{path}")
-        if (
-            payload.get("schema") != self.schemas["wake"]
-            or payload.get("lineage_id") != lineage_id
-            or payload.get("account_slot")
-            != validate_account_slot(self.config["account_slot"])
-            or not isinstance(payload.get("requested_at"), str)
-            or not str(payload.get("requested_at", "")).strip()
-            or not isinstance(payload.get("reason"), str)
-            or not str(payload.get("reason", "")).strip()
-        ):
-            raise PerpetualRuntimeError(f"WAKE_RECEIPT_IDENTITY_INVALID:{path}")
-        return {
-            "path": str(path),
-            "sha256": sha256_bytes(raw).casefold(),
-            "payload": payload,
-        }
-
-    def _prepared_contact_wake_digests(self, lineage_id: str) -> set[str]:
-        used: set[str] = set()
-        turns_root = self.lineage_dir(lineage_id) / "turns"
-        for path in turns_root.glob("turn-*/attempt-*/live_contact.json"):
-            value = read_json_object(path)
-            trigger = value.get("contact_trigger")
-            if isinstance(trigger, Mapping) and isinstance(trigger.get("sha256"), str):
-                used.add(str(trigger["sha256"]).casefold())
-        return used
+        return _wake_receipt_identity_for_config(self.config, lineage_id, path)
 
     def _recover_unprojected_wake(self, lineage_id: str) -> dict[str, Any] | None:
         if self.config.get("research_sol_live_primary") is not True:
             return None
-        receipt_root = self.lineage_dir(lineage_id) / "wake-receipts"
-        used = self._prepared_contact_wake_digests(lineage_id)
-        observed = [
-            self._wake_receipt_identity(lineage_id, path)
-            for path in sorted(receipt_root.glob("*.json"))
-        ]
-        candidates = [value for value in observed if value["sha256"] not in used]
+        candidates = _unprojected_wake_receipts_for_config(self.config, lineage_id)
         if len(candidates) > 1:
             raise PerpetualRuntimeError(
                 f"MULTIPLE_UNPROJECTED_WAKE_RECEIPTS:{lineage_id}"
@@ -3455,42 +3540,48 @@ class PerpetualController:
         if status in {"PROVIDER_POLICY_BLOCKED", "ROOT_PROVIDER_POLICY_BLOCKED"}:
             parked_state["lifecycle_state"] = "BLOCKED"
         self.publish_lineage_state(lineage_id, **parked_state)
-        recovered = self._recover_unprojected_wake(lineage_id)
-        if recovered is not None:
-            self.publish_lineage_state(
-                lineage_id,
-                status="WOKEN",
-                lifecycle_state="CONTINUE",
-                last_consumed_wake=recovered,
-                last_error_class=None,
-                last_error=None,
-            )
-            return True
-        while not self.stopped():
-            if wake_path.exists():
-                pending = self._wake_receipt_identity(lineage_id, wake_path)
-                consumed = self.lineage_dir(lineage_id) / "wake-receipts" / (
-                    str(pending["sha256"]) + ".json"
-                )
-                consumed.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    os.replace(wake_path, consumed)
-                except FileNotFoundError:
-                    continue
-                consumed_identity = self._wake_receipt_identity(lineage_id, consumed)
-                if consumed_identity["sha256"] != pending["sha256"]:
-                    raise PerpetualRuntimeError(
-                        f"WAKE_RECEIPT_CHANGED_DURING_CONSUMPTION:{lineage_id}"
-                    )
+        with wait_for_exclusive_lock(self.external_event_lock_path):
+            if self.stopped() or self._accept_quiesce_request():
+                return False
+            recovered = self._recover_unprojected_wake(lineage_id)
+            if recovered is not None:
                 self.publish_lineage_state(
                     lineage_id,
                     status="WOKEN",
                     lifecycle_state="CONTINUE",
-                    last_consumed_wake=consumed_identity,
+                    last_consumed_wake=recovered,
                     last_error_class=None,
                     last_error=None,
                 )
                 return True
+        while not self.stopped():
+            with wait_for_exclusive_lock(self.external_event_lock_path):
+                if self.stopped() or self._accept_quiesce_request():
+                    return False
+                if wake_path.exists():
+                    pending = self._wake_receipt_identity(lineage_id, wake_path)
+                    consumed = self.lineage_dir(lineage_id) / "wake-receipts" / (
+                        str(pending["sha256"]) + ".json"
+                    )
+                    consumed.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        os.replace(wake_path, consumed)
+                    except FileNotFoundError:
+                        continue
+                    consumed_identity = self._wake_receipt_identity(lineage_id, consumed)
+                    if consumed_identity["sha256"] != pending["sha256"]:
+                        raise PerpetualRuntimeError(
+                            f"WAKE_RECEIPT_CHANGED_DURING_CONSUMPTION:{lineage_id}"
+                        )
+                    self.publish_lineage_state(
+                        lineage_id,
+                        status="WOKEN",
+                        lifecycle_state="CONTINUE",
+                        last_consumed_wake=consumed_identity,
+                        last_error_class=None,
+                        last_error=None,
+                    )
+                    return True
             self._shutdown.wait(float(self.config["park_poll_seconds"]))
         return False
 
@@ -4812,9 +4903,14 @@ class PerpetualController:
                 if active:
                     self.publish_controller_state("STOP_INCOMPLETE_ACTIVE_CHILD")
                     return 3
-                terminal = "STOPPED" if self.stop_path.exists() else "FAILED"
+                if self.stop_path.exists():
+                    terminal = "STOPPED"
+                elif self._accepted_quiesce_request is not None:
+                    terminal = "QUIESCED_FOR_RECOVERY"
+                else:
+                    terminal = "FAILED"
                 self.publish_controller_state(terminal)
-                return 0 if terminal == "STOPPED" else 2
+                return 0 if terminal in {"STOPPED", "QUIESCED_FOR_RECOVERY"} else 2
             except BaseException:
                 error = traceback.format_exc()
                 with self._state_lock:
@@ -8211,6 +8307,26 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
                     "RECOVERY_REFUSED_UNRECONCILED_WORLD_TURN_QUOTA_RESERVATION: "
                     + json.dumps(reserved_quota, ensure_ascii=False, sort_keys=True)
                 )
+            quiesce_path = run_dir / "QUIESCE_FOR_RECOVERY.json"
+            quiesce_request: dict[str, Any] | None = None
+            if quiesce_path.exists():
+                raw_quiesce = read_json_object(quiesce_path)
+                recorded_pid = state.get("pid") if state is not None else pointer.get("controller_pid")
+                if (
+                    not isinstance(recorded_pid, int)
+                    or isinstance(recorded_pid, bool)
+                    or recorded_pid <= 0
+                ):
+                    raise PerpetualRuntimeError("QUIESCE_REQUEST_CONTROLLER_IDENTITY_MISSING")
+                quiesce_request = _validate_quiesce_request(
+                    raw_quiesce,
+                    config=config,
+                    controller_pid=recorded_pid,
+                )
+                _validate_live_primary_parked_snapshot(
+                    config,
+                    error_prefix="RECOVERY_QUIESCE",
+                )
             identity = validate_recovery_identity(config)
             recovery_dir.mkdir(parents=True)
             atomic_write_json(recovery_dir / "pointer.before.json", pointer)
@@ -8247,6 +8363,8 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
                 "release_adoption": None,
                 "attempt_reconciliation": None,
                 "quarantined_incomplete_packet": None,
+                "quiesce_request": quiesce_request,
+                "quiesce_archive": None,
                 "pointer_before": pointer,
                 "controller_state_before": state,
             }
@@ -8301,39 +8419,53 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
                 }
             )
             atomic_write_json(receipt_path, receipt)
-            stdout_path = recovery_dir / "controller_stdout.txt"
-            stderr_path = recovery_dir / "controller_stderr.txt"
-            controller_python = _validated_controller_python(config)
-            process, controller_python = _spawn_detached_controller(
-                controller_python=controller_python,
-                controller_python_sha256=str(config["controller_python_sha256"]),
-                release_path=release_path,
-                config_path=config_path,
-                run_dir=run_dir,
-                stdout_path=stdout_path,
-                stderr_path=stderr_path,
-            )
-            pointer_after = dict(pointer)
-            pointer_after.update(
-                {
-                    "controller_pid": process.pid,
-                    "launcher_pid": process.pid,
-                    "controller_python": str(controller_python),
-                    "controller_release_path": str(release_path),
-                    "controller_release_sha256": release_sha,
-                    "recovered_at": now_iso(),
-                    "recovery_id": recovery_id,
-                    "recovery_generation": int(config.get("recovery_generation", 0)),
-                }
-            )
-            atomic_write_json(current_pointer(runtime_root), pointer_after)
-            controller_state = _wait_for_controller_startup(
-                process=process,
-                run_dir=run_dir,
-                expected_run_id=str(config["run_id"]),
-                startup_wait_seconds=float(args.startup_wait_seconds),
-                stderr_path=stderr_path,
-            )
+            quiesce_archive: dict[str, Any] | None = None
+            with wait_for_exclusive_lock(run_dir / "external_event_admission.lock"):
+                if quiesce_request is not None:
+                    archived_quiesce_path = recovery_dir / "quiesce_request.json"
+                    if archived_quiesce_path.exists():
+                        raise PerpetualRuntimeError("QUIESCE_ARCHIVE_PATH_COLLISION")
+                    os.replace(quiesce_path, archived_quiesce_path)
+                    quiesce_archive = {
+                        "path": str(archived_quiesce_path),
+                        "sha256": sha256_file(archived_quiesce_path),
+                        "payload": quiesce_request,
+                    }
+                    receipt["quiesce_archive"] = quiesce_archive
+                    atomic_write_json(receipt_path, receipt)
+                stdout_path = recovery_dir / "controller_stdout.txt"
+                stderr_path = recovery_dir / "controller_stderr.txt"
+                controller_python = _validated_controller_python(config)
+                process, controller_python = _spawn_detached_controller(
+                    controller_python=controller_python,
+                    controller_python_sha256=str(config["controller_python_sha256"]),
+                    release_path=release_path,
+                    config_path=config_path,
+                    run_dir=run_dir,
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
+                )
+                pointer_after = dict(pointer)
+                pointer_after.update(
+                    {
+                        "controller_pid": process.pid,
+                        "launcher_pid": process.pid,
+                        "controller_python": str(controller_python),
+                        "controller_release_path": str(release_path),
+                        "controller_release_sha256": release_sha,
+                        "recovered_at": now_iso(),
+                        "recovery_id": recovery_id,
+                        "recovery_generation": int(config.get("recovery_generation", 0)),
+                    }
+                )
+                atomic_write_json(current_pointer(runtime_root), pointer_after)
+                controller_state = _wait_for_controller_startup(
+                    process=process,
+                    run_dir=run_dir,
+                    expected_run_id=str(config["run_id"]),
+                    startup_wait_seconds=float(args.startup_wait_seconds),
+                    stderr_path=stderr_path,
+                )
             receipt.update(
                 {
                     "status": "RECOVERED",
@@ -8351,6 +8483,7 @@ def recover_runtime(args: argparse.Namespace) -> dict[str, Any]:
                 "controller_state": controller_state,
                 "release_adoption": release_adoption,
                 "quarantined_incomplete_packet": quarantined,
+                "quiesce_archive": quiesce_archive,
             }
         except BaseException as exc:
             if receipt is not None:
@@ -8380,6 +8513,224 @@ def status_runtime(args: argparse.Namespace) -> dict[str, Any]:
         "controller_alive": liveness == ProcessLiveness.ALIVE,
         "controller_liveness": liveness.value,
         "controller_state": state,
+    }
+
+
+def _validate_quiesce_request(
+    request: Mapping[str, Any],
+    *,
+    config: Mapping[str, Any],
+    controller_pid: int,
+) -> dict[str, Any]:
+    account_slot = validate_recovery_account_slot(config, expected=None)
+    expected = {
+        "schema": QUIESCE_SCHEMA,
+        "run_id": str(config["run_id"]),
+        "account_slot": account_slot,
+        "controller_pid": controller_pid,
+        "scope": "controller_body_only",
+        "preserve_parent_activity": True,
+        "cognition_wake_authority": False,
+    }
+    if (
+        any(request.get(key) != value for key, value in expected.items())
+        or not isinstance(request.get("requested_at"), str)
+        or not str(request.get("requested_at", "")).strip()
+        or not isinstance(request.get("reason"), str)
+        or not str(request.get("reason", "")).strip()
+    ):
+        raise PerpetualRuntimeError("QUIESCE_REQUEST_IDENTITY_INVALID")
+    return dict(request)
+
+
+def _validate_live_primary_parked_snapshot(
+    config: Mapping[str, Any], *, error_prefix: str
+) -> dict[str, dict[str, Any]]:
+    if config.get("research_sol_live_primary") is not True:
+        raise PerpetualRuntimeError(f"{error_prefix}_ONLY_SUPPORTED_FOR_LIVE_PRIMARY")
+    run_dir = resolve_path(config["run_dir"])
+    branch_states: dict[str, dict[str, Any]] = {}
+    for spec in config["branch_lineages"]:
+        lineage_id = str(spec["lineage_id"])
+        lineage_path = run_dir / "lineages" / lineage_id / "state.json"
+        if not lineage_path.is_file():
+            raise PerpetualRuntimeError(f"{error_prefix}_LINEAGE_STATE_MISSING:{lineage_id}")
+        lineage_state = read_json_object(lineage_path)
+        if (
+            lineage_state.get("run_id") != config["run_id"]
+            or lineage_state.get("lineage_id") != lineage_id
+            or lineage_state.get("status") != "PARKED_FOR_EXTERNAL_WAKE"
+            or lineage_state.get("active_pid") is not None
+        ):
+            raise PerpetualRuntimeError(f"{error_prefix}_LINEAGE_NOT_PARKED:{lineage_id}")
+        if (run_dir / "wake" / f"{lineage_id}.json").exists():
+            raise PerpetualRuntimeError(f"{error_prefix}_REFUSED_PENDING_WAKE:{lineage_id}")
+        unprojected = _unprojected_wake_receipts_for_config(config, lineage_id)
+        if unprojected:
+            raise PerpetualRuntimeError(f"{error_prefix}_REFUSED_UNPROJECTED_WAKE:{lineage_id}")
+        branch_states[lineage_id] = lineage_state
+    root_lineage_id = str(config["root_lineage"]["lineage_id"])
+    root_state_path = run_dir / "lineages" / root_lineage_id / "state.json"
+    if not root_state_path.is_file():
+        raise PerpetualRuntimeError(f"{error_prefix}_ROOT_STATE_MISSING")
+    root_state = read_json_object(root_state_path)
+    if (
+        root_state.get("run_id") != config["run_id"]
+        or root_state.get("lineage_id") != root_lineage_id
+        or root_state.get("active_pid") is not None
+    ):
+        raise PerpetualRuntimeError(f"{error_prefix}_ROOT_NOT_QUIESCENT")
+    return branch_states
+
+
+def quiesce_runtime(args: argparse.Namespace) -> dict[str, Any]:
+    """Gracefully stop one parked live-primary controller without ending its activity."""
+
+    runtime_root = select_runtime_root(args.runtime_root, require_current=True)
+    pointer, state = load_current(runtime_root)
+    run_dir = resolve_path(pointer["run_dir"])
+    config = read_json_object(run_dir / "run_config.json")
+    _validate_recovery_pointer(pointer, state, config, run_dir)
+    account_slot = validate_recovery_account_slot(
+        config,
+        expected=getattr(args, "expected_account_slot", None),
+    )
+    if state is None or state.get("status") != "RUNNING":
+        raise PerpetualRuntimeError("QUIESCE_CONTROLLER_NOT_RUNNING")
+    raw_pid = state.get("pid")
+    if (
+        not isinstance(raw_pid, int)
+        or isinstance(raw_pid, bool)
+        or raw_pid <= 0
+        or pointer.get("controller_pid") != raw_pid
+    ):
+        raise PerpetualRuntimeError("QUIESCE_CONTROLLER_IDENTITY_INVALID")
+    controller_pid = int(raw_pid)
+    active_processes = state.get("active_processes")
+    if not isinstance(active_processes, Mapping) or active_processes:
+        raise PerpetualRuntimeError("QUIESCE_REFUSED_ACTIVE_PROCESS")
+    branch_states = _validate_live_primary_parked_snapshot(
+        config,
+        error_prefix="QUIESCE",
+    )
+    reserved_quota = [
+        record
+        for record in world_turn_quota_records_for_run(config)
+        if record.get("status") == "RESERVED"
+    ]
+    if reserved_quota:
+        raise PerpetualRuntimeError("QUIESCE_REFUSED_RESERVED_QUOTA")
+    process_evidence = find_runtime_process_liveness(pointer, state, config)
+    unknown = {
+        label: item
+        for label, item in process_evidence.items()
+        if item["liveness"] == ProcessLiveness.UNKNOWN.value
+    }
+    if unknown:
+        raise PerpetualRuntimeError(
+            "QUIESCE_REFUSED_PROCESS_LIVENESS_UNKNOWN: "
+            + json.dumps(unknown, ensure_ascii=False, sort_keys=True)
+        )
+    live_non_controller = {
+        label: item
+        for label, item in process_evidence.items()
+        if item["liveness"] == ProcessLiveness.ALIVE.value
+        and label not in {"pointer.controller", "state.controller"}
+    }
+    if live_non_controller:
+        raise PerpetualRuntimeError(
+            "QUIESCE_REFUSED_ACTIVE_PROCESS: "
+            + json.dumps(live_non_controller, ensure_ascii=False, sort_keys=True)
+        )
+    if process_liveness(controller_pid) != ProcessLiveness.ALIVE:
+        raise PerpetualRuntimeError("QUIESCE_CONTROLLER_NOT_ALIVE")
+    quiesce_path = run_dir / "QUIESCE_FOR_RECOVERY.json"
+    with wait_for_exclusive_lock(run_dir / "external_event_admission.lock"):
+        pointer_now, state_now = load_current(runtime_root)
+        if (
+            pointer_now.get("run_id") != config["run_id"]
+            or pointer_now.get("controller_pid") != controller_pid
+            or state_now is None
+            or state_now.get("pid") != controller_pid
+            or state_now.get("status") != "RUNNING"
+            or state_now.get("active_processes") != {}
+        ):
+            raise PerpetualRuntimeError("QUIESCE_CONTROLLER_STATE_CHANGED")
+        committed_branch_states = _validate_live_primary_parked_snapshot(
+            config,
+            error_prefix="QUIESCE",
+        )
+        for lineage_id, before in branch_states.items():
+            if committed_branch_states[lineage_id].get("last_consumed_wake") != before.get(
+                "last_consumed_wake"
+            ):
+                raise PerpetualRuntimeError(f"QUIESCE_WAKE_IDENTITY_CHANGED:{lineage_id}")
+        if any(
+            record.get("status") == "RESERVED"
+            for record in world_turn_quota_records_for_run(config)
+        ):
+            raise PerpetualRuntimeError("QUIESCE_REFUSED_RESERVED_QUOTA")
+        if process_liveness(controller_pid) != ProcessLiveness.ALIVE:
+            raise PerpetualRuntimeError("QUIESCE_CONTROLLER_NOT_ALIVE")
+        if quiesce_path.exists():
+            request = _validate_quiesce_request(
+                read_json_object(quiesce_path),
+                config=config,
+                controller_pid=controller_pid,
+            )
+        else:
+            request = {
+                "schema": QUIESCE_SCHEMA,
+                "run_id": str(config["run_id"]),
+                "requested_at": now_iso(),
+                "reason": str(args.reason),
+                "account_slot": account_slot,
+                "controller_pid": controller_pid,
+                "scope": "controller_body_only",
+                "preserve_parent_activity": True,
+                "cognition_wake_authority": False,
+            }
+            request = _validate_quiesce_request(
+                request,
+                config=config,
+                controller_pid=controller_pid,
+            )
+            atomic_write_json(quiesce_path, request)
+    deadline = time.monotonic() + float(args.wait_seconds)
+    controller_liveness = process_liveness(controller_pid)
+    while controller_liveness != ProcessLiveness.DEAD and time.monotonic() < deadline:
+        time.sleep(0.25)
+        controller_liveness = process_liveness(controller_pid)
+    if controller_liveness == ProcessLiveness.UNKNOWN:
+        raise PerpetualRuntimeError("QUIESCE_PROCESS_LIVENESS_UNKNOWN")
+    if controller_liveness != ProcessLiveness.DEAD:
+        raise PerpetualRuntimeError("QUIESCE_CONTROLLER_DID_NOT_EXIT")
+    final_state = read_json_object(run_dir / "controller_state.json")
+    if (
+        final_state.get("run_id") != config["run_id"]
+        or final_state.get("pid") != controller_pid
+        or final_state.get("status") != "QUIESCED_FOR_RECOVERY"
+        or final_state.get("active_processes") != {}
+        or (run_dir / "STOP.json").exists()
+    ):
+        raise PerpetualRuntimeError("QUIESCE_TERMINAL_STATE_INVALID")
+    final_branch_states = _validate_live_primary_parked_snapshot(
+        config,
+        error_prefix="QUIESCE_TERMINAL",
+    )
+    for lineage_id, before in committed_branch_states.items():
+        if final_branch_states[lineage_id].get("last_consumed_wake") != before.get(
+            "last_consumed_wake"
+        ):
+            raise PerpetualRuntimeError(f"QUIESCE_TERMINAL_WAKE_IDENTITY_CHANGED:{lineage_id}")
+    return {
+        "run_id": config["run_id"],
+        "quiesce_request": str(quiesce_path),
+        "request": request,
+        "controller_liveness": controller_liveness.value,
+        "previous_state": state,
+        "final_state": final_state,
+        "branch_states": final_branch_states,
     }
 
 
@@ -8487,19 +8838,29 @@ def wake_runtime(args: argparse.Namespace) -> dict[str, Any]:
     if invalid:
         raise PerpetualRuntimeError(f"UNKNOWN_LINEAGE_ID: {invalid}")
     receipts = []
-    for lineage_id in targets:
-        path = run_dir / "wake" / f"{lineage_id}.json"
-        if path.exists():
-            raise PerpetualRuntimeError(f"WAKE_ALREADY_PENDING: {lineage_id}")
-        payload = {
-            "schema": schemas["wake"],
-            "requested_at": now_iso(),
-            "lineage_id": lineage_id,
-            "reason": args.reason,
-            "account_slot": account_slot,
+    with wait_for_exclusive_lock(run_dir / "external_event_admission.lock"):
+        if (run_dir / "STOP.json").exists():
+            raise PerpetualRuntimeError("WAKE_REFUSED_AFTER_STOP_REQUEST")
+        if (run_dir / "QUIESCE_FOR_RECOVERY.json").exists():
+            raise PerpetualRuntimeError("WAKE_REFUSED_DURING_QUIESCE")
+        pending_paths = {
+            lineage_id: run_dir / "wake" / f"{lineage_id}.json" for lineage_id in targets
         }
-        atomic_write_json(path, payload)
-        receipts.append({"lineage_id": lineage_id, "path": str(path)})
+        already_pending = [
+            lineage_id for lineage_id, path in pending_paths.items() if path.exists()
+        ]
+        if already_pending:
+            raise PerpetualRuntimeError(f"WAKE_ALREADY_PENDING: {already_pending}")
+        for lineage_id, path in pending_paths.items():
+            payload = {
+                "schema": schemas["wake"],
+                "requested_at": now_iso(),
+                "lineage_id": lineage_id,
+                "reason": args.reason,
+                "account_slot": account_slot,
+            }
+            atomic_write_json(path, payload)
+            receipts.append({"lineage_id": lineage_id, "path": str(path)})
     return {"run_id": pointer["run_id"], "wake_requests": receipts}
 
 
@@ -8629,6 +8990,15 @@ def build_parser() -> argparse.ArgumentParser:
     stop.add_argument("--reason", default="explicit operator stop")
     stop.add_argument("--wait-seconds", type=int, default=120)
 
+    quiesce = subparsers.add_parser(
+        "quiesce",
+        help="gracefully stop a parked live-primary controller for same-activity recovery",
+    )
+    quiesce.add_argument("--runtime-root", type=Path)
+    quiesce.add_argument("--expected-account-slot", choices=ACCOUNT_SLOTS)
+    quiesce.add_argument("--reason", default="verified controller body upgrade")
+    quiesce.add_argument("--wait-seconds", type=int, default=120)
+
     wake = subparsers.add_parser("wake")
     wake.add_argument("--runtime-root", type=Path)
     wake.add_argument("--lineage-id", default="all")
@@ -8662,6 +9032,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = recover_runtime(args)
         elif args.command == "stop":
             result = stop_runtime(args)
+        elif args.command == "quiesce":
+            result = quiesce_runtime(args)
         elif args.command == "wake":
             result = wake_runtime(args)
         elif args.command == "inspect-evidence":

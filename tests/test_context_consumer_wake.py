@@ -184,6 +184,7 @@ def test_controller_publish_wakes_only_after_state_commit(tmp_path: Path, monkey
         schemas={"controller": controller_module.CONTROLLER_SCHEMA},
         _started_at="2026-08-13T10:00:00+00:00",
         stop_path=tmp_path / "stop.json",
+        _quiescing=threading.Event(),
         _active_processes={},
         _thread_errors={},
         controller_state_path=state_path,
