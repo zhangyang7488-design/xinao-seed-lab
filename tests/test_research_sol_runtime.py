@@ -448,5 +448,8 @@ def test_live_prompt_is_thin_delivery_not_a_research_workflow(tmp_path: Path) ->
     )
     assert "You own representation, question formation, research method" in prompt
     assert "hypothesis" not in prompt.casefold()
+    assert "soft attractor" not in prompt.casefold()
+    assert "cognition phenotype" not in prompt.casefold()
+    assert "selective-invariance" not in prompt.casefold()
     assert "Shared production/effect/adoption" in prompt
     assert str(pin["pin_id"]) in prompt

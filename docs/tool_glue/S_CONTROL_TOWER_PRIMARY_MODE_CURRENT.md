@@ -102,6 +102,19 @@ S 不应：
 - 因某结果有趣就自行扩代、重跑、改 arm、改 prompt 或进入 Stage 2；
 - 把实验控制、行为评审或研究报告变成新澳 cognition 的常驻审批层。
 
+### 当前 Research Sol cognition phenotype 关注
+
+当当前人话与 live parent 仍把新澳研究的关注中心放在 Research Sol cognition phenotype
+时，S 的 current attribution/evidence ruler 见
+`docs/tool_glue/RESEARCH_SOL_COGNITION_PHENOTYPE_FOCUS_CURRENT.md`。它把 fresh baseline、
+substrate/continuity delta 与过去 CognitionObject 的 cross-world transfer 分开，并把
+soft attractor 作为当前优先观测对象。
+
+这是 S 外层实验与证据职责的可改写 leaf，不是给 world-owning Sol 的研究表示、方法
+目录或热 prompt。S 可以造 method-blind selective-invariance/counterexample world，冻结
+blind contract 并读取 pre-open/post-open 轨迹，但不能把期望 representation 或评分答案
+提前教给 branch；一次实验只取得与其实际 contrast 等宽的结论。
+
 ## 工程任务不因此被阉割
 
 若当前对象本身就是 S 的工程身体，例如 launcher、runtime、隔离、ingestor、结算器、回归、打包或恢复链，S 必须直接读取真实源码和 live consumer，完成正式写入并验证 effect。这里的“直接接触现实”属于 S 自己的工程责任，不是重新取得新澳研究方向权。

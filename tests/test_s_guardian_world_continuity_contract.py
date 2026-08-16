@@ -43,3 +43,37 @@ def test_detailed_control_tower_contract_preserves_dual_root_operations() -> Non
     assert "一个 episode 内冻结一个 `account_slot`" in contract
     assert "A/C 同时存在后，所有运维命令必须显式给出各自 `--runtime-root`" in contract
     assert "A canary 使用独立 locator `...\\xinao_perpetual_a`" in contract
+
+
+def test_hot_s_contract_routes_current_phenotype_focus_to_control_surface_only() -> None:
+    agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    detailed = (
+        REPO_ROOT / "docs" / "tool_glue" / "S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md"
+    ).read_text(encoding="utf-8")
+    focus_path = (
+        REPO_ROOT
+        / "docs"
+        / "tool_glue"
+        / "RESEARCH_SOL_COGNITION_PHENOTYPE_FOCUS_CURRENT.md"
+    )
+    focus = focus_path.read_text(encoding="utf-8")
+
+    assert "SENTINEL:S_RESEARCH_SOL_COGNITION_PHENOTYPE_FOCUS_V1" in agreement
+    assert focus_path.name in agreement
+    assert focus_path.name in detailed
+    assert "SENTINEL:RESEARCH_SOL_COGNITION_PHENOTYPE_FOCUS_CURRENT_V1" in focus
+    assert "模型本身已有的 formation ability" in focus
+    assert "substrate / continuity 放大的能力" in focus
+    assert "过去 CognitionObject 真正教进去的能力" in focus
+    assert "soft attractor 是当前主要 cognition debt" in focus
+    assert "selective-invariance / counterexample world" in focus
+    assert "不得再笼统结算“继承有效”或“continuity 有用”" in focus
+
+    runtime = (REPO_ROOT / "services" / "research_sol" / "runtime.py").read_text(
+        encoding="utf-8"
+    )
+    prompt_builder = runtime.split("def build_live_contact_prompt", maxsplit=1)[1].split(
+        "def _main", maxsplit=1
+    )[0]
+    assert focus_path.name not in prompt_builder
+    assert "soft attractor" not in prompt_builder.casefold()
