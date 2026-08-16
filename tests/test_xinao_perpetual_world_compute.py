@@ -62,6 +62,7 @@ from services.xinao_perpetual_world_compute.controller import (
     read_startup_state,
     reconcile_incomplete_attempts,
     recover_runtime,
+    seed_cognition_object_store,
     select_runtime_root,
     sha256_bytes,
     sha256_file,
@@ -292,6 +293,86 @@ def test_clone_isolated_repo_enables_long_paths_before_first_checkout(tmp_path: 
     assert git(destination, "status", "--porcelain=v1", "--untracked-files=all") == ""
     assert receipt["head"] == head
     assert receipt["remote_count"] == "0"
+
+
+def test_seed_cognition_object_store_mounts_exact_bytes_outside_git_source(
+    tmp_path: Path,
+) -> None:
+    source_store = tmp_path / "prior-object-store"
+    artifact_blob_root = tmp_path / "artifact-blobs"
+    artifact_raw = b"prior exact cognition bytes\x00\xff"
+    artifact_sha256 = sha256_bytes(artifact_raw)
+    artifact_blob = artifact_blob_root / artifact_sha256[:2] / artifact_sha256
+    artifact_blob.parent.mkdir(parents=True)
+    artifact_blob.write_bytes(artifact_raw)
+    artifact_manifest = tmp_path / "artifact-manifest.json"
+    artifact_manifest.write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "captured_at": "2026-08-16T00:00:00+08:00",
+                "content_addressed_blob_root": str(artifact_blob_root),
+                "entries": [
+                    {
+                        "relative_path": "RESEARCH_OBJECTS/prior.bin",
+                        "state": "PRESENT",
+                        "sha256": artifact_sha256,
+                        "bytes": len(artifact_raw),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    generation = research_sol_runtime.seal_cognition_object(
+        source_store,
+        artifact_manifest_path=artifact_manifest,
+        contact_id="prior-contact",
+        world_pin_id="prior-pin",
+        lineage_id="prior-world",
+        turn_id="prior-turn",
+    )
+    workspace = tmp_path / "lineage"
+    workspace.mkdir()
+
+    receipt = seed_cognition_object_store(
+        source_store,
+        lineage_workspaces=[{"lineage_id": "world-01", "workspace": str(workspace)}],
+        receipt_path=tmp_path / "seed-receipt.json",
+    )
+
+    target_store = workspace / ".xinao" / "carrier" / "object-store"
+    assert receipt["objects"] == [
+        {
+            "object_id": generation["object_id"],
+            "root_digest": generation["root_digest"],
+            "file_count": 1,
+            "byte_count": len(artifact_raw),
+        }
+    ]
+    assert research_sol_runtime.list_cognition_objects(target_store)[0]["object_id"] == generation[
+        "object_id"
+    ]
+    assert receipt["targets"][0]["object_root"] == str(target_store)
+    assert Path(receipt["receipt_path"]).is_file()
+
+
+def test_seed_cognition_object_store_rejects_mutable_open_receipts(tmp_path: Path) -> None:
+    source_store = tmp_path / "prior-object-store"
+    (source_store / "opens" / "contact").mkdir(parents=True)
+    (source_store / "opens" / "contact" / "receipt.json").write_text(
+        "{}", encoding="utf-8"
+    )
+
+    with pytest.raises(
+        PerpetualRuntimeError,
+        match="COGNITION_OBJECT_STORE_SEED_UNEXPECTED_PATH",
+    ):
+        seed_cognition_object_store(
+            source_store,
+            lineage_workspaces=[],
+            receipt_path=tmp_path / "seed-receipt.json",
+        )
 
 
 def attach_deep_evidence(controller: PerpetualController, attempt_dir: Path) -> str:

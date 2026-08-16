@@ -1876,6 +1876,196 @@ def clone_isolated_repo(source: Path, destination: Path, head: str) -> dict[str,
         raise
 
 
+_COGNITION_OBJECT_STORE_SEED_PATTERNS = (
+    re.compile(r"generations/[0-9a-f]{64}\.json"),
+    re.compile(r"trees/[0-9a-f]{64}\.json"),
+    re.compile(r"blobs/sha256/[0-9a-f]{2}/[0-9a-f]{64}"),
+)
+
+
+def _is_directory_non_reparse(path: Path) -> bool:
+    metadata = path.lstat()
+    if not stat.S_ISDIR(metadata.st_mode):
+        return False
+    attributes = int(getattr(metadata, "st_file_attributes", 0))
+    reparse_flag = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    return not (reparse_flag and attributes & reparse_flag)
+
+
+def seed_cognition_object_store(
+    source_root: Path,
+    *,
+    lineage_workspaces: Sequence[Mapping[str, Any]],
+    receipt_path: Path,
+) -> dict[str, Any]:
+    """Copy one exact immutable prior-object store outside the Git source identity."""
+
+    source_root = resolve_path(source_root)
+    receipt_path = resolve_path(receipt_path)
+    if not source_root.is_dir() or not _is_directory_non_reparse(source_root):
+        raise PerpetualRuntimeError(
+            f"COGNITION_OBJECT_STORE_SEED_INVALID_ROOT:{source_root}"
+        )
+
+    entries: list[dict[str, Any]] = []
+    for source in sorted(source_root.rglob("*"), key=lambda path: path.as_posix().casefold()):
+        relative = source.relative_to(source_root).as_posix()
+        if source.is_dir():
+            if not _is_directory_non_reparse(source):
+                raise PerpetualRuntimeError(
+                    f"COGNITION_OBJECT_STORE_SEED_REPARSE_DIRECTORY:{relative}"
+                )
+            continue
+        if not _is_regular_non_reparse_file(source):
+            raise PerpetualRuntimeError(
+                f"COGNITION_OBJECT_STORE_SEED_NON_REGULAR_FILE:{relative}"
+            )
+        if relative != relative.casefold() or not any(
+            pattern.fullmatch(relative) for pattern in _COGNITION_OBJECT_STORE_SEED_PATTERNS
+        ):
+            raise PerpetualRuntimeError(
+                f"COGNITION_OBJECT_STORE_SEED_UNEXPECTED_PATH:{relative}"
+            )
+        entries.append(
+            {
+                "path": relative,
+                "bytes": source.stat().st_size,
+                "sha256": sha256_file(source).casefold(),
+            }
+        )
+    if not entries:
+        raise PerpetualRuntimeError("COGNITION_OBJECT_STORE_SEED_EMPTY")
+
+    entries_by_path = {entry["path"]: entry for entry in entries}
+    generation_paths = sorted(
+        path for path in entries_by_path if path.startswith("generations/")
+    )
+    if not generation_paths:
+        raise PerpetualRuntimeError("COGNITION_OBJECT_STORE_SEED_HAS_NO_GENERATIONS")
+    objects: list[dict[str, Any]] = []
+    for generation_relative in generation_paths:
+        generation_path = source_root / Path(*generation_relative.split("/"))
+        generation = read_json_object(generation_path)
+        object_id = generation_relative.removeprefix("generations/").removesuffix(".json")
+        root_digest = str(generation.get("root_digest", "")).casefold()
+        if generation.get("object_id") != object_id or not re.fullmatch(
+            r"[0-9a-f]{64}", root_digest
+        ):
+            raise PerpetualRuntimeError(
+                f"COGNITION_OBJECT_STORE_SEED_GENERATION_IDENTITY_INVALID:{generation_relative}"
+            )
+        tree_relative = f"trees/{root_digest}.json"
+        tree_entry = entries_by_path.get(tree_relative)
+        if (
+            tree_entry is None
+            or generation.get("tree_manifest_path") != tree_relative
+            or generation.get("manifest_digest") != tree_entry["sha256"]
+        ):
+            raise PerpetualRuntimeError(
+                f"COGNITION_OBJECT_STORE_SEED_TREE_IDENTITY_INVALID:{object_id}"
+            )
+        tree = read_json_object(source_root / Path(*tree_relative.split("/")))
+        if tree.get("root_digest") != root_digest or not isinstance(tree.get("entries"), list):
+            raise PerpetualRuntimeError(
+                f"COGNITION_OBJECT_STORE_SEED_TREE_INVALID:{root_digest}"
+            )
+        present_count = 0
+        byte_count = 0
+        for raw in tree["entries"]:
+            if not isinstance(raw, Mapping):
+                raise PerpetualRuntimeError(
+                    f"COGNITION_OBJECT_STORE_SEED_TREE_ENTRY_INVALID:{root_digest}"
+                )
+            if raw.get("state") == "DELETED":
+                continue
+            digest = str(raw.get("sha256", "")).casefold()
+            size = raw.get("bytes")
+            blob_relative = f"blobs/sha256/{digest[:2]}/{digest}"
+            blob_entry = entries_by_path.get(blob_relative)
+            if (
+                raw.get("state") != "PRESENT"
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or type(size) is not int
+                or size < 0
+                or blob_entry is None
+                or blob_entry["sha256"] != digest
+                or blob_entry["bytes"] != size
+            ):
+                raise PerpetualRuntimeError(
+                    f"COGNITION_OBJECT_STORE_SEED_BLOB_IDENTITY_INVALID:{root_digest}"
+                )
+            present_count += 1
+            byte_count += size
+        if tree.get("file_count") != present_count or tree.get("byte_count") != byte_count:
+            raise PerpetualRuntimeError(
+                f"COGNITION_OBJECT_STORE_SEED_TREE_COUNTS_INVALID:{root_digest}"
+            )
+        objects.append(
+            {
+                "object_id": object_id,
+                "root_digest": root_digest,
+                "file_count": present_count,
+                "byte_count": byte_count,
+            }
+        )
+
+    tree_sha256 = sha256_bytes(
+        canonical_json_bytes(
+            {"schema": "xinao.cognition-object-store-seed-tree.v1", "entries": entries}
+        )
+    ).casefold()
+    targets: list[dict[str, Any]] = []
+    for spec in lineage_workspaces:
+        lineage_id = str(spec["lineage_id"])
+        workspace = resolve_path(str(spec["workspace"]))
+        target_root = workspace / ".xinao" / "carrier" / "object-store"
+        if target_root.exists():
+            raise PerpetualRuntimeError(
+                f"COGNITION_OBJECT_STORE_SEED_TARGET_ALREADY_EXISTS:{target_root}"
+            )
+        for entry in entries:
+            relative_path = Path(*str(entry["path"]).split("/"))
+            source = source_root / relative_path
+            target = target_root / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            if (
+                target.stat().st_size != entry["bytes"]
+                or sha256_file(target).casefold() != entry["sha256"]
+            ):
+                raise PerpetualRuntimeError(
+                    f"COGNITION_OBJECT_STORE_SEED_COPY_DRIFT:{lineage_id}:{entry['path']}"
+                )
+        targets.append(
+            {
+                "lineage_id": lineage_id,
+                "object_root": str(target_root),
+                "tree_sha256": tree_sha256,
+            }
+        )
+
+    receipt = {
+        "schema": "xinao.cognition-object-store-seed.v1",
+        "source_root": str(source_root),
+        "source_tree_sha256": tree_sha256,
+        "file_count": len(entries),
+        "entries": entries,
+        "objects": objects,
+        "targets": targets,
+        "authority": False,
+        "instruction_authority": False,
+        "cognition_authority": False,
+        "shared_effect_authorized": False,
+        "completion_claim_allowed": False,
+    }
+    receipt_sha256 = atomic_write_json(receipt_path, receipt)
+    return {
+        **receipt,
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": receipt_sha256,
+    }
+
+
 def lifecycle_contract() -> str:
     return """在当前 turn 已把局部 Reality Return 带回整个 working world 后，最后另起一行写一个生命周期回执：
 XINAO_LINEAGE_STATE: CONTINUE
@@ -5594,6 +5784,13 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     clone_root = resolve_path(args.clone_root)
     account_slot = validate_account_slot(args.account_slot)
     live_primary = bool(getattr(args, "live_primary", False))
+    cognition_object_store_seed_source = getattr(
+        args, "cognition_object_store_seed", None
+    )
+    if cognition_object_store_seed_source is not None and not live_primary:
+        raise PerpetualRuntimeError(
+            "COGNITION_OBJECT_STORE_SEED_REQUIRES_RESEARCH_SOL_LIVE_PRIMARY"
+        )
     activity_seed_source: Path | None = None
     activity_seed_raw: bytes | None = None
     activity_seed_text: str | None = None
@@ -5676,6 +5873,15 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
     root_spec = {"lineage_id": root_id, "role": "late_fusion_root", **root_clone_receipt}
     (run_dir / "lineages" / root_id).mkdir(parents=True)
     setup_receipts.append(root_spec)
+    cognition_object_store_seed = (
+        seed_cognition_object_store(
+            resolve_path(cognition_object_store_seed_source),
+            lineage_workspaces=branch_specs,
+            receipt_path=run_dir / "cognition_object_store_seed.json",
+        )
+        if cognition_object_store_seed_source is not None
+        else None
+    )
     logical_root_world_seed = _freeze_run_logical_root_seed(
         run_dir=run_dir,
         workspaces=[resolve_path(spec["workspace"]) for spec in [*branch_specs, root_spec]],
@@ -5827,6 +6033,7 @@ def start_runtime(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "activity_seed_path": str(activity_seed_path) if activity_seed_path is not None else None,
         "activity_seed_sha256": activity_seed_sha256,
+        "cognition_object_store_seed": cognition_object_store_seed,
         "reality_migration_manifest_path": migration_result["manifest_path"],
         "reality_migration_manifest_sha256": migration_result["manifest_sha256"],
         "reality_migration_id": migration_result["migration_id"],
@@ -8911,6 +9118,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="exact current human-appointed activity bytes for --live-primary",
     )
     start.add_argument("--activity-id", help="stable activity identity for --live-primary")
+    start.add_argument(
+        "--cognition-object-store-seed",
+        type=Path,
+        help=(
+            "exact immutable prior CognitionObject store to mount outside the Git source "
+            "identity for --live-primary"
+        ),
+    )
     start.add_argument("--width", type=int, default=DEFAULT_WIDTH, choices=range(1, 9))
     start.add_argument("--model", default=DEFAULT_MODEL)
     start.add_argument("--model-reasoning-effort", default=DEFAULT_REASONING_EFFORT)
