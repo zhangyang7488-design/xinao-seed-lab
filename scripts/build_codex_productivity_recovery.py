@@ -20,9 +20,6 @@ MAIN_HOME = Path(r"C:\Users\xx363\.codex")
 ACCOUNT_B_HOME = Path(r"C:\Users\xx363\.codex-s-hardmode-account-b")
 LAUNCHER_ROOT = Path(r"C:\Users\xx363\CodexLaunchers")
 SITUATION_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island")
-CONTEXT_RUNTIME_SOURCE_BRIEF = Path(
-    r"C:\Users\xx363\Desktop\新澳原始直觉意图\持续上下文运行时.txt"
-)
 GROK_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool")
 GROK_RUNTIME_MANIFEST = GROK_RUNTIME_ROOT / "runtime-manifest.v1.json"
 GROK_BRIDGE_ROOT = GROK_RUNTIME_ROOT / "bridge"
@@ -42,6 +39,7 @@ NON_PI_GENERIC_SKILLS = (
     "promptfoo-agent-evals",
     "repair-agent-behavior",
     "research-external-reality",
+    "steward-s-evolution",
     "verified-agent-loop",
 )
 
@@ -380,14 +378,6 @@ def _collect_sources() -> list[SourceEntry]:
             )
         )
 
-    entries.append(
-        SourceEntry(
-            source=CONTEXT_RUNTIME_SOURCE_BRIEF,
-            archive_path="human-entries/持续上下文运行时.txt",
-            role="context_runtime_source_brief",
-        )
-    )
-
     missing = [str(entry.source) for entry in entries if not entry.source.is_file()]
     if missing:
         raise FileNotFoundError("recovery sources are missing: " + "; ".join(missing))
@@ -463,10 +453,12 @@ def build(output_root: Path) -> dict[str, object]:
             "local_docker_is_exception_only_not_a_default_runtime_dependency": True,
             "dated_worker_pool_recovery_snapshots_are_not_current_sources": True,
             "live_continuation_locator_is_not_a_recovery_source": True,
+            "desktop_research_briefs_are_not_runtime_recovery_sources": True,
         },
         "excluded_on_purpose": [
             "authentication credentials and refresh tokens",
             "live explicit-continuation locator and live task runs",
+            "desktop research briefs and AI proposals that are historical evidence rather than runtime source",
             (
                 "sessions transcripts, memory data, and live Context Fabric raw state or "
                 "snapshots; only its generic source, contracts, and ACL installer are archived"
@@ -500,6 +492,11 @@ def build(output_root: Path) -> dict[str, object]:
                 "fresh app-server hooks/list trust from each installed account",
                 "Context Fabric ACL audit and cleanroom negative mount remain green",
                 "changed-context positive and negative behavior consumer",
+                (
+                    "fresh S/B evolution-steward parent-frame routing plus "
+                    "evals/s_evolution_evidence_horizon raw-tool positive, interaction, "
+                    "evidence-horizon, and bounded-fix behavior consumers"
+                ),
                 "Grok public launcher verifies the restored 15-file runtime manifest",
                 "fresh SelectionOnly succeeds before any real Grok dispatch",
                 "fresh common read-only dispatch uses a disposable host worktree while Docker is stopped",

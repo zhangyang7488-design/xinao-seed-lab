@@ -93,6 +93,9 @@ def test_hot_s_contract_owns_event_driven_body_evolution_without_steering_sol() 
     assert "model-native formation ability" in agreement
     assert "substrate/continuity amplification" in agreement
     assert "prior CognitionObject shaping" in agreement
+    assert "仍未区分的 causal alternative" in agreement
+    assert "balanced fresh contrast" in agreement
+    assert "不落成固定条数、tool-call、token、时间或目录上限" in agreement
     assert "不是持续活动" in agreement
     assert "不是第四条 continuity loop" in agreement
     assert "复用下文既有的 S builder parent-frontier reentry" in agreement
@@ -102,6 +105,8 @@ def test_hot_s_contract_owns_event_driven_body_evolution_without_steering_sol() 
     assert "control tower 规定实验与 effect 的物理边界" in detailed
     assert "phenotype CURRENT 提供一个可改写的观察尺" in detailed
     assert "用户无需再" in detailed
+    assert "这个 evidence horizon 由边际因果" in detailed
+    assert "继续扫 S/B session、另一身体、旧 worktree" in detailed
     assert "在模型/产品升级后 retire local compensation" in detailed
     assert "不新增第四条" in detailed
     assert "Research Sol `WAIT`" in detailed

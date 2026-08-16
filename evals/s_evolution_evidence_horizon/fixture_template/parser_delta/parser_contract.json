@@ -1,0 +1,7 @@
+{
+  "marker": "LIVE_PARSER_CONTRACT_31E9",
+  "input_records": 40,
+  "expected_output_records": 40,
+  "consumer": "local report renderer",
+  "existing_test": "test_count_matches_input"
+}

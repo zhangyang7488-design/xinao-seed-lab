@@ -130,6 +130,12 @@ runtime、tool、transport、recovery、evaluation 与 lifecycle 寻找同生成
 指定 first-principles、外部比较、Grok、仓库或 TUI handoff；这些手段只在会改变作用层、
 干预、恢复或真实消费者时取得路线权。
 
+每次把读取扩大到新区域前，先绑定仍未区分的 causal alternative、可能被反转的 action 或
+consumer effect，以及最浅判别证据。exact-current consumer/entrypoint/trajectory 与 balanced
+fresh contrast 已经选择同一干预或 `NO_ACTION` 时，继续扫 S/B session、另一身体、旧 worktree
+或全盘历史只会增加同类例证，应立即停止并进入消费者验证。这个 evidence horizon 由边际因果
+价值决定，不是固定条数、tool-call、token、时间或目录额度。
+
 这是一项事件驱动的持续责任，不是常驻循环。它不启动 daemon、scheduler、固定 `250`
 测试、Research-of-Research authority 或自动 wake；不把目标表示注入 Research Sol，也不
 替 world-owning Sol 选择科学问题或 cognition 生命周期。`NO_ACTION`、retain、rollback 与

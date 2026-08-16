@@ -4,7 +4,7 @@
   "authority": false,
   "runtime_loaded": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-15T22:46:50+08:00",
+  "evidence_cutoff": "2026-08-16T14:30:00+08:00",
   "purpose": "Recover the complete capability, pain, consumer, and retirement lineage before another architecture migration. This registry prevents carrier deletion from being mistaken for authority cleanup or capability restoration; it never selects a task, domain route, tool, worker, or completion state.",
   "current_runtime_topology": {
     "active_hook_events": [
@@ -391,7 +391,7 @@
     {
       "id": "s_control_tower_cognitive_independence_and_effect_ownership",
       "pain": "S previously confused formal effect ownership with being the sole epistemic subject: the visible Codex formed and advanced a domain main line while nominally independent workers widened or validated it. The inverse failure is a report-forwarding S that no longer contacts its own runtime, engineering source, shared effects, or real consumers. High-frequency control narration can also displace the cognition S is meant to support.",
-      "causal_work": "Separate responsibilities by live role. A world-owning Sol directly forms its domain world without S selecting or steering its question, hypothesis, representation, or next cognitive unit. S directly owns identity, isolation, lifecycle, runtime facts, provenance, recovery, shared engineering effects, consumer verification, and fresh late fusion. Ordinary Grok is the role-scoped default for separable positive-value labor inside that S cone at dynamic width, but does not enter the Sol's cognition; rerun, generation, and continuation remain contract-bound.",
+      "causal_work": "Separate responsibilities by live role. A world-owning Sol directly forms its domain world without S selecting or steering its question, hypothesis, representation, or next cognitive unit. S directly owns identity, isolation, lifecycle, runtime facts, provenance, recovery, shared engineering effects, consumer verification, fresh late fusion, and event-driven evolution of S-self, the supplied research body, and cross-body substrate when a real signal appoints that work. Body-layer attribution keeps model-native formation, substrate amplification, and prior-experience shaping separate. Every evidence expansion must serve a still-live causal alternative and possible decision delta; exact-current consumer plus balanced contrast ends unrelated archive archaeology. Ordinary Grok is the role-scoped default for separable positive-value labor inside that S cone at dynamic width, but does not enter the Sol's cognition; rerun, generation, and continuation remain contract-bound.",
       "historical_carriers": [
         "git:4096f52^:evals/context_intent_alignment/cases.yaml",
         "D:/XINAO_RESEARCH_RUNTIME/state/grok_worker_pool"
@@ -402,18 +402,22 @@
         "external:A/B shared AGENTS.md role-separated control-tower invariant",
         "external:amplify-supervisor-worker cognitive-independence and effect-owner contract",
         "external:dispatch-grok-worker-pool skill",
+        "external:steward-s-evolution Skill shared by S/B",
         "external:Invoke-GrokWorkerPool.ps1",
         "services/agent_runtime/dispatch_economics.py",
         "services/agent_runtime/execution_consumers.v1.json",
-        "evals/parent_frame_admission"
+        "evals/parent_frame_admission",
+        "external:parent-frame admission body-evolution positive, evidence-horizon, and bounded-fix cases",
+        "evals/s_evolution_evidence_horizon",
+        "infra/codex_productivity_recovery/v2 non-Pi staged recovery consumer"
       ],
       "current_state": "PARTIAL_CONSUMER",
       "disposition": "KEEP_HOT",
-      "cost_and_failure_radius": "A cognition-steering S can bias every branch before reality contact; an inert S can lose runtime and effect responsibility. Fan-out, raw evidence, and fusion also create quota, isolation, and fan-in costs, so topology must remain current-contract dependent.",
-      "rollback": "Restore the immediately preceding shared AGENTS and amplify-supervisor-worker bytes from the frozen recovery archive, then revert only this isolated behavior delta and its cases; never restore the older owner-direct domain-mainline rule as a silent hot default.",
+      "cost_and_failure_radius": "A cognition-steering S can bias every branch before reality contact; an inert S can lose runtime and effect responsibility. An unbounded body-evolution scan can consume attention and sweep unrelated S/B or clean-room history after the decision is already stable. Fan-out, raw evidence, and fusion also create quota, isolation, and fan-in costs, so topology and evidence breadth must remain current-contract dependent.",
+      "rollback": "Restore the immediately preceding shared AGENTS, steward-s-evolution, and amplify-supervisor-worker bytes from the frozen non-Pi recovery archive, then revert only this isolated behavior delta and its cases; never restore the older owner-direct domain-mainline rule as a silent hot default.",
       "unknowns": [
         "Static consumers and focused fresh trajectories cannot prove every future S window will preserve both branch independence and direct engineering/effect responsibility.",
-        "Natural follow-up is still required to verify that the user no longer has to repeat that new-repository research belongs to its Sol and that control narration stays thin."
+        "Fresh changed-surface S/B raw trajectories can bound this known evidence-selection repair; correction-withheld unknown-generator formation, cross-experience revision recovery, and longitudinal natural interaction remain required before claiming permanent learning."
       ]
     },
     {

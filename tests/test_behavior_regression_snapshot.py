@@ -382,6 +382,54 @@ def test_productivity_profile_copies_only_the_action_trajectory_and_hot_kernel(
     assert not (effective / "evals/parent_frame_admission").exists()
 
 
+def test_evolution_profile_copies_raw_trace_suite_hot_kernel_and_steward_skill(
+    tmp_path: Path,
+) -> None:
+    repo = _fixture_repo(tmp_path)
+    _write(repo / "tests/test_s_evolution_evidence_horizon.py", "# test\n")
+    _write(
+        repo / "evals/s_evolution_evidence_horizon/promptfooconfig.yaml",
+        "tests: []\n",
+    )
+    _write(
+        repo / "evals/s_evolution_evidence_horizon/fixture_template/case/current.json",
+        "{}\n",
+    )
+    codex_home = tmp_path / "codex-home"
+    _write(codex_home / "AGENTS.md", "global S evolution kernel\n")
+    _write(
+        codex_home / "skills/steward-s-evolution/SKILL.md",
+        "---\nname: steward-s-evolution\ndescription: fixture\n---\n",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+
+    output = tmp_path / "run"
+    output.mkdir()
+    manifest_path = create_snapshot(
+        repo,
+        output,
+        "evolution",
+        codex_home=codex_home,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    effective = Path(manifest["effective_root"])
+    external = Path(manifest["external_root"])
+    roles = {row["role"] for row in manifest["source_inputs"]}
+
+    assert "s_evolution_evidence_horizon_eval" in roles
+    assert "s_evolution_evidence_horizon_tests" in roles
+    assert "s_evolution_steward_skill" in roles
+    assert "global_working_kernel" in roles
+    assert (effective / "evals/s_evolution_evidence_horizon/promptfooconfig.yaml").exists()
+    assert (effective / "tests/test_s_evolution_evidence_horizon.py").exists()
+    assert (
+        external
+        / "s_evolution_steward_skill/steward-s-evolution/SKILL.md"
+    ).exists()
+    assert not (effective / "evals/codex_capability").exists()
+    assert not (effective / "evals/parent_frame_admission").exists()
+
+
 def test_surface_profile_copies_only_natural_surface_suite_and_hot_kernel(
     tmp_path: Path,
 ) -> None:

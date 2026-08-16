@@ -1,0 +1,4 @@
+LIVE_PARSER_SOURCE_5D12
+
+def reported_count(records):
+    return len(records) + 1

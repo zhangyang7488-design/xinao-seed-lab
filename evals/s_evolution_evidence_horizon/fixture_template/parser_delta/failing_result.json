@@ -1,0 +1,7 @@
+{
+  "marker": "LIVE_PARSER_FAILURE_C7A4",
+  "input_records": 40,
+  "reported_records": 41,
+  "failing_test": "test_count_matches_input",
+  "other_consumers_affected": false
+}

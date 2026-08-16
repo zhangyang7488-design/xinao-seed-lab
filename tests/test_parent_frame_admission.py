@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 71
+    assert len(cases) == 74
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -87,9 +87,119 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD",
         "REG_AMBIENT_ENVIRONMENT_MISS_IS_NOT_APPLICATION_DEPENDENCY_MISSING",
         "REG_FORMAL_ENVIRONMENT_MISSING_DEPENDENCY_REQUIRES_FULL_REPAIR",
+        "REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION",
+        "REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY",
+        "REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
     assert all("intent" in case["metadata"]["profiles"] for case in cases)
+
+    evolution_cases = {
+        case["vars"]["case_id"]: case["vars"]
+        for case in cases
+        if case["vars"]["case_id"].startswith("REG_S_BODY_EVOLUTION_")
+        or case["vars"]["case_id"] == "REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX"
+    }
+    assert set(evolution_cases) == {
+        "REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION",
+        "REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY",
+        "REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX",
+    }
+    assert evolution_cases["REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION"][
+        "expected_next_action"
+    ] == "investigate_competing_causes"
+    assert evolution_cases["REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY"][
+        "expected_next_action"
+    ] == "skip_no_value_branch_and_continue"
+    assert evolution_cases["REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX"][
+        "expected_next_action"
+    ] == "execute_known_parent_action_now"
+    body_routes = json.loads(
+        evolution_cases["REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION"][
+            "allowed_frame_routes"
+        ]
+    )
+    assert {route["frame_relation"] for route in body_routes} == {
+        "same_parent_increment",
+        "material_evidence_increment",
+    }
+    assert {route["next_action"] for route in body_routes} == {
+        "investigate_competing_causes",
+        "dispatch_ordinary_grok_candidates_and_integrate",
+    }
+    assert "s_engineering_with_ordinary_grok_candidates" in json.loads(
+        evolution_cases["REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION"][
+            "allowed_surface_roles"
+        ]
+    )
+    assert "internal_worker_routing_to_user_authorization" in json.loads(
+        evolution_cases["REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION"][
+            "allowed_blocked_promotions"
+        ]
+    )
+    assert json.loads(
+        evolution_cases["REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION"][
+            "allowed_residual_defeaters"
+        ]
+    ) == ["none"]
+    body_projections = json.loads(
+        evolution_cases["REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION"][
+            "expected_required_projection_levels"
+        ]
+    )
+    assert "human_practice" not in body_projections
+    assert {"parent_result", "current_frame", "responsibility", "runtime_carrier", "consumer_effect"} <= set(
+        body_projections
+    )
+    horizon_routes = json.loads(
+        evolution_cases["REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY"][
+            "allowed_frame_routes"
+        ]
+    )
+    assert {route["frame_relation"] for route in horizon_routes} == {
+        "same_parent_increment",
+        "same_parent_reprioritization",
+    }
+    assert set(
+        json.loads(
+            evolution_cases[
+                "REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY"
+            ]["allowed_trigger_roles"]
+        )
+    ) == {"subordinate_after_frame_binding", "not_applicable"}
+    horizon_reason_patterns = json.loads(
+        evolution_cases["REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY"][
+            "required_reason_patterns"
+        ]
+    )
+    assert any("历史" in pattern for pattern in horizon_reason_patterns)
+    assert any("不能改变" in pattern for pattern in horizon_reason_patterns)
+    assert any("消费者" in pattern for pattern in horizon_reason_patterns)
+    horizon_projections = json.loads(
+        evolution_cases["REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY"][
+            "expected_required_projection_levels"
+        ]
+    )
+    assert "responsibility" not in horizon_projections
+    assert {"parent_result", "current_frame", "runtime_carrier", "consumer_effect"} <= set(
+        horizon_projections
+    )
+    parser_projections = json.loads(
+        evolution_cases["REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX"][
+            "expected_required_projection_levels"
+        ]
+    )
+    assert "runtime_carrier" not in parser_projections
+    assert "responsibility" not in parser_projections
+    assert "explicit_scope_reduction" in json.loads(
+        evolution_cases["REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX"][
+            "allowed_surface_roles"
+        ]
+    )
+    assert evolution_cases["REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX"][
+        "expected_semantic_effect_profile"
+    ] is True
+    assert all("required_reason_patterns" in case for case in evolution_cases.values())
 
     schema = config["providers"][0]["config"]["output_schema"]
     nullable_event_objects = {
@@ -352,9 +462,11 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
         "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
         "REG_CORRECTION_UPDATES_PARENT_NOT_NEW_LOCAL_TASK",
-        "REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD",
-        "REG_HUMAN_SLEEP_PRESERVES_ACTIVE_DELEGATION",
-    }
+            "REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD",
+            "REG_HUMAN_SLEEP_PRESERVES_ACTIVE_DELEGATION",
+            "REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY",
+            "REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX",
+        }
     behavior_delivery_terminal_cases = {
         "REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION",
     }
@@ -1153,6 +1265,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert "effectDecisionClosureMatches" in assertion
     assert "strictOptionalObjectsAreEventBound" in assertion
     assert "graphTaxonomyMatches" in assertion
+    assert "requiredReasonPatterns" in assertion
+    assert "reasonContractMatches" in assertion
 
     validation_scope_case = next(
         case["vars"]

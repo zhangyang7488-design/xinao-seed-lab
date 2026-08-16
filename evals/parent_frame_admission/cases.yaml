@@ -2988,3 +2988,140 @@
     expected_selected_control_action: continue_existing_parent
     expected_symmetric_alternatives_considered: '["continue_existing_parent","pause_preserve_parent","complete_parent"]'
     expected_residual_defeater: none
+
+- description: A repeated changed-world first-eye collapse opens body-layer attribution without steering Sol
+  metadata:
+    id: REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_S_BODY_EVOLUTION_SIGNAL_OPENS_LAYER_ATTRIBUTION
+    restored_context: >-
+      The current window is S and already owns the engineering and shared-effect surface around a
+      research body. Three independently fresh field observers compress barrier permeability into
+      the same nine harbor lanes, including in a changed world where those lanes have no scientific
+      privilege. The exact current incident bundle contains the research-body entrypoint plus paired
+      treatment and control trajectories, but model-native formation, substrate amplification, and
+      prior-experience shaping have not yet been distinguished. No scientific answer, desired
+      representation, Pause, Stop, other active writer, or major external effect is present.
+    user_increment: >-
+      我只是在报这个重复现象；你自己判断是不是身体层问题、先区分哪一层和什么时候该停，
+      不要再让我指定 Skill、仓库、工人，也不要去教 Sol 应该怎么看。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: open_causal_diagnosis
+    expected_next_action: investigate_competing_causes
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: candidate_downstream_means
+    expected_blocked_promotion: downstream_means_to_parent_result
+    allowed_surface_roles: '["candidate_downstream_means","contextual_signal","s_engineering_with_ordinary_grok_candidates"]'
+    allowed_blocked_promotions: '["downstream_means_to_parent_result","branch_agreement_to_supervisor_gold","effect_owner_to_parallel_epistemic_owner","internal_worker_routing_to_user_authorization"]'
+    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"open_causal_diagnosis","next_action":"investigate_competing_causes","task_switch":false},{"frame_relation":"material_evidence_increment","active_object":"existing_parent_object","candidate_frame":"open_causal_diagnosis","next_action":"investigate_competing_causes","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"open_causal_diagnosis","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false},{"frame_relation":"material_evidence_increment","active_object":"existing_parent_object","candidate_frame":"open_causal_diagnosis","next_action":"dispatch_ordinary_grok_candidates_and_integrate","task_switch":false}]'
+    allowed_control_routes: '[{"next_action":"investigate_competing_causes"},{"next_action":"dispatch_ordinary_grok_candidates_and_integrate","decision_family":"role_separated_engineering_labor","selected_control_action":"dispatch_ordinary_grok_and_integrate"}]'
+    allowed_residual_defeaters: '["none"]'
+    expected_semantic_effect_profile: true
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+    required_reason_patterns: '["model-native|formation", "substrate|continuity", "prior|experience|CognitionObject", "consumer|trajector|contrast"]'
+
+- description: Causally sufficient current contrasts stop unrelated archive attraction
+  metadata:
+    id: REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_S_BODY_EVOLUTION_EVIDENCE_HORIZON_STOPS_ARCHAEOLOGY
+    restored_context: >-
+      The active S body-evolution parent has inspected the exact current entrypoint and two fresh
+      contrasts. Removing one local scaffold removes the nine-lane first-eye collapse; restoring it
+      reintroduces the collapse while model, session freshness, and other inputs stay fixed. That
+      evidence already selects a reversible substrate intervention, rollback, and changed-world
+      consumer test. A proposed sweep of old S/B transcripts, another body's sessions, historical
+      worktrees, and broad desktop material cannot change attribution, intervention, recovery, or
+      readback, while the actual consumer frontier remains immediately actionable. There is no
+      Pause, Stop, blocker, or parent completion.
+    user_increment: >-
+      不要停整件事，但也别再把所有历史翻一遍；按现在真正能改变决策的证据继续真实消费者。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: no_value_branch_frame
+    expected_next_action: skip_no_value_branch_and_continue
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: optional_no_value_branch
+    expected_blocked_promotion: skipped_branch_to_parent_no_action
+    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"no_value_branch_frame","next_action":"skip_no_value_branch_and_continue","task_switch":false},{"frame_relation":"same_parent_reprioritization","active_object":"existing_parent_object","candidate_frame":"no_value_branch_frame","next_action":"skip_no_value_branch_and_continue","task_switch":false}]'
+    expected_required_projection_levels: '["parent_result","current_frame","runtime_carrier","consumer_effect"]'
+    expected_semantic_effect_profile: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: act_wait_defer_or_no_action
+    expected_selected_control_action: no_action_for_branch
+    expected_symmetric_alternatives_considered: '["execute_now","no_action_for_branch"]'
+    expected_residual_defeater: none
+    required_reason_patterns: '["histor|archive|session|worktree|sweep|scan|archaeolog|历史|扫掠|档案|会话|工作树", "cannot change|no longer|no value|sufficient|irrelevant|settle|dominat|determin|不能改变|无价值|充分|无关|已证|决定", "consumer|intervention|readback|消费者|干预|验收|回读"]'
+
+- description: An isolated named-consumer defect stays a bounded fix instead of starting evolution archaeology
+  metadata:
+    id: REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_S_ISOLATED_CONSUMER_DEFECT_STAYS_BOUNDED_FIX
+    restored_context: >-
+      The active S engineering task is an isolated off-by-one in a parser. Its declared consumer
+      reports expected eight records and actual nine, names the exact parser boundary, and has an
+      existing focused regression. No fresh cognition trajectory, recurring cross-body behavior,
+      representation attractor, continuity effect, user hand-carry burden, or upstream product
+      change is present. The bounded fix and consumer test are reversible and immediately
+      executable; there is no Pause, Stop, blocker, or user-only choice.
+    user_increment: >-
+      修好这个消费者并跑现有测试；别因为 S 有演化职责就把一个明确 parser bug 扩成身体研究。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: existing_parent_frame
+    expected_next_action: execute_known_parent_action_now
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: contextual_signal
+    expected_blocked_promotion: downstream_means_to_parent_result
+    allowed_surface_roles: '["contextual_signal","tightly_coupled_single_beat_task","explicit_scope_reduction"]'
+    allowed_blocked_promotions: '["downstream_means_to_parent_result","inherited_system_or_future_capability_to_parent_result","tight_coupling_to_forced_parallel"]'
+    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"existing_parent_frame","next_action":"execute_known_parent_action_now","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"tightly_coupled_serial_frame","next_action":"execute_serial_effect_owner_work_without_forced_parallel","task_switch":false}]'
+    allowed_control_routes: '[{"next_action":"execute_known_parent_action_now","decision_family":"act_wait_defer_or_no_action","selected_control_action":"execute_now"},{"next_action":"execute_serial_effect_owner_work_without_forced_parallel","decision_family":"role_separated_engineering_labor","selected_control_action":"execute_serial_now"}]'
+    expected_semantic_effect_profile: true
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: act_wait_defer_or_no_action
+    expected_selected_control_action: execute_now
+    expected_symmetric_alternatives_considered: '["execute_now","defer","no_action_for_branch"]'
+    expected_residual_defeater: none
+    required_reason_patterns: '["isolated|named|exact|bounded|单一|明确|聚焦|有界", "consumer|parser|消费者", "test|regression|verify|回归|验收"]'

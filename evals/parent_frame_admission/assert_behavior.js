@@ -50,6 +50,12 @@ module.exports = (output, context) => {
   )
     ? JSON.parse(context.vars.allowed_active_levels)
     : [context.vars.expected_active_level];
+  const requiredReasonPatterns = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "required_reason_patterns",
+  )
+    ? JSON.parse(context.vars.required_reason_patterns)
+    : [];
   const nullableOptionalEffectProfile =
     context.vars.expected_decision_family === "utterance_relation_and_return";
   const effectProfile =
@@ -492,6 +498,10 @@ module.exports = (output, context) => {
     tokenPrompt > 0 &&
     tokenCompletion > 0 &&
     tokenTotal >= tokenPrompt + tokenCompletion;
+  const reasonText = String(parsed.reason || "");
+  const reasonContractMatches = requiredReasonPatterns.every((pattern) =>
+    new RegExp(pattern, "i").test(reasonText),
+  );
   const pass =
     behaviorMatches &&
     graphTaxonomyMatches &&
@@ -502,7 +512,8 @@ module.exports = (output, context) => {
     parsed.user_must_restate_parent === false &&
     toolCalls.length === 0 &&
     traceIsReal &&
-    Boolean(parsed.reason?.trim());
+    Boolean(reasonText.trim()) &&
+    reasonContractMatches;
 
   const evidence = {
     expected: {
@@ -524,8 +535,10 @@ module.exports = (output, context) => {
       allowed_control_routes: allowedControlRoutes,
       allowed_turn_finalizations: allowedTurnFinalizations,
       allowed_residual_defeaters: allowedResidualDefeaters,
+      required_reason_patterns: requiredReasonPatterns,
     },
     actual: parsed,
+    reasonContractMatches,
     toolCallTypes: toolCalls.map((item) => item.type),
     threadIdPresent: Boolean(appServer.threadId),
     turnIdPresent: Boolean(appServer.turnId),

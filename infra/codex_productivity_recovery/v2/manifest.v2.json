@@ -13,15 +13,15 @@
     "excluded_trees_are_not_read_verified_or_restored": true
   },
   "archive": "codex-productivity-recovery.non-pi.v2.zip",
-  "archive_sha256": "71fb1185d0966569884710151ae953129155f1ace043cee3d6f593e7c589349e",
-  "entry_count": 126,
+  "archive_sha256": "efa9f74b84fa4f3a97d3cc47beca93a4903f515a760feb2c418ab8ca70b66042",
+  "entry_count": 128,
   "entries": [
     {
       "archive_path": "contracts/CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docs\\tool_glue\\CODEX_ACCOUNT_SLOT_TOPOLOGY_CURRENT.md",
       "role": "two_bodies_paired_credential_slots",
-      "size": 2663,
-      "sha256": "e761b40d781e36037981ee11d09a1f2dcd3eb995af8823a2e22b7ab4c0478e73"
+      "size": 3229,
+      "sha256": "7098eab651013824ae2cebc2f1c685c246f3577dd84da2c7797cc4e6494feca8"
     },
     {
       "archive_path": "contracts/CODEX_GROK_WORKER_POOL_OPERATOR.md",
@@ -52,18 +52,11 @@
       "sha256": "b1c982a4acc5895dc7237d46e93ffee84002deab89e8f4f50b46ffbf8ac36370"
     },
     {
-      "archive_path": "human-entries/持续上下文运行时.txt",
-      "live_source": "C:\\Users\\xx363\\Desktop\\新澳原始直觉意图\\持续上下文运行时.txt",
-      "role": "context_runtime_source_brief",
-      "size": 25760,
-      "sha256": "d5d42ccece491cd3937aca940733b92a72f3f54c08bc3f73138a6e8f006bfc62"
-    },
-    {
       "archive_path": "launchers/CODEX_PRODUCTIVITY_PROFILE.md",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_PRODUCTIVITY_PROFILE.md",
       "role": "launcher_or_profile",
-      "size": 11366,
-      "sha256": "72eca83f7b34f844a2255e8ef6fc2b6f4a470c2e315d2c1122b1df6cc0951072"
+      "size": 11950,
+      "sha256": "bebcda2ebfbdb9fa5bbef44b515fe8fc2be92428688839beddf91f6f96e94230"
     },
     {
       "archive_path": "launchers/Invoke-Codex-GrokWorkerPool.ps1",
@@ -104,8 +97,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 13660,
-      "sha256": "13e1233b5310852ffec7ff47a6e235239af56a34139213277737ae3d6ac41510"
+      "size": 16125,
+      "sha256": "9a0e0811c705dba43d7f2f7517ead9e62eb825afb5e63cfc7fc3776d8202b731"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -125,8 +118,8 @@
       "archive_path": "main-home/config.toml",
       "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
       "role": "main_live_source",
-      "size": 16025,
-      "sha256": "38715e81a16b1fa2b7a47883e5a9e03c61f1eb7e793faab1815ba188b67ac26e"
+      "size": 16849,
+      "sha256": "3beb1194080b5352bbe7f4127601ca8d48ce60bca33f0f93150ed6d6418c4c23"
     },
     {
       "archive_path": "main-home/hooks.json",
@@ -591,6 +584,27 @@
       "sha256": "098acbf3f8493ace514a3ae42b72190f4d7fec3ea95f6e885b7e0024f7fb0087"
     },
     {
+      "archive_path": "main-home/skills/steward-s-evolution/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\steward-s-evolution\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 11181,
+      "sha256": "b44b580531eebdbeec7236d80884d678c18f10f9135643b1f3141a21c1fd7c9f"
+    },
+    {
+      "archive_path": "main-home/skills/steward-s-evolution/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\steward-s-evolution\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 378,
+      "sha256": "99409e5c554e35210b965e1e5e407962bc906a4187c44bf033192616ecbf3bac"
+    },
+    {
+      "archive_path": "main-home/skills/steward-s-evolution/references/evaluation-cases.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\steward-s-evolution\\references\\evaluation-cases.md",
+      "role": "generic_custom_skill",
+      "size": 6054,
+      "sha256": "e1cd7ca4c0d4eb0c05b3cd977cc0fbb0e70f57ceddc01bb832d78a17ca055352"
+    },
+    {
       "archive_path": "main-home/skills/verified-agent-loop/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\verified-agent-loop\\SKILL.md",
       "role": "generic_custom_skill",
@@ -650,8 +664,8 @@
       "archive_path": "repository/scripts/Install-SContextRolloutConsumer.ps1",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Install-SContextRolloutConsumer.ps1",
       "role": "context_rollout_consumer_installer",
-      "size": 104495,
-      "sha256": "a09ef5a28bc627964d0324059c9f4d3bc7b5c5b5c65e8979b488a08ac5d13f42"
+      "size": 105696,
+      "sha256": "5dac86b4f1d679473e235955ad287646a0b5258143ee0065367799a93a177cf8"
     },
     {
       "archive_path": "repository/scripts/Protect-SContextFabricState.ps1",
@@ -672,14 +686,14 @@
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\context_rollout_consumer.bundle.lock.json",
       "role": "context_rollout_consumer_release_lock",
       "size": 246347,
-      "sha256": "d39e0828fe172e1338604a66b1e9b80a074401887a599977627e839efed46a59"
+      "sha256": "37c5a974127fc0d5ac1a3043311633f050ca24877a6dea412f7460bb84eda1b5"
     },
     {
       "archive_path": "repository/scripts/context_rollout_consumer.py",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\context_rollout_consumer.py",
       "role": "context_rollout_incremental_consumer",
-      "size": 83812,
-      "sha256": "786aa0cc3380cd11b693bc565bcf00de6a44e7fc2f99318307ea734d05f893dd"
+      "size": 84192,
+      "sha256": "861e870ede5f6743a6c13b2c682edb346e3d9a0ff2089f56b4513dbeec8e8eb4"
     },
     {
       "archive_path": "repository/scripts/manage_context_fabric.py",
@@ -699,8 +713,8 @@
       "archive_path": "repository/services/agent_runtime/codex_situation_hook.py",
       "live_source": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\codex_situation_hook.py",
       "role": "situation_hook_adapter",
-      "size": 21361,
-      "sha256": "bd22f5e197ba47c6fc626bbc1faba47b7aff22a0d2797a1d796318a274d48f7c"
+      "size": 21736,
+      "sha256": "c833daec58362c556c15a202d470487babf155bae4136fcd776450771e4db3bb"
     },
     {
       "archive_path": "repository/services/agent_runtime/context_fabric.py",
@@ -912,11 +926,13 @@
     "grok_worker_pool_live_manifest_is_the_runtime_truth": true,
     "local_docker_is_exception_only_not_a_default_runtime_dependency": true,
     "dated_worker_pool_recovery_snapshots_are_not_current_sources": true,
-    "live_continuation_locator_is_not_a_recovery_source": true
+    "live_continuation_locator_is_not_a_recovery_source": true,
+    "desktop_research_briefs_are_not_runtime_recovery_sources": true
   },
   "excluded_on_purpose": [
     "authentication credentials and refresh tokens",
     "live explicit-continuation locator and live task runs",
+    "desktop research briefs and AI proposals that are historical evidence rather than runtime source",
     "sessions transcripts, memory data, and live Context Fabric raw state or snapshots; only its generic source, contracts, and ACL installer are archived",
     "plugin caches and reinstallable bundled or curated plugins",
     "conduct-xinao-native-research and all science-domain authority",
@@ -941,6 +957,7 @@
       "fresh app-server hooks/list trust from each installed account",
       "Context Fabric ACL audit and cleanroom negative mount remain green",
       "changed-context positive and negative behavior consumer",
+      "fresh S/B evolution-steward parent-frame routing plus evals/s_evolution_evidence_horizon raw-tool positive, interaction, evidence-horizon, and bounded-fix behavior consumers",
       "Grok public launcher verifies the restored 15-file runtime manifest",
       "fresh SelectionOnly succeeds before any real Grok dispatch",
       "fresh common read-only dispatch uses a disposable host worktree while Docker is stopped"

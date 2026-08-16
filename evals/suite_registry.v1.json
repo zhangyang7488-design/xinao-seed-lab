@@ -43,6 +43,12 @@
       "role": "generic_parent_frame_transition_and_mature_owner_admission"
     },
     {
+      "id": "s_evolution_evidence_horizon",
+      "path": "evals/s_evolution_evidence_horizon",
+      "runner": "scripts/run_behavior_regression.ps1 -Profile evolution",
+      "role": "fresh_s_b_raw_trace_for_body_attribution_causal_evidence_stopping_interaction_and_bounded_negative"
+    },
+    {
       "id": "external_reality_research",
       "path": "evals/external_reality_research",
       "runner": "scripts/run_external_reality_research_eval.ps1",

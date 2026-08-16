@@ -319,6 +319,7 @@ def _profile_flags(
         "recall_live": profile in {"deep", "reuse"},
         "thin": profile in {"core", "deep", "reuse"},
         "productivity": profile in {"productivity", "core", "deep"},
+        "evolution": profile == "evolution",
         "native_subagent": profile == "subagent",
         "static": profile in {"core", "deep", "reuse"} and not failed_from,
     }
@@ -497,6 +498,13 @@ def selected_inputs(
                 "productive_action_trajectory_tests",
             )
         )
+    if flags["evolution"]:
+        relative_inputs.append(
+            (
+                "tests/test_s_evolution_evidence_horizon.py",
+                "s_evolution_evidence_horizon_tests",
+            )
+        )
     for enabled, relative, role in (
         (flags["capability"], "evals/codex_capability", "capability_eval"),
         (flags["proactive"], "evals/proactive_mature_first", "proactive_eval"),
@@ -516,6 +524,11 @@ def selected_inputs(
             "evals/native_subagent_trajectory",
             "native_subagent_trajectory_eval",
         ),
+        (
+            flags["evolution"],
+            "evals/s_evolution_evidence_horizon",
+            "s_evolution_evidence_horizon_eval",
+        ),
     ):
         if enabled:
             relative_inputs.append((relative, role))
@@ -530,10 +543,11 @@ def selected_inputs(
         or flags["reconstitution"]
         or flags["surface"]
         or flags["productivity"]
+        or flags["evolution"]
     ):
         if codex_home is None:
             raise ValueError(
-                "codex_home is required for intent, external-reality, reconstitution, surface, and productive-action profiles"
+                "codex_home is required for intent, external-reality, reconstitution, surface, productive-action, and evolution profiles"
             )
         inputs.append(
             SourceInput(
@@ -556,6 +570,14 @@ def selected_inputs(
                 codex_home / "skills" / "conduct-xinao-native-research",
                 "xinao_native_research_skill",
                 "external/global_codex_home/skills/conduct-xinao-native-research",
+            )
+        )
+    if flags["evolution"]:
+        inputs.append(
+            SourceInput(
+                codex_home / "skills" / "steward-s-evolution",
+                "s_evolution_steward_skill",
+                "external/global_codex_home/skills/steward-s-evolution",
             )
         )
     if flags["recall_live"]:
@@ -767,6 +789,7 @@ def _parser() -> argparse.ArgumentParser:
             "reconstitution",
             "surface",
             "productivity",
+            "evolution",
             "subagent",
             "context",
         ),

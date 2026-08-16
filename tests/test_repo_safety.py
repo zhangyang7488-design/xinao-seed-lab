@@ -476,7 +476,8 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     assert "ContextEvidenceMode" in runner
 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(encoding="utf-8")
-    assert "currently inventories 129" in readme
+    assert "currently inventories 140" in readme
+    assert "-Profile evolution" in readme
     assert "-Profile context" in readme
     assert "context_contract_only" in readme
 
@@ -1493,6 +1494,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     live_ids = {item["id"] for item in registry["live_agent_suites"]}
     assert "proactive_mature_first" in live_ids
     assert "parent_frame_admission" in live_ids
+    assert "s_evolution_evidence_horizon" in live_ids
     assert "context_intent_alignment" not in live_ids
     assert "mature_capability_recall_replay" in live_ids
     assert "mature_capability_recall_live" in live_ids
@@ -1515,7 +1517,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "[int]$MaxErrorRetries = 1" in runner
     assert "'--filter-errors-only', $previousResult" in runner
     assert (
-        "@('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'context')"
+        "@('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'evolution', 'context')"
         in runner
     )
     assert "$productiveFilters += @('--filter-pattern', $CasePattern)" in runner
@@ -1529,27 +1531,37 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 134
+    assert suite_count == catalog["declared_case_count"] == 140
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
         "core": 18 + 1 + 9 + 13 + 10 + 6 + 2 + 1 + 2 + 9,
         "deep": 18 + 1 + 9 + 13 + 10 + 6 + 2 + 1 + 1 + 2 + 9,
-        "intent": 71,
+        "intent": 74,
         "external": 9,
         "reconstitution": 13,
         "surface": 10,
         "proactive": 6,
         "reuse": 4,
         "productivity": 9,
+        "evolution": 3,
         "subagent": 1,
         "context": 4,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 71
+    assert intent["case_count"] == 74
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
+    evolution = next(
+        item for item in catalog["suites"] if item["id"] == "s_evolution_evidence_horizon"
+    )
+    assert evolution["kind"] == "promptfoo_live_read_only_raw_tool_trajectory"
+    assert evolution["case_count"] == 3
+    assert evolution["raw_tool_trajectory_claim_allowed"] is True
+    assert evolution["changed_surface_current_repair_claim_allowed"] is True
+    assert evolution["permanent_learning_claim_allowed"] is False
+    assert evolution["unknown_generator_mastery_claim_allowed"] is False
     external_reality = next(
         item for item in catalog["suites"] if item["id"] == "external_reality_research"
     )
@@ -1842,7 +1854,8 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
         "disable_on_external_context": False,
     }
     assert main["features"]["apps"] is False
-    assert main["features"]["goals"] is False
+    assert main["features"]["goals"] is True
+    assert account_b["features"]["goals"] is True
     assert main["features"]["multi_agent"] is False
     assert account_b["features"]["multi_agent"] is False
     for retained_profile in ("inner_luna_probe", "inner_terra_explorer", "inner_sol_verifier"):
@@ -1866,7 +1879,10 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
         assert main_server["enabled"] is False, name
         assert b_server["enabled"] is False, name
         assert "command" in main_server or "url" in main_server, name
-    assert main["mcp_servers"]["node_repl"]["enabled"] is True
+    # Codex 0.147.0 omits the redundant key for an enabled MCP server; the
+    # live `codex mcp list` consumer reports node_repl enabled for both slots.
+    assert main["mcp_servers"]["node_repl"].get("enabled", True) is True
+    assert account_b["mcp_servers"]["node_repl"].get("enabled", True) is True
 
     cold_plugins = {
         "documents@openai-primary-runtime",
@@ -2003,6 +2019,8 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     assert "普通 Grok 是可分离正收益劳动的默认入口" in contract
     assert "这个默认不进入 world-owning Sol 的 cognition" in contract
     assert "public Grok available / S-cone default; plugin cold" in contract
+    assert "stable / enabled; no standing authority" in contract
+    assert "feature 本身不得生成 Goal、连续模式或研究路线" in contract
 
     worker_operator = worker_operator_path.read_text(encoding="utf-8-sig")
     assert "按需能力入口" in worker_operator

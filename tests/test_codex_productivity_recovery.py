@@ -86,8 +86,13 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         "local_docker_is_exception_only_not_a_default_runtime_dependency": True,
         "dated_worker_pool_recovery_snapshots_are_not_current_sources": True,
         "live_continuation_locator_is_not_a_recovery_source": True,
+        "desktop_research_briefs_are_not_runtime_recovery_sources": True,
     }
     assert manifest["recovery_contract"]["legacy_v1_must_not_be_refreshed_or_used_as_a_source"]
+    assert any(
+        "evals/s_evolution_evidence_horizon raw-tool" in item
+        for item in manifest["recovery_contract"]["required_post_apply_readback"]
+    )
 
     names = {entry["archive_path"] for entry in manifest["entries"]}
     assert "main-home/AGENTS.md" in names
@@ -115,6 +120,9 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
     assert "main-home/skills/research-external-reality/SKILL.md" in names
     assert "main-home/skills/research-external-reality/agents/openai.yaml" in names
     assert "main-home/skills/research-external-reality/references/evaluation-cases.md" in names
+    assert "main-home/skills/steward-s-evolution/SKILL.md" in names
+    assert "main-home/skills/steward-s-evolution/agents/openai.yaml" in names
+    assert "main-home/skills/steward-s-evolution/references/evaluation-cases.md" in names
     assert "runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1" in names
     situation_runtime_roles = {
         "repository/services/agent_runtime/runtime_observation.py": "situation_runtime_source",
@@ -151,7 +159,7 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         "runtime/Codex_Situation_Island/scripts/"
         "manage_explicit_continuation_locator_v1.ps1" in names
     )
-    assert "human-entries/持续上下文运行时.txt" in names
+    assert not any(name.startswith("human-entries/") for name in names)
     roles = {entry["archive_path"]: entry["role"] for entry in manifest["entries"]}
     assert roles["runtime/Codex_Situation_Island/README.md"] == "situation_island_contract"
     assert (
@@ -168,7 +176,6 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         roles["runtime/Codex_Situation_Island/scripts/manage_explicit_continuation_locator_v1.ps1"]
         == "on_demand_explicit_continuation_consumer"
     )
-    assert roles["human-entries/持续上下文运行时.txt"] == "context_runtime_source_brief"
     for cold_script in (
         "bind_active_task_continuation_v1.ps1",
         "restore_parent_task_continuation_v1.ps1",
@@ -189,6 +196,7 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
     serialized_names = "\n".join(names).lower()
     for forbidden in (
         "conduct-xinao-native-research",
+        "human-entries/",
         "pretool_task_provenance_guard_v1.ps1",
         "auth.json",
         "/sessions/",
@@ -240,6 +248,12 @@ def test_non_pi_v2_recovery_archive_is_scoped_and_self_contained(tmp_path: Path)
         ).decode("utf-8")
         assert "Repair the selected Grok route before substitution" in dispatch_skill_text
         assert "native_codex_subagent_substitution_allowed=false" in dispatch_skill_text
+        steward_skill_text = archive.read(
+            "main-home/skills/steward-s-evolution/SKILL.md"
+        ).decode("utf-8")
+        assert "Bind an evidence horizon before expanding" in steward_skill_text
+        assert "marginal causal value" in steward_skill_text
+        assert "generic session archaeology" in steward_skill_text
         worker_text = archive.read(
             "runtime/grok-worker-pool/bridge/Invoke-GrokModelWorker.ps1"
         ).decode("utf-8")

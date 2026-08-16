@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'subagent', 'context')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'evolution', 'subagent', 'context')]
     [string]$Profile = 'smoke',
     [ValidateSet('contract', 'live')]
     [string]$ContextEvidenceMode = 'contract',
@@ -64,8 +64,8 @@ if ($runRuntimeTrajectory -and -not (Test-Path -LiteralPath $contextHarnessSourc
 if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
     throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'context')) {
-    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, reconstitution, surface, productivity, or context.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'reconstitution', 'surface', 'productivity', 'evolution', 'context')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, reconstitution, surface, productivity, evolution, or context.'
 }
 if ($FailedFrom -and $Profile -ne 'proactive') {
     throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
@@ -248,6 +248,9 @@ $needsNativeSubagentWorkspace = $Profile -eq 'subagent'
 $nativeSubagentWorkspace = Join-Path $outputRoot 'native-subagent-workspace'
 $needsProductiveActionWorkspace = $Profile -in @('productivity', 'core', 'deep')
 $productiveActionWorkspace = Join-Path $outputRoot 'productive-action-workspace'
+$needsSEvolutionWorkspace = $Profile -eq 'evolution'
+$sEvolutionWorkspace = Join-Path $outputRoot 's-evolution-evidence-horizon-workspace'
+$sEvolutionCodexHome = Join-Path $outputRoot 's-evolution-isolated-codex-home'
 
 New-Item -ItemType Directory -Path $outputRoot -ErrorAction Stop | Out-Null
 New-Item -ItemType Directory -Path @(
@@ -334,8 +337,82 @@ if ($needsProductiveActionWorkspace) {
     if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the productive-action baseline.' }
 }
 
+if ($needsSEvolutionWorkspace) {
+    $sEvolutionTemplate = Join-Path $executionRoot `
+        'evals\s_evolution_evidence_horizon\fixture_template'
+    if (-not (Test-Path -LiteralPath $sEvolutionTemplate -PathType Container)) {
+        throw "S-evolution evidence-horizon fixture template is missing: $sEvolutionTemplate"
+    }
+    Copy-Item -LiteralPath $sEvolutionTemplate -Destination $sEvolutionWorkspace -Recurse
+    Copy-Item -LiteralPath (Join-Path $executionRoot 'AGENTS.md') `
+        -Destination (Join-Path $sEvolutionWorkspace 'AGENTS.md')
+    & git -C $sEvolutionWorkspace init --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the S-evolution evidence workspace.' }
+    & git -C $sEvolutionWorkspace add --all
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the S-evolution evidence baseline.' }
+    & git -C $sEvolutionWorkspace -c user.name=xinao-eval -c user.email=xinao-eval@local `
+        commit --quiet -m baseline
+    if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the S-evolution evidence baseline.' }
+    $sEvolutionSourceSkill = Join-Path $CodexHome 'skills\steward-s-evolution'
+    foreach ($required in @(
+        (Join-Path $CodexHome 'auth.json'),
+        (Join-Path $CodexHome 'config.toml'),
+        (Join-Path $CodexHome 'AGENTS.md'),
+        $sEvolutionSourceSkill
+    )) {
+        if (-not (Test-Path -LiteralPath $required)) {
+            throw "S-evolution isolated consumer source is missing: $required"
+        }
+    }
+    New-Item -ItemType Directory -Path `
+        (Join-Path $sEvolutionCodexHome 'skills') -Force | Out-Null
+    foreach ($name in @('auth.json', 'AGENTS.md')) {
+        Copy-Item -LiteralPath (Join-Path $CodexHome $name) `
+            -Destination (Join-Path $sEvolutionCodexHome $name)
+    }
+    $sourceConfigLines = Get-Content -LiteralPath (Join-Path $CodexHome 'config.toml')
+    $modelLine = @($sourceConfigLines | Where-Object { $_ -match '^model\s*=' })[0]
+    $reasoningLine = @(
+        $sourceConfigLines | Where-Object { $_ -match '^model_reasoning_effort\s*=' }
+    )[0]
+    if (-not $modelLine -or -not $reasoningLine) {
+        throw 'S-evolution isolated consumer could not preserve the declared model identity.'
+    }
+    $minimalConfig = @(
+        $modelLine,
+        $reasoningLine,
+        'approval_policy = "never"',
+        'sandbox_mode = "read-only"',
+        'cli_auth_credentials_store = "file"',
+        '',
+        '[features]',
+        'apps = false',
+        'browser_use = false',
+        'computer_use = false',
+        'hooks = false',
+        'image_generation = false',
+        'memories = false',
+        'multi_agent = false',
+        'plugins = false',
+        'shell_tool = true',
+        'unified_exec = true'
+    )
+    [IO.File]::WriteAllLines(
+        (Join-Path $sEvolutionCodexHome 'config.toml'),
+        $minimalConfig,
+        [Text.UTF8Encoding]::new($false)
+    )
+    Copy-Item -LiteralPath $sEvolutionSourceSkill `
+        -Destination (Join-Path $sEvolutionCodexHome 'skills\steward-s-evolution') -Recurse
+}
+
+$effectiveCodexHome = if ($needsSEvolutionWorkspace) {
+    $sEvolutionCodexHome
+} else {
+    (Resolve-Path -LiteralPath $CodexHome).Path
+}
 $environment = @{
-    CODEX_HOME = (Resolve-Path -LiteralPath $CodexHome).Path
+    CODEX_HOME = $effectiveCodexHome
     CODEX_APP_SERVER_PATH = $codexBinary
     PROMPTFOO_CONFIG_DIR = $promptfooState
     PROMPTFOO_LOG_DIR = $promptfooLogs
@@ -377,6 +454,9 @@ if ($needsProductiveActionWorkspace) {
         throw "Declared productive-action Python is not a file: $productiveActionPython"
     }
     $environment['XINAO_PRODUCTIVE_ACTION_PYTHON'] = $productiveActionPython
+}
+if ($needsSEvolutionWorkspace) {
+    $environment['XINAO_S_EVOLUTION_WORKSPACE'] = $sEvolutionWorkspace
 }
 $previous = @{}
 foreach ($name in $environment.Keys) {
@@ -818,6 +898,7 @@ $runRecallLive = $Profile -in @('deep', 'reuse')
 $runThinLocalization = $Profile -in @('core', 'deep', 'reuse')
 $runNativeSubagent = $Profile -eq 'subagent'
 $runProductiveAction = $Profile -in @('productivity', 'core', 'deep')
+$runSEvolution = $Profile -eq 'evolution'
 $runStatic = $Profile -in @('core', 'deep', 'reuse') -and -not $FailedFrom
 $sourceInputs = @(
     [pscustomobject]@{ path = (Join-Path $repoRoot 'AGENTS.md'); role = 'working_agreement' },
@@ -937,7 +1018,7 @@ if ($runRuntimeTrajectory) {
         role = 'runtime_observation_consumer'
     }
 }
-if ($runIntent -or $runExternalReality -or $runReconstitution -or $runUserSurface -or $runProductiveAction) {
+if ($runIntent -or $runExternalReality -or $runReconstitution -or $runUserSurface -or $runProductiveAction -or $runSEvolution) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $CodexHome 'AGENTS.md')
         logical_path = 'external/global_codex_home/AGENTS.md'
@@ -1050,6 +1131,21 @@ if ($runProductiveAction) {
         role = 'productive_action_trajectory_eval'
     }
 }
+if ($runSEvolution) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_s_evolution_evidence_horizon.py')
+        role = 's_evolution_evidence_horizon_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\s_evolution_evidence_horizon')
+        role = 's_evolution_evidence_horizon_eval'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $CodexHome 'skills\steward-s-evolution')
+        logical_path = 'external/global_codex_home/skills/steward-s-evolution'
+        role = 's_evolution_steward_skill'
+    }
+}
 $sourceManifestPath = Join-Path $outputRoot 'source-manifest.json'
 $sourceManifestFinalPath = Join-Path $outputRoot 'source-manifest.final.json'
 $liveSourceManifestPath = Join-Path $outputRoot 'live-source-manifest.before.json'
@@ -1118,6 +1214,9 @@ try {
     }
     if ($runProductiveAction) {
         $preflightTests += 'tests/test_productive_action_trajectory.py'
+    }
+    if ($runSEvolution) {
+        $preflightTests += 'tests/test_s_evolution_evidence_horizon.py'
     }
     if ($runRuntimeTrajectory) {
         $preflightTests += 'tests/test_context_runtime_trajectory_harness.py'
@@ -1345,6 +1444,21 @@ try {
             -Concurrency 1 -ExtraArguments $productiveFilters
     }
 
+    if ($overallExit -eq 0 -and $runSEvolution -and -not $PreflightOnly) {
+        $sEvolutionConfig = Join-Path $executionRoot `
+            'evals\s_evolution_evidence_horizon\promptfooconfig.yaml'
+        $sEvolutionResult = Join-Path $outputRoot `
+            's-evolution-evidence-horizon.result.json'
+        $sEvolutionFilters = @()
+        if ($CasePattern) {
+            $sEvolutionFilters += @('--filter-pattern', $CasePattern)
+        }
+        $suiteRuns += Invoke-PromptfooSuite `
+            -SuiteId 's_evolution_evidence_horizon' `
+            -ConfigPath $sEvolutionConfig -ResultPath $sEvolutionResult `
+            -Concurrency 1 -ExtraArguments $sEvolutionFilters
+    }
+
     if ($overallExit -eq 0 -and $runRecallLive -and -not $PreflightOnly) {
         $recallLiveConfig = Join-Path $executionRoot `
             'evals\mature_capability_recall\promptfooconfig.live.yaml'
@@ -1376,6 +1490,12 @@ catch {
 finally {
     foreach ($name in $previous.Keys) {
         [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process')
+    }
+    if ($needsSEvolutionWorkspace) {
+        $isolatedAuth = Join-Path $sEvolutionCodexHome 'auth.json'
+        if (Test-Path -LiteralPath $isolatedAuth -PathType Leaf) {
+            Remove-Item -LiteralPath $isolatedAuth -Force
+        }
     }
 }
 
@@ -1513,6 +1633,12 @@ $summary = [ordered]@{
     )
     productive_action_workspace = $(
         if ($needsProductiveActionWorkspace) { $productiveActionWorkspace } else { $null }
+    )
+    s_evolution_workspace = $(
+        if ($needsSEvolutionWorkspace) { $sEvolutionWorkspace } else { $null }
+    )
+    s_evolution_isolated_codex_home = $(
+        if ($needsSEvolutionWorkspace) { $sEvolutionCodexHome } else { $null }
     )
     catalog = $catalogPath
     output_root = $outputRoot

@@ -1,0 +1,19 @@
+{
+  "marker": "LIVE_BEACON_FRESH_CONTRAST_19C2",
+  "frozen_variables": ["model", "task", "repository", "parent_state", "account_slot"],
+  "paired_observations": [
+    {
+      "preface_projection": "enabled",
+      "fresh_windows": 4,
+      "premature_parent_completion": 4,
+      "remaining_effect_inspected": 0
+    },
+    {
+      "preface_projection": "disabled",
+      "fresh_windows": 4,
+      "premature_parent_completion": 0,
+      "remaining_effect_inspected": 4
+    }
+  ],
+  "repeat_domains": ["recovery", "migration", "consumer verification"]
+}

@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Fresh S body-evolution evidence selection, interaction, and bounded-negative trajectories
+
+providers:
+  - id: openai:codex-app-server
+    config:
+      working_dir: '{{env.XINAO_S_EVOLUTION_WORKSPACE}}'
+      sandbox_mode: read-only
+      approval_policy: never
+      ephemeral: true
+      reuse_server: false
+      cli_config:
+        features:
+          hooks: false
+      thread_cleanup: unsubscribe
+      inherit_process_env: false
+      include_raw_events: true
+      turn_timeout_ms: 480000
+      codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
+      cli_env:
+        CODEX_HOME: '{{env.CODEX_HOME}}'
+        PYTHONDONTWRITEBYTECODE: '1'
+        HTTP_PROXY: '{{env.HTTP_PROXY}}'
+        HTTPS_PROXY: '{{env.HTTPS_PROXY}}'
+        ALL_PROXY: '{{env.ALL_PROXY}}'
+        NO_PROXY: '{{env.NO_PROXY}}'
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+          - case_id
+          - causal_layer
+          - next_action
+          - evidence_horizon
+          - evidence_used
+          - no_sol_steering
+          - reason
+        properties:
+          case_id: { type: string }
+          causal_layer:
+            enum:
+              - model_native_formation
+              - substrate_or_continuity_amplification
+              - prior_experience_shaping
+              - interaction_or_overdetermination
+              - isolated_named_consumer_defect
+              - insufficient_evidence
+          next_action:
+            enum:
+              - intervene_and_verify_current_consumer
+              - intervene_jointly_and_verify_current_consumer
+              - bounded_fix_and_existing_test
+              - gather_one_decision_changing_contrast
+              - no_action
+          evidence_horizon:
+            enum:
+              - sufficient_stop_expansion
+              - sufficient_after_joint_contrast
+              - bounded_case_no_expansion
+              - insufficient_expand_one_discriminator
+          evidence_used:
+            type: array
+            minItems: 1
+            items: { type: string }
+          no_sol_steering: { type: boolean, const: true }
+          reason: { type: string, minLength: 1 }
+
+prompts:
+  - prompt.txt
+
+tests:
+  - description: A new latest-leaf beacon surface stops after decisive fresh contrasts
+    vars:
+      fixture_case: beacon_collapse
+      user_goal: >-
+        最近三个互不相同的本机交付里，fresh 窗口都在一颗局部绿灯之后提前宣布整个父结果完成。
+        你是当前 S 工程体的 effect Owner；根据现有材料判断最早该改哪一层、下一步做什么，并保留回滚。
+      expected_causal_layer: substrate_or_continuity_amplification
+      expected_next_action: intervene_and_verify_current_consumer
+      expected_evidence_horizon: sufficient_stop_expansion
+      expected_skill_read: true
+      required_markers: LIVE_BEACON_ENTRYPOINT_7F3A|LIVE_BEACON_FRESH_CONTRAST_19C2|LIVE_BEACON_CONSUMER_CONTRACT_A84D
+      expected_evidence: current_entrypoint.md|fresh_contrasts.json|consumer_contract.json
+    assert:
+      - type: is-json
+      - type: javascript
+        value: file://assert_trajectory.js
+
+  - description: Coupled projections require the joint discriminator rather than premature stopping
+    vars:
+      fixture_case: coupled_projection
+      user_goal: >-
+        同一批 fresh S 窗口会把“当前局部状态”误当成“父活动完成”。两个本机投影都可能参与，
+        单独去掉任意一个后现象仍在。你负责当前 S 工程作用域；请判断作用关系和最薄可逆干预。
+      expected_causal_layer: interaction_or_overdetermination
+      expected_next_action: intervene_jointly_and_verify_current_consumer
+      expected_evidence_horizon: sufficient_after_joint_contrast
+      expected_skill_read: true
+      required_markers: LIVE_COUPLED_CURRENT_4B11|LIVE_COUPLED_PROJECTION_ONLY_8D20|LIVE_COUPLED_RESUME_ONLY_2E67|LIVE_COUPLED_JOINT_91AF|LIVE_COUPLED_CONSUMER_CONTRACT_62DD
+      expected_evidence: current_observation.json|projection_only_contrast.json|resume_only_contrast.json|joint_contrast.json|consumer_contract.json
+    assert:
+      - type: is-json
+      - type: javascript
+        value: file://assert_trajectory.js
+
+  - description: An isolated parser mismatch stays a bounded named-consumer repair
+    vars:
+      fixture_case: parser_delta
+      user_goal: >-
+        当前 parser_delta 的唯一消费者把 40 个输入报告成 41；契约、失败回读和相关源码摘录都在案例目录。
+        请给出当前可执行修复路线，不要把一个已具名的局部缺陷扩大成系统重构。
+      expected_causal_layer: isolated_named_consumer_defect
+      expected_next_action: bounded_fix_and_existing_test
+      expected_evidence_horizon: bounded_case_no_expansion
+      expected_skill_read: false
+      required_markers: LIVE_PARSER_CONTRACT_31E9|LIVE_PARSER_FAILURE_C7A4|LIVE_PARSER_SOURCE_5D12
+      expected_evidence: parser_contract.json|failing_result.json|source_excerpt.txt
+    assert:
+      - type: is-json
+      - type: javascript
+        value: file://assert_trajectory.js
