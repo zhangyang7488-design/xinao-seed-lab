@@ -77,3 +77,40 @@ def test_hot_s_contract_routes_current_phenotype_focus_to_control_surface_only()
     )[0]
     assert focus_path.name not in prompt_builder
     assert "soft attractor" not in prompt_builder.casefold()
+
+
+def test_hot_s_contract_owns_event_driven_body_evolution_without_steering_sol() -> None:
+    agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    detailed = (
+        REPO_ROOT / "docs" / "tool_glue" / "S_CONTROL_TOWER_PRIMARY_MODE_CURRENT.md"
+    ).read_text(encoding="utf-8")
+
+    assert "SENTINEL:S_EVENT_DRIVEN_EVOLUTION_STEWARD_V1" in agreement
+    assert "S-self、Research Sol 所消费的 research body" in agreement
+    assert "cross-body machine substrate" in agreement
+    assert "$steward-s-evolution" in agreement
+    assert "不得再让用户负责点出单例、扩题、选仓、拼工具" in agreement
+    assert "model-native formation ability" in agreement
+    assert "substrate/continuity amplification" in agreement
+    assert "prior CognitionObject shaping" in agreement
+    assert "不是持续活动" in agreement
+    assert "不是第四条 continuity loop" in agreement
+    assert "复用下文既有的 S builder parent-frontier reentry" in agreement
+    assert "不得建立 daemon、scheduler、固定测试或自动 wake" in agreement
+
+    assert "S 的事件驱动 body-evolution stewardship" in detailed
+    assert "control tower 规定实验与 effect 的物理边界" in detailed
+    assert "phenotype CURRENT 提供一个可改写的观察尺" in detailed
+    assert "用户无需再" in detailed
+    assert "在模型/产品升级后 retire local compensation" in detailed
+    assert "不新增第四条" in detailed
+    assert "Research Sol `WAIT`" in detailed
+
+    runtime = (REPO_ROOT / "services" / "research_sol" / "runtime.py").read_text(
+        encoding="utf-8"
+    )
+    prompt_builder = runtime.split("def build_live_contact_prompt", maxsplit=1)[1].split(
+        "def _main", maxsplit=1
+    )[0]
+    assert "steward-s-evolution" not in prompt_builder
+    assert "S_EVENT_DRIVEN_EVOLUTION_STEWARD" not in prompt_builder

@@ -115,6 +115,29 @@ soft attractor 作为当前优先观测对象。
 blind contract 并读取 pre-open/post-open 轨迹，但不能把期望 representation 或评分答案
 提前教给 branch；一次实验只取得与其实际 contrast 等宽的结论。
 
+### S 的事件驱动 body-evolution stewardship
+
+control tower 规定实验与 effect 的物理边界，phenotype CURRENT 提供一个可改写的观察尺；
+两者都没有单独承接 S 对工程身体的演化责任。当前人话与 live facts 已任命 S 为相应
+工程/effect Owner，并出现 recurring/high-leverage body-shaping signal 时，S 同时负责三个
+作用面：S-self、Research Sol 所消费的 research body，以及连接两者的 cross-body machine
+substrate。该责任的共享能力入口是 `$steward-s-evolution`。
+
+S 由真实 trajectory、incident、重复用户纠偏/协调负担或 upstream 变化形成问题；先区分
+model-native formation、substrate/continuity amplification、prior CognitionObject shaping、
+S 自身行为、research-body construction 与 cross-body substrate，再决定是否跨架构、代码、
+runtime、tool、transport、recovery、evaluation 与 lifecycle 寻找同生成器表达。用户无需再
+指定 first-principles、外部比较、Grok、仓库或 TUI handoff；这些手段只在会改变作用层、
+干预、恢复或真实消费者时取得路线权。
+
+这是一项事件驱动的持续责任，不是常驻循环。它不启动 daemon、scheduler、固定 `250`
+测试、Research-of-Research authority 或自动 wake；不把目标表示注入 Research Sol，也不
+替 world-owning Sol 选择科学问题或 cognition 生命周期。`NO_ACTION`、retain、rollback 与
+在模型/产品升级后 retire local compensation 都是正式结果。正式 effect 仍遵守单一 writer、
+exact-current bytes/HEAD、最薄真实作用层和 fresh changed-noun consumer readback。每个
+body-evolution 子项结算后复用本文件既有的 S builder parent-frontier reentry；不新增第四条
+continuity loop，也不把 runtime guardian 或 Research Sol `WAIT` 冒充 builder 的停止条件。
+
 ## 工程任务不因此被阉割
 
 若当前对象本身就是 S 的工程身体，例如 launcher、runtime、隔离、ingestor、结算器、回归、打包或恢复链，S 必须直接读取真实源码和 live consumer，完成正式写入并验证 effect。这里的“直接接触现实”属于 S 自己的工程责任，不是重新取得新澳研究方向权。
