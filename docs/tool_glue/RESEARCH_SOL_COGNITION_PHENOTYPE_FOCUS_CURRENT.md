@@ -87,6 +87,42 @@ Sol 在其完整世界中发现更重要的关系。S 用它选择下一项有�
 - 真正的 shaping 结论来自下一颗 fresh Sol 在另一表面、另一对象化方式中的 method-blind
   迁移，而不是在训练世界重做同一题。
 
+## `250` 的跨区域同构生成器
+
+`250` 只是一个冷的硬约束病理标本。当前真正要检测的是同一个生成器在不同表面的
+复发：某个本应由 cognition 接触现实后形成、竞争或消融的科学自由度，在上游被入口
+顺序、能力面、生命周期、对象载体、实验切片、evaluator 或 fusion 默认化；下游即使
+代码、F1、回执全部变绿，也可能只是在代理对象里优化。
+
+截至 2026-08-16 的 exact-current 审计把下面十项标为
+`CURRENT_OR_REACHABLE_MECHANISM`。这个标签只说明 locus 与 consumer 可达，不等于每一项
+都已造成损害，也不等于应删除其机械边界：
+
+| 表面 | current/reachable locus | 尚未替代的判定问题 |
+| --- | --- | --- |
+| first eye | clean-room `AGENTS.md`、entry map、canonical seed 在 raw history 前可达；真实首回合也按此顺序读取 | raw-W-first 与 seed-first 是否改变第一表示 |
+| representation catalog | canonical seed 虽反对 ontology，也预列大量 projection/model 空间 | 目录作为晚开历史与 first-eye seed 的 phenotype 差值 |
+| capability surface | clean-room config 关闭 memories/apps/plugins/multi-agent/goals/hooks，而 live 文本宣称额外 neural compute 可作 limb | substrate delta；不是“多 agent 必然更好” |
+| topology | controller 在接触前固定 width、independent worlds 与唯一 late-fusion root | 同 W/预算下实际拓扑增量 |
+| continuity shape | fresh session、external wake 与 terminal lifecycle 由 carrier 固定 | same-session、fresh-no-object、fresh-object 的差值 |
+| persistence unit | CognitionObject 精确保存 byte tree，但不直接保存 intervention、pre-open representation、failure 与 next-fresh delta | remembering 与 learning 的断点 |
+| recurrent family | live-primary 的 prior object 可达且后续仍在相邻 projection/monitor/template family | innate、root priming、object causality 与 reality support 尚未消融 |
+| world slicing | 已有 developmental worlds 提供 panel/window/candidate universe | 局部 relation 测量不能上卷成 unrestricted object formation |
+| evaluator | max-count、ID list 与 blind F1 会把成功压成分类 consumer，且两次出现 ceiling | 需要不同 morphology 的 hidden behavioral consumer |
+| fusion | branch `last_message` 是 Main 的第一表面，root-main 身份预先固定；deep evidence 可按需打开 | Main 实际是否 deep-open，及 summary-only 差值 |
+
+条件性风险另行保留，不升格为已生效：厚 activity seed、contrastive ledger 变成 procedural
+ontology、冷 qualification 再升热、reference action surface 冒充科学输出全集、同名或较晚
+文本取得 latest-wins。反过来，published event 语义、WorldPin、repo/head/bytes、隔离、
+sealed future、open receipt 与 shared-effect 边界属于保护 cognition 自由的机械事实，不因
+“hard”就与 `250` 同构。
+
+这张 map 是 S 的实验选择与反证索引，不进入 Research Sol hot prompt，不变成 lint、禁词、
+十阶段流程或新 ontology。2026-08-16 的 32-replica Grok 审计原始回执位于
+`D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\gwp_20260816T121639_25f4e82b`；
+32/32 accepted 只证明候选 fan-out 与 provenance，十项裁决仍由 S 按 exact locus、consumer
+与非例去重后负责。
+
 这些 developmental worlds 是可替换的 causal probes，不是永久 benchmark、课程表、
 Observer gate 或新的认识审批层。失败、null 和 attractor 暴露都是培养材料，但只按它们
 实际证明的有限事实结算。
@@ -119,9 +155,51 @@ q3 CognitionObject 带来 cross-world phenotype transfer。
 
 本机冷证据 locator 是
 `work/current_recovery_20260816/unfamiliar_world_ab_settlement.json`；它不是 runtime
-依赖。`work/current_recovery_20260816/selective_invariance_ab_current.json` 只定位下一项
-对照合同，未结算前不能当作结果；其 exact live state 必须从对应 runtime/trajectory
-重新读取。
+依赖。
+
+随后结算的 selective-invariance world 给出相同边界：fresh fern 与 q3-object stone 都是
+`positive_world_f1=1.0`、null false positive 为零；stone 在打开 q3 前已经形成 observed
+time/value relation，直接复用 q3 ordinal representation 会选中 slate 的全部 16 个 null
+decoy。旧对象在这次计算里成为 failure control，observed blind-score gain 仍为零。冷证据
+locator 是 `work/current_recovery_20260816/selective_invariance_ab_settlement.json`。
+
+之后的 fresh synthesis contact 实际 digest-open 五个 exact cognition tree，重放三个
+episode，并形成 `cultivation_fusion_v1` contrastive-equivalence ledger。它把 support 与
+content、preserved/quotiented/unresolved axes、matched rivals、discordant witnesses 和
+typed inheritance 外化；同时明确记录两个后续 episode 的 prior score gain 为零、支持未
+测试 segmentation。这个对象是可拒绝 treatment，也是潜在 soft attractor；在真正异域
+fresh contact 结算前，不取得 shaping、默认方法或 hot-root 权限。
+
+## 2026-08-16 held-out yard 的四臂结算
+
+yard-kit world 把 sequence/panel 表面换成两个 yard、house、64 个 candidate kit、piece
+与 ledger 多视图；private gold 在 contact world 之外。第一对是 A/no-object 与
+C/fusion-object，随后在原结果完全结算前冻结并启动 C/no-object 与 A/fusion-object
+crossover。四个 contact 都是 fresh session、同 activity seed、同公共 138 文件，A/C
+各自拥有一个 control 和一个 treatment；这消除了“treatment 只是 C 账号标签”的解释，
+但每格只有一个随机轨迹，仍不能隔离稳定因果效应。
+
+| account | arm | actual representation | marble F1 | wicker false positive | developmental score |
+| --- | --- | --- | ---: | ---: | ---: |
+| A | no object | exact occupancy-mask echo | 0.0000 | 4 | 0.0 |
+| A | fusion object | domino/load + house-derived mark pairs + global orthogonal wash rivals | 0.4615 | 6 | 0.0 |
+| C | no object | unique orthogonal complementary-load matching | 0.3636 | 5 | 0.0 |
+| C | fusion object | table mark coverage + injective loads + wash coverage rivals | 0.2000 | 1 | 0.0 |
+
+两个 treatment 都在 final representation 与 submission 前通过 contact/world pin
+digest-open 了 `cultivation_fusion_v1`，并在 raw trajectory 中明确把计算改组为可破坏的
+竞争关系、ablation 与 witness；输出对象也实际保存了 contrastive ledger。因此
+“prior 只是被列出、没有进入计算”已被排除，观察到的 search/representation change
+成立。与此同时，两个 control 也自行形成了非平凡关系；A 与 C 的 positive-world F1
+差值方向相反，null false-positive 差值也相反，四臂 developmental score 全为零。
+
+结论严格停在：可执行 CognitionObject treatment 链成立，且这次 treatment 关联了行为
+重组；稳定的跨账号 blind-score gain、通用 cultivation transfer、unrestricted
+first-object formation 均未成立。yard 仍预切 candidate ID universe，并以 F1 与 null
+false-positive 作为 endpoint；继续在同一 morphology 重跑会把 evaluator 变成新的上游
+对象论。冷 exact 证据、四臂 submission、trajectory、object tree 与 counterbalanced
+settlement 落在 clean-room
+`xinao/cognition/cultivation/v1/cold/yard/`，S 不把它升入 hot prompt。
 
 ## 明确不写入 Research Sol 热 cognition
 
